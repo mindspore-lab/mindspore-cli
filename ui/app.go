@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -19,6 +21,7 @@ const (
 	inputHeight    = 1
 	verticalPad    = 2
 	ctrlCExitAfter = 2 * time.Second
+	altScrollSeq   = "\x1b[?1007h"
 )
 
 const InterruptSignal = "__mscli_interrupt__"
@@ -33,6 +36,12 @@ type slashCandidate struct {
 	command string
 	display string
 	insert  string
+}
+
+type stepProgress struct {
+	commands      int
+	viewedFiles   map[string]struct{}
+	modifiedFiles map[string]struct{}
 }
 
 var (
@@ -85,6 +94,7 @@ type App struct {
 	viewport        components.Viewport
 	input           components.TextInput
 	spinner         components.Spinner
+	step            stepProgress
 	width           int
 	height          int
 	eventCh         <-chan model.Event
@@ -102,6 +112,7 @@ func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL,
 		state:         model.NewState(version, workDir, repoURL, modelProvider, modelName),
 		input:         components.NewTextInput(),
 		spinner:       components.NewSpinner(),
+		step:          newStepProgress(),
 		eventCh:       ch,
 		userCh:        userCh,
 		slashSelected: 0,
@@ -118,9 +129,17 @@ func (a App) waitForEvent() tea.Msg {
 
 func (a App) Init() tea.Cmd {
 	return tea.Batch(
+		enableAltScrollCmd(),
 		a.spinner.Model.Tick,
 		a.waitForEvent,
 	)
+}
+
+func enableAltScrollCmd() tea.Cmd {
+	return func() tea.Msg {
+		_, _ = os.Stdout.WriteString(altScrollSeq)
+		return nil
+	}
 }
 
 func (a App) chatHeight() int {
@@ -154,7 +173,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.resizeViewport()
-		return a, nil
+		return a, enableAltScrollCmd()
 
 	case model.Event:
 		return a.handleEvent(msg)
@@ -164,6 +183,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.spinner, cmd = a.spinner.Update(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
+		}
+		if a.hasThinkingMessage() {
+			a.updateViewport()
 		}
 	}
 
@@ -269,12 +291,16 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	switch ev.Type {
 	case model.AgentThinking:
+		a.completeThinkingStep()
+		a.resetStepProgress()
 		a.state = a.state.WithMessage(model.Message{Kind: model.MsgThinking})
 
 	case model.AgentReply:
-		a.state = a.replaceThinking(model.Message{Kind: model.MsgAgent, Content: ev.Message})
+		a.completeThinkingStep()
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message})
 
 	case model.CmdStarted:
+		a.step.commands++
 		a.state = a.state.WithMessage(model.Message{
 			Kind:     model.MsgTool,
 			ToolName: "Shell",
@@ -289,6 +315,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		// output already in the tool block
 
 	case model.ToolRead:
+		a.trackViewedFile(ev.Message)
 		a.state = a.state.WithMessage(model.Message{
 			Kind:     model.MsgTool,
 			ToolName: "Read",
@@ -316,6 +343,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolEdit:
+		a.trackModifiedFile(ev.Message)
 		a.state = a.state.WithMessage(model.Message{
 			Kind:     model.MsgTool,
 			ToolName: "Edit",
@@ -324,6 +352,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolWrite:
+		a.trackModifiedFile(ev.Message)
 		a.state = a.state.WithMessage(model.Message{
 			Kind:     model.MsgTool,
 			ToolName: "Write",
@@ -332,6 +361,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.ToolError:
+		a.completeThinkingStep()
 		a.state = a.state.WithMessage(model.Message{
 			Kind:     model.MsgTool,
 			ToolName: ev.ToolName,
@@ -340,6 +370,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		})
 
 	case model.AnalysisReady:
+		a.completeThinkingStep()
 		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message})
 
 	case model.TokenUpdate:
@@ -359,6 +390,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.state = a.state.WithModel(mi)
 
 	case model.ClearChat:
+		a.resetStepProgress()
 		a.state = a.withMessages(nil)
 		a.viewport = a.viewport.Clear()
 
@@ -392,6 +424,93 @@ func (a App) replaceThinking(m model.Message) model.State {
 		}
 	}
 	msgs = append(msgs, m)
+	return a.withMessages(msgs)
+}
+
+func newStepProgress() stepProgress {
+	return stepProgress{
+		viewedFiles:   make(map[string]struct{}),
+		modifiedFiles: make(map[string]struct{}),
+	}
+}
+
+func (a *App) resetStepProgress() {
+	a.step = newStepProgress()
+}
+
+func (a *App) completeThinkingStep() {
+	if !a.hasThinkingMessage() {
+		return
+	}
+	summary, ok := a.stepDoneSummary()
+	if ok {
+		a.state = a.replaceThinking(model.Message{
+			Kind:    model.MsgAgent,
+			Content: summary,
+		})
+	} else {
+		a.state = a.removeThinking()
+	}
+	a.resetStepProgress()
+}
+
+func (a App) stepDoneSummary() (string, bool) {
+	parts := make([]string, 0, 3)
+	if a.step.commands > 0 {
+		parts = append(parts, fmt.Sprintf("commands: %d", a.step.commands))
+	}
+	if viewed := len(a.step.viewedFiles); viewed > 0 {
+		parts = append(parts, fmt.Sprintf("files viewed: %d", viewed))
+	}
+	if modified := len(a.step.modifiedFiles); modified > 0 {
+		parts = append(parts, fmt.Sprintf("files modified: %d", modified))
+	}
+	if len(parts) == 0 {
+		return "", false
+	}
+	return "Done  -- " + strings.Join(parts, ", "), true
+}
+
+func (a *App) trackViewedFile(raw string) {
+	path := firstNonEmptyLine(raw)
+	if path == "" {
+		return
+	}
+	if a.step.viewedFiles == nil {
+		a.step.viewedFiles = make(map[string]struct{})
+	}
+	a.step.viewedFiles[path] = struct{}{}
+}
+
+func (a *App) trackModifiedFile(raw string) {
+	path := firstNonEmptyLine(raw)
+	if path == "" {
+		return
+	}
+	if a.step.modifiedFiles == nil {
+		a.step.modifiedFiles = make(map[string]struct{})
+	}
+	a.step.modifiedFiles[path] = struct{}{}
+}
+
+func firstNonEmptyLine(raw string) string {
+	lines := strings.Split(raw, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func (a App) removeThinking() model.State {
+	msgs := make([]model.Message, 0, len(a.state.Messages))
+	for _, msg := range a.state.Messages {
+		if msg.Kind != model.MsgThinking {
+			msgs = append(msgs, msg)
+		}
+	}
 	return a.withMessages(msgs)
 }
 
@@ -486,6 +605,15 @@ func (a *App) refreshSlashSuggestions() {
 
 func (a App) hasSlashSuggestions() bool {
 	return len(a.slashCandidates) > 0
+}
+
+func (a App) hasThinkingMessage() bool {
+	for _, msg := range a.state.Messages {
+		if msg.Kind == model.MsgThinking {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) cycleSlash(delta int) {

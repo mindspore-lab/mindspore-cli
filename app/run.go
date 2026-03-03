@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,11 @@ import (
 	"github.com/vigo999/ms-cli/agent/loop"
 	"github.com/vigo999/ms-cli/ui"
 	"github.com/vigo999/ms-cli/ui/model"
+)
+
+const (
+	altScrollEnableSeq  = "\x1b[?1007h"
+	altScrollDisableSeq = "\x1b[?1007l"
 )
 
 // Run starts the TUI. In demo mode it feeds fake events; in real mode it
@@ -34,7 +40,12 @@ func (a *Application) runReal() error {
 		a.SessionModel.Provider,
 		a.SessionModel.Name,
 	)
-	p := tea.NewProgram(tui, tea.WithAltScreen())
+	p := tea.NewProgram(
+		tui,
+		tea.WithAltScreen(),
+	)
+	enableAltScroll()
+	defer disableAltScroll()
 
 	go a.inputLoop(userCh)
 
@@ -164,9 +175,22 @@ func (a *Application) runDemo() error {
 		a.SessionModel.Provider,
 		a.SessionModel.Name,
 	)
-	p := tea.NewProgram(tui, tea.WithAltScreen())
+	p := tea.NewProgram(
+		tui,
+		tea.WithAltScreen(),
+	)
+	enableAltScroll()
+	defer disableAltScroll()
 	_, err := p.Run()
 	return err
+}
+
+func enableAltScroll() {
+	_, _ = os.Stdout.WriteString(altScrollEnableSeq)
+}
+
+func disableAltScroll() {
+	_, _ = os.Stdout.WriteString(altScrollDisableSeq)
 }
 
 func mapLoopEvent(ev loop.Event) model.Event {

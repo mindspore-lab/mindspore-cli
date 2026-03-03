@@ -44,6 +44,7 @@ type hint struct {
 
 var hints = []hint{
 	{"/", "commands"},
+	{"wheel", "scroll"},
 	{"pgup/pgdn", "scroll"},
 	{"ctrl+c", "interrupt"},
 	{"ctrl+c x2", "quit"},

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	agentcontext "github.com/vigo999/ms-cli/agent/context"
 	"github.com/vigo999/ms-cli/integrations/domain"
 )
 
@@ -28,27 +29,37 @@ Rules:
 - Prefer small, safe steps.
 - Use relative paths.
 - Use shell only when needed.
+- Do not repeat the same shell command unless there is a clear reason.
+- Prefer read/grep for code structure analysis; avoid repeated "ls -la".
 - If enough evidence exists, return action=final with concise conclusion.`
 
 type Config struct {
-	FS             FSTool
-	Shell          ShellTool
-	ModelFactory   domain.Factory
-	Permission     PermissionService
-	Trace          TraceWriter
-	DefaultMaxStep int
-	MaxOutputLines int
+	FS                    FSTool
+	Shell                 ShellTool
+	ModelFactory          domain.Factory
+	Permission            PermissionService
+	Trace                 TraceWriter
+	DefaultMaxStep        int
+	MaxOutputLines        int
+	ContextMaxTokens      int
+	ContextCompactionRate float64
+	ContextMaxEntries     int
+	MaxRepeatedShell      int
 }
 
 // Engine drives task execution and emits events.
 type Engine struct {
-	fs             FSTool
-	shell          ShellTool
-	modelFactory   domain.Factory
-	permission     PermissionService
-	trace          TraceWriter
-	defaultMaxStep int
-	maxOutputLines int
+	fs                    FSTool
+	shell                 ShellTool
+	modelFactory          domain.Factory
+	permission            PermissionService
+	trace                 TraceWriter
+	defaultMaxStep        int
+	maxOutputLines        int
+	contextMaxTokens      int
+	contextCompactionRate float64
+	contextMaxEntries     int
+	maxRepeatedShell      int
 }
 
 const assistantSystemPrompt = `You are ms-cli assistant in a terminal UI.
@@ -74,15 +85,35 @@ func NewEngine(cfg Config) *Engine {
 	if maxOutputLines <= 0 {
 		maxOutputLines = 200
 	}
+	contextTokens := cfg.ContextMaxTokens
+	if contextTokens <= 0 {
+		contextTokens = 12000
+	}
+	contextRatio := cfg.ContextCompactionRate
+	if contextRatio <= 0 || contextRatio >= 1 {
+		contextRatio = 0.8
+	}
+	contextEntries := cfg.ContextMaxEntries
+	if contextEntries <= 0 {
+		contextEntries = 80
+	}
+	maxRepeatedShell := cfg.MaxRepeatedShell
+	if maxRepeatedShell <= 0 {
+		maxRepeatedShell = 2
+	}
 
 	return &Engine{
-		fs:             cfg.FS,
-		shell:          cfg.Shell,
-		modelFactory:   cfg.ModelFactory,
-		permission:     cfg.Permission,
-		trace:          cfg.Trace,
-		defaultMaxStep: maxSteps,
-		maxOutputLines: maxOutputLines,
+		fs:                    cfg.FS,
+		shell:                 cfg.Shell,
+		modelFactory:          cfg.ModelFactory,
+		permission:            cfg.Permission,
+		trace:                 cfg.Trace,
+		defaultMaxStep:        maxSteps,
+		maxOutputLines:        maxOutputLines,
+		contextMaxTokens:      contextTokens,
+		contextCompactionRate: contextRatio,
+		contextMaxEntries:     contextEntries,
+		maxRepeatedShell:      maxRepeatedShell,
 	}
 }
 
@@ -156,11 +187,14 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 		maxSteps = 0
 	}
 
-	historyCap := 16
-	if maxSteps > 0 {
-		historyCap = maxSteps * 2
-	}
-	history := make([]string, 0, historyCap)
+	ctxManager := agentcontext.NewManager(
+		e.contextMaxTokens,
+		e.contextCompactionRate,
+		e.contextMaxEntries,
+	)
+	ctxManager.Add("task", task.Description)
+	guard := newShellLoopGuard(e.maxRepeatedShell, 6)
+
 	totalCtx := 0
 	totalTokens := 0
 
@@ -178,7 +212,7 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 		}
 		push(e.newEvent(EventThinking, thinking, "", ""))
 
-		action, usage, raw, planErr := e.planNext(ctx, client, task, history, step, maxSteps)
+		action, usage, raw, planErr := e.planNext(ctx, client, task, ctxManager.Render(), step, maxSteps)
 		if usage != nil {
 			totalCtx += usage.PromptTokens
 			totalTokens += usage.TotalTokens
@@ -220,7 +254,7 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 
 		case "read":
 			if !e.checkPermission("read", action.Path, action.Path, &events, emit) {
-				history = append(history, "READ denied by permissions")
+				ctxManager.Add("read", "denied by permissions: "+strings.TrimSpace(action.Path))
 				continue
 			}
 			content, readErr := e.fs.Read(action.Path)
@@ -228,16 +262,16 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 				// Model may occasionally choose reading "." or a directory.
 				// Keep this internal and let planner continue instead of surfacing noisy tool errors.
 				if isDirectoryErr(readErr) {
-					history = append(history, "READ failed: target is a directory")
+					ctxManager.Add("read", fmt.Sprintf("%s failed: target is a directory", action.Path))
 					continue
 				}
 				push(e.newEvent(EventToolError, readErr.Error(), "Read", ""))
-				history = append(history, "READ failed: "+readErr.Error())
+				ctxManager.Add("read", "failed: "+readErr.Error())
 				continue
 			}
 			summary := fmt.Sprintf("%d lines", countLines(content))
 			push(e.newEvent(EventToolRead, action.Path, "Read", summary))
-			history = append(history, "READ "+action.Path+":\n"+truncate(content, 4000))
+			ctxManager.Add("read", fmt.Sprintf("%s (%s)\n%s", action.Path, summary, truncate(content, 2000)))
 			_ = e.writeTrace("tool_read", map[string]any{"path": action.Path})
 
 		case "grep":
@@ -246,56 +280,67 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 				target = "."
 			}
 			if !e.checkPermission("grep", action.Pattern, target, &events, emit) {
-				history = append(history, "GREP denied by permissions")
+				ctxManager.Add("grep", fmt.Sprintf("denied by permissions: %q in %s", action.Pattern, target))
 				continue
 			}
 			matches, grepErr := e.fs.Grep(target, action.Pattern, 50)
 			if grepErr != nil {
 				push(e.newEvent(EventToolError, grepErr.Error(), "Grep", ""))
-				history = append(history, "GREP failed: "+grepErr.Error())
+				ctxManager.Add("grep", "failed: "+grepErr.Error())
 				continue
 			}
 			msg := fmt.Sprintf("%q %s", action.Pattern, target)
 			push(e.newEvent(EventToolGrep, msg, "Grep", fmt.Sprintf("%d matches", len(matches))))
-			history = append(history, "GREP "+msg+"\n"+truncate(strings.Join(matches, "\n"), 4000))
+			ctxManager.Add("grep", fmt.Sprintf("%s\n%s", msg, truncate(strings.Join(matches, "\n"), 2000)))
 			_ = e.writeTrace("tool_grep", map[string]any{"path": target, "pattern": action.Pattern, "matches": len(matches)})
 
 		case "edit":
 			if !e.checkPermission("edit", action.Path, action.Path, &events, emit) {
-				history = append(history, "EDIT denied by permissions")
+				ctxManager.Add("edit", "denied by permissions: "+strings.TrimSpace(action.Path))
 				continue
 			}
 			diff, editErr := e.fs.Edit(action.Path, action.OldText, action.NewText)
 			if editErr != nil {
 				push(e.newEvent(EventToolError, editErr.Error(), "Edit", ""))
-				history = append(history, "EDIT failed: "+editErr.Error())
+				ctxManager.Add("edit", "failed: "+editErr.Error())
 				continue
 			}
 			push(e.newEvent(EventToolEdit, action.Path+"\n\n"+diff, "Edit", ""))
-			history = append(history, "EDIT "+action.Path+" success")
+			ctxManager.Add("edit", fmt.Sprintf("%s updated\n%s", action.Path, truncate(diff, 1200)))
 			_ = e.writeTrace("tool_edit", map[string]any{"path": action.Path})
 
 		case "write":
 			if !e.checkPermission("write", action.Path, action.Path, &events, emit) {
-				history = append(history, "WRITE denied by permissions")
+				ctxManager.Add("write", "denied by permissions: "+strings.TrimSpace(action.Path))
 				continue
 			}
 			written, writeErr := e.fs.Write(action.Path, action.Content)
 			if writeErr != nil {
 				push(e.newEvent(EventToolError, writeErr.Error(), "Write", ""))
-				history = append(history, "WRITE failed: "+writeErr.Error())
+				ctxManager.Add("write", "failed: "+writeErr.Error())
 				continue
 			}
 			msg := fmt.Sprintf("%s\n\n+ wrote %d bytes", action.Path, written)
 			push(e.newEvent(EventToolWrite, msg, "Write", ""))
-			history = append(history, "WRITE "+action.Path+" success")
+			ctxManager.Add("write", fmt.Sprintf("%s wrote %d bytes", action.Path, written))
 			_ = e.writeTrace("tool_write", map[string]any{"path": action.Path, "bytes": written})
 
 		case "shell":
 			if !e.checkPermission("shell", action.Command, "", &events, emit) {
-				history = append(history, "SHELL denied by permissions")
+				ctxManager.Add("shell", "denied by permissions: "+strings.TrimSpace(action.Command))
 				continue
 			}
+			if repeats := guard.Observe(action.Command); repeats > e.maxRepeatedShell {
+				warn := fmt.Sprintf("detected repeated shell command %q (%d times). choose different action or return final.", action.Command, repeats)
+				push(e.newEvent(EventToolError, warn, "Planner", ""))
+				ctxManager.Add("guard", warn)
+				if repeats > e.maxRepeatedShell+1 {
+					push(e.newEvent(EventReply, "检测到重复命令循环，已自动停止。请细化任务或指定分析路径。", "", ""))
+					return events, nil
+				}
+				continue
+			}
+
 			push(e.newEvent(EventCmdStarted, action.Command, "Shell", ""))
 
 			output, exitCode, runErr := e.shell.Run(ctx, action.Command)
@@ -310,10 +355,10 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 				}
 				errMsg := fmt.Sprintf("command failed (exit=%d): %v", exitCode, runErr)
 				push(e.newEvent(EventToolError, errMsg, "Shell", ""))
-				history = append(history, "SHELL failed: "+errMsg)
+				ctxManager.Add("shell", fmt.Sprintf("cmd: %s\nresult: %s\noutput:\n%s", action.Command, errMsg, truncate(output, 1200)))
 			} else {
 				push(e.newEvent(EventCmdOutput, fmt.Sprintf("exit status %d", exitCode), "Shell", ""))
-				history = append(history, "SHELL success")
+				ctxManager.Add("shell", fmt.Sprintf("cmd: %s\nresult: exit status %d\noutput:\n%s", action.Command, exitCode, truncate(output, 1200)))
 			}
 			push(e.newEvent(EventCmdFinish, "", "Shell", ""))
 			_ = e.writeTrace("tool_shell", map[string]any{"command": action.Command, "exit_code": exitCode})
@@ -337,7 +382,7 @@ func (e *Engine) planNext(
 	ctx context.Context,
 	client domain.ModelClient,
 	task Task,
-	history []string,
+	contextText string,
 	step int,
 	maxSteps int,
 ) (plannerAction, *domain.Usage, string, error) {
@@ -347,12 +392,12 @@ func (e *Engine) planNext(
 	}
 
 	userPrompt := fmt.Sprintf(
-		"Task:\n%s\n\nModel:\nprovider=%s\nname=%s\n\nStep:\n%s\n\nHistory:\n%s",
+		"Task:\n%s\n\nModel:\nprovider=%s\nname=%s\n\nStep:\n%s\n\nContext:\n%s",
 		task.Description,
 		task.Model.Provider,
 		task.Model.Name,
 		stepInfo,
-		joinHistory(history),
+		contextText,
 	)
 
 	resp, err := client.Generate(ctx, domain.GenerateRequest{
@@ -469,11 +514,50 @@ func splitLines(s string, max int) []string {
 	return out
 }
 
-func joinHistory(history []string) string {
-	if len(history) == 0 {
-		return "(none)"
+type shellLoopGuard struct {
+	window int
+	recent []string
+}
+
+func newShellLoopGuard(limit, window int) *shellLoopGuard {
+	if limit <= 0 {
+		limit = 2
 	}
-	return strings.Join(history, "\n\n")
+	if window <= 0 {
+		window = 6
+	}
+	return &shellLoopGuard{
+		window: window,
+		recent: make([]string, 0, window),
+	}
+}
+
+func (g *shellLoopGuard) Observe(command string) int {
+	cmd := normalizeCommand(command)
+	if cmd == "" {
+		return 0
+	}
+
+	g.recent = append(g.recent, cmd)
+	if len(g.recent) > g.window {
+		g.recent = append([]string{}, g.recent[len(g.recent)-g.window:]...)
+	}
+
+	count := 0
+	for _, c := range g.recent {
+		if c == cmd {
+			count++
+		}
+	}
+	return count
+}
+
+func normalizeCommand(command string) string {
+	s := strings.TrimSpace(strings.ToLower(command))
+	if s == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func min(a, b int) int {

@@ -76,13 +76,17 @@ func Bootstrap(demo bool) (*Application, error) {
 	permissionSvc := loop.NewPermissionManager(cfg.Permissions.SkipRequests, cfg.Permissions.AllowedTools)
 
 	engine := loop.NewEngine(loop.Config{
-		FS:             fs.NewTool(workDir),
-		Shell:          shell.NewTool(workDir, cfg.ShellTimeout()),
-		ModelFactory:   modelFactory,
-		Permission:     permissionSvc,
-		Trace:          writer,
-		DefaultMaxStep: cfg.Engine.MaxSteps,
-		MaxOutputLines: cfg.Engine.MaxOutputLines,
+		FS:                    fs.NewTool(workDir),
+		Shell:                 shell.NewTool(workDir, cfg.ShellTimeout()),
+		ModelFactory:          modelFactory,
+		Permission:            permissionSvc,
+		Trace:                 writer,
+		DefaultMaxStep:        cfg.Engine.MaxSteps,
+		MaxOutputLines:        cfg.Engine.MaxOutputLines,
+		ContextMaxTokens:      cfg.Context.MaxTokens,
+		ContextCompactionRate: cfg.Context.CompactionRatio,
+		ContextMaxEntries:     cfg.Memory.MaxItems,
+		MaxRepeatedShell:      2,
 	})
 
 	sessionState.Model = sessionModel
