@@ -23,6 +23,7 @@ type Config struct {
 	Context     ContextConfig     `yaml:"context"`
 	Memory      MemoryConfig      `yaml:"memory"`
 	Engine      EngineConfig      `yaml:"engine"`
+	Session     SessionConfig     `yaml:"session"`
 	Trace       TraceConfig       `yaml:"trace"`
 }
 
@@ -44,13 +45,17 @@ type ProviderConfig struct {
 }
 
 type BudgetConfig struct {
-	MaxTokens int     `yaml:"max_tokens"`
+	// MaxTokensM is the preferred token budget unit (millions of tokens).
+	MaxTokensM float64 `yaml:"max_tokens_m"`
+	// MaxTokens keeps backward compatibility with legacy absolute-token configs.
+	MaxTokens int     `yaml:"max_tokens,omitempty"`
 	MaxCost   float64 `yaml:"max_cost_usd"`
 }
 
 type PermissionsConfig struct {
-	SkipRequests bool     `yaml:"skip_requests"`
-	AllowedTools []string `yaml:"allowed_tools"`
+	SkipRequests         bool     `yaml:"skip_requests"`
+	AllowedTools         []string `yaml:"allowed_tools"`
+	RequireApprovalBlock bool     `yaml:"require_approval_block"`
 }
 
 type ContextConfig struct {
@@ -65,9 +70,15 @@ type MemoryConfig struct {
 }
 
 type EngineConfig struct {
-	MaxSteps       int `yaml:"max_steps"`
-	ShellTimeout   int `yaml:"shell_timeout_sec"`
-	MaxOutputLines int `yaml:"max_output_lines"`
+	MaxSteps         int `yaml:"max_steps"`
+	ShellTimeout     int `yaml:"shell_timeout_sec"`
+	MaxOutputLines   int `yaml:"max_output_lines"`
+	MaxWallTimeSec   int `yaml:"max_wall_time_sec"`
+	MaxRepeatedShell int `yaml:"max_repeated_shell"`
+}
+
+type SessionConfig struct {
+	PersistAPIKeys bool `yaml:"persist_api_keys"`
 }
 
 type TraceConfig struct {
@@ -94,12 +105,13 @@ func defaultConfig() Config {
 			},
 		},
 		Budget: BudgetConfig{
-			MaxTokens: 32768,
-			MaxCost:   10,
+			MaxTokensM: 1,
+			MaxCost:    10,
 		},
 		Permissions: PermissionsConfig{
-			SkipRequests: false,
-			AllowedTools: []string{},
+			SkipRequests:         false,
+			AllowedTools:         []string{},
+			RequireApprovalBlock: true,
 		},
 		Context: ContextConfig{
 			MaxTokens:       24000,
@@ -111,9 +123,14 @@ func defaultConfig() Config {
 			TTLHours: 168,
 		},
 		Engine: EngineConfig{
-			MaxSteps:       0, // 0 means unlimited; stop via Ctrl+C
-			ShellTimeout:   120,
-			MaxOutputLines: 200,
+			MaxSteps:         0, // 0 means unlimited; stop via Ctrl+C
+			ShellTimeout:     120,
+			MaxOutputLines:   200,
+			MaxWallTimeSec:   1800,
+			MaxRepeatedShell: 2,
+		},
+		Session: SessionConfig{
+			PersistAPIKeys: false,
 		},
 		Trace: TraceConfig{
 			Enabled: true,
@@ -183,6 +200,17 @@ func (c *Config) applyEnvOverrides() {
 }
 
 func (c *Config) applySafeDefaults() {
+	if c.Budget.MaxTokens < 0 {
+		c.Budget.MaxTokens = 0
+	}
+	if c.Budget.MaxTokensM < 0 {
+		c.Budget.MaxTokensM = 0
+	}
+	// Default to 1M tokens when no budget is provided.
+	if c.Budget.MaxTokens <= 0 && c.Budget.MaxTokensM <= 0 {
+		c.Budget.MaxTokensM = 1
+	}
+
 	if c.Providers.OpenAI.Endpoint == "" {
 		c.Providers.OpenAI.Endpoint = "https://api.openai.com/v1"
 	}
@@ -211,9 +239,25 @@ func (c *Config) applySafeDefaults() {
 	if c.Engine.MaxOutputLines <= 0 {
 		c.Engine.MaxOutputLines = 200
 	}
+	if c.Engine.MaxWallTimeSec <= 0 {
+		c.Engine.MaxWallTimeSec = 1800
+	}
+	if c.Engine.MaxRepeatedShell <= 0 {
+		c.Engine.MaxRepeatedShell = 2
+	}
 	if c.Trace.Path == "" {
 		c.Trace.Path = ".cache/mscli/trace.jsonl"
 	}
+}
+
+func (b BudgetConfig) MaxTokenLimit() int {
+	if b.MaxTokensM > 0 {
+		return int(b.MaxTokensM * 1_000_000)
+	}
+	if b.MaxTokens > 0 {
+		return b.MaxTokens
+	}
+	return 0
 }
 
 func (c Config) ResolveModel(provider, modelName string) SessionModel {

@@ -8,7 +8,7 @@ import (
 
 func TestSpinnerTickRerendersThinkingViewport(t *testing.T) {
 	eventCh := make(chan model.Event)
-	a := New(eventCh, nil, "v0.0.0", ".", "", "openrouter", "deepseek")
+	a := New(eventCh, nil, "v0.0.0", ".", "", "openrouter", "deepseek", 24000)
 	a.width = 120
 	a.height = 40
 	a.resizeViewport()

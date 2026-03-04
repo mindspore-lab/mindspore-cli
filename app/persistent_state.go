@@ -82,5 +82,6 @@ func SavePersistentState(path string, st PersistentState) error {
 
 func hasModelEnvOverride() bool {
 	return strings.TrimSpace(os.Getenv("MSCLI_MODEL_PROVIDER")) != "" ||
-		strings.TrimSpace(os.Getenv("MSCLI_MODEL_NAME")) != ""
+		strings.TrimSpace(os.Getenv("MSCLI_MODEL_NAME")) != "" ||
+		strings.TrimSpace(os.Getenv("MSCLI_MODEL_ENDPOINT")) != ""
 }

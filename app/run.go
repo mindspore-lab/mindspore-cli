@@ -39,6 +39,7 @@ func (a *Application) runReal() error {
 		a.RepoURL,
 		a.SessionModel.Provider,
 		a.SessionModel.Name,
+		a.Config.Context.MaxTokens,
 	)
 	p := tea.NewProgram(
 		tui,
@@ -174,6 +175,7 @@ func (a *Application) runDemo() error {
 		a.RepoURL,
 		a.SessionModel.Provider,
 		a.SessionModel.Name,
+		a.Config.Context.MaxTokens,
 	)
 	p := tea.NewProgram(
 		tui,
@@ -195,17 +197,26 @@ func disableAltScroll() {
 
 func mapLoopEvent(ev loop.Event) model.Event {
 	out := model.Event{
-		Message:    ev.Message,
-		ToolName:   ev.ToolName,
-		Summary:    ev.Summary,
-		CtxUsed:    ev.CtxUsed,
-		TokensUsed: ev.TokensUsed,
+		Message:        ev.Message,
+		ToolName:       ev.ToolName,
+		Summary:        ev.Summary,
+		ApprovalID:     ev.ApprovalID,
+		ApprovalTool:   ev.ApprovalTool,
+		ApprovalAction: ev.ApprovalAction,
+		CtxUsed:        ev.CtxUsed,
+		TokensUsed:     ev.TokensUsed,
 	}
 	switch ev.Type {
 	case loop.EventThinking:
 		out.Type = model.AgentThinking
 	case loop.EventReply:
 		out.Type = model.AgentReply
+	case loop.EventApprovalRequired:
+		out.Type = model.ApprovalRequired
+	case loop.EventApprovalResolved:
+		out.Type = model.ApprovalResolved
+	case loop.EventToolGlob:
+		out.Type = model.ToolGlob
 	case loop.EventToolRead:
 		out.Type = model.ToolRead
 	case loop.EventToolGrep:

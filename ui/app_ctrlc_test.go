@@ -10,7 +10,7 @@ import (
 func TestCtrlC_FirstInterruptSecondQuit(t *testing.T) {
 	eventCh := make(chan model.Event)
 	userCh := make(chan string, 1)
-	a := New(eventCh, userCh, "v0.0.0", ".", "", "openrouter", "deepseek")
+	a := New(eventCh, userCh, "v0.0.0", ".", "", "openrouter", "deepseek", 24000)
 	a.width = 120
 	a.height = 40
 	a.input = a.input.SetValue("pending text")

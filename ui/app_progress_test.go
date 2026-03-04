@@ -19,7 +19,7 @@ func applyEvent(t *testing.T, a App, ev model.Event) App {
 
 func newProgressTestApp() App {
 	ch := make(chan model.Event)
-	a := New(ch, nil, "v0.0.0", ".", "", "openrouter", "deepseek")
+	a := New(ch, nil, "v0.0.0", ".", "", "openrouter", "deepseek", 24000)
 	a.width = 120
 	a.height = 40
 	a.resizeViewport()

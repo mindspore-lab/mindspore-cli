@@ -34,3 +34,12 @@ func TestLoadSavePersistentState(t *testing.T) {
 		t.Fatalf("api key mismatch")
 	}
 }
+
+func TestHasModelEnvOverride_Endpoint(t *testing.T) {
+	t.Setenv("MSCLI_MODEL_PROVIDER", "")
+	t.Setenv("MSCLI_MODEL_NAME", "")
+	t.Setenv("MSCLI_MODEL_ENDPOINT", "https://example.com/v1")
+	if !hasModelEnvOverride() {
+		t.Fatalf("endpoint override should be detected")
+	}
+}

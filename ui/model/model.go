@@ -47,39 +47,44 @@ type Message struct {
 type EventType string
 
 const (
-	TaskUpdated   EventType = "TaskUpdated"
-	CmdStarted    EventType = "CmdStarted"
-	CmdOutput     EventType = "CmdOutput"
-	CmdFinished   EventType = "CmdFinished"
-	AnalysisReady EventType = "AnalysisReady"
-	AgentReply    EventType = "AgentReply"
-	AgentThinking EventType = "AgentThinking"
-	TokenUpdate   EventType = "TokenUpdate"
-	ToolRead      EventType = "ToolRead"
-	ToolGrep      EventType = "ToolGrep"
-	ToolGlob      EventType = "ToolGlob"
-	ToolEdit      EventType = "ToolEdit"
-	ToolWrite     EventType = "ToolWrite"
-	ToolError     EventType = "ToolError"
-	ModelUpdate   EventType = "ModelUpdate"
-	ClearChat     EventType = "ClearChat"
-	CompactChat   EventType = "CompactChat"
-	Done          EventType = "Done"
+	TaskUpdated      EventType = "TaskUpdated"
+	ApprovalRequired EventType = "ApprovalRequired"
+	ApprovalResolved EventType = "ApprovalResolved"
+	CmdStarted       EventType = "CmdStarted"
+	CmdOutput        EventType = "CmdOutput"
+	CmdFinished      EventType = "CmdFinished"
+	AnalysisReady    EventType = "AnalysisReady"
+	AgentReply       EventType = "AgentReply"
+	AgentThinking    EventType = "AgentThinking"
+	TokenUpdate      EventType = "TokenUpdate"
+	ToolRead         EventType = "ToolRead"
+	ToolGrep         EventType = "ToolGrep"
+	ToolGlob         EventType = "ToolGlob"
+	ToolEdit         EventType = "ToolEdit"
+	ToolWrite        EventType = "ToolWrite"
+	ToolError        EventType = "ToolError"
+	ModelUpdate      EventType = "ModelUpdate"
+	ClearChat        EventType = "ClearChat"
+	CompactChat      EventType = "CompactChat"
+	Done             EventType = "Done"
 )
 
 // Event is sent from the agent loop to the TUI.
 // Implements tea.Msg so Bubble Tea can route it.
 type Event struct {
-	Type          EventType
-	Task          string
-	Message       string
-	ToolName      string
-	Summary       string
-	CtxUsed       int
-	TokensUsed    int
-	ModelProvider string
-	ModelName     string
-	KeepMessages  int
+	Type           EventType
+	Task           string
+	Message        string
+	ToolName       string
+	Summary        string
+	ApprovalID     int64
+	ApprovalTool   string
+	ApprovalAction string
+	CtxUsed        int
+	TokensUsed     int
+	ModelProvider  string
+	ModelName      string
+	KeepMessages   int
 }
 
 // State is the central UI state.
@@ -95,14 +100,17 @@ type State struct {
 }
 
 // NewState returns an initial empty state.
-func NewState(version, workDir, repoURL, modelProvider, modelName string) State {
+func NewState(version, workDir, repoURL, modelProvider, modelName string, ctxMax int) State {
+	if ctxMax <= 0 {
+		ctxMax = 128000
+	}
 	return State{
 		Version: version,
 		Tasks:   []TaskInfo{},
 		Model: ModelInfo{
 			Provider: modelProvider,
 			Name:     modelName,
-			CtxMax:   128000,
+			CtxMax:   ctxMax,
 		},
 		WorkDir: workDir,
 		RepoURL: repoURL,

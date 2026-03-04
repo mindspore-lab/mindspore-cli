@@ -107,9 +107,9 @@ type App struct {
 
 // New creates a new App driven by the given event channel.
 // userCh may be nil (demo mode) — user input won't be forwarded.
-func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelProvider, modelName string) App {
+func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelProvider, modelName string, ctxMax int) App {
 	return App{
-		state:         model.NewState(version, workDir, repoURL, modelProvider, modelName),
+		state:         model.NewState(version, workDir, repoURL, modelProvider, modelName, ctxMax),
 		input:         components.NewTextInput(),
 		spinner:       components.NewSpinner(),
 		step:          newStepProgress(),
@@ -270,7 +270,11 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			select {
 			case a.userCh <- val:
 			default:
-				// drop if buffer full — avoids freezing the UI
+				a.state = a.state.WithMessage(model.Message{
+					Kind:    model.MsgAgent,
+					Content: "Input queue is busy; the message was not sent. Please retry.",
+				})
+				a.updateViewport()
 			}
 		}
 		return a, nil
@@ -298,6 +302,14 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	case model.AgentReply:
 		a.completeThinkingStep()
 		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message})
+
+	case model.ApprovalRequired:
+		msg := fmt.Sprintf("Approval required (#%d): %s %s", ev.ApprovalID, ev.ApprovalTool, strings.TrimSpace(ev.ApprovalAction))
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: msg})
+
+	case model.ApprovalResolved:
+		msg := fmt.Sprintf("Approval resolved (#%d): %s", ev.ApprovalID, strings.TrimSpace(ev.Message))
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: msg})
 
 	case model.CmdStarted:
 		a.step.commands++

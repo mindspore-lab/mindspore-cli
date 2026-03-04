@@ -12,11 +12,15 @@ func (a *Application) persistSessionState() error {
 	st := a.SessionState
 	st.Model = a.SessionModel
 
-	if key := strings.TrimSpace(os.Getenv(a.Config.Providers.OpenAI.APIKeyEnv)); key != "" {
-		st.APIKeys.OpenAI = key
-	}
-	if key := strings.TrimSpace(os.Getenv(a.Config.Providers.OpenRouter.APIKeyEnv)); key != "" {
-		st.APIKeys.OpenRouter = key
+	if a.Config.Session.PersistAPIKeys {
+		if key := strings.TrimSpace(os.Getenv(a.Config.Providers.OpenAI.APIKeyEnv)); key != "" {
+			st.APIKeys.OpenAI = key
+		}
+		if key := strings.TrimSpace(os.Getenv(a.Config.Providers.OpenRouter.APIKeyEnv)); key != "" {
+			st.APIKeys.OpenRouter = key
+		}
+	} else {
+		st.APIKeys = PersistedAPIKeys{}
 	}
 
 	if err := SavePersistentState(a.SessionPath, st); err != nil {

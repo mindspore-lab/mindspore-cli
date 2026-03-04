@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -93,12 +94,12 @@ func (a *Application) cmdWeekly(args []string) {
 	if len(args) == 0 || args[0] != "status" {
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
-			Message: "Usage: /weekly status [path] (default: weekly.md)",
+			Message: "Usage: /weekly status [path] (default: weekly.md, fallback: docs/updates/WEEKLY_TEMPLATE.md)",
 		}
 		return
 	}
 
-	path := "weekly.md"
+	path := resolveWeeklyPath()
 	if len(args) > 1 {
 		path = args[1]
 	}
@@ -401,6 +402,7 @@ func (a *Application) renderPermStatus() string {
 		fmt.Sprintf("session_approved: %d", st.SessionApproved),
 		fmt.Sprintf("whitelist: %s", joinOrNone(st.Whitelist)),
 		fmt.Sprintf("blacklist: %s", joinOrNone(st.Blacklist)),
+		fmt.Sprintf("pending_count: %d", st.PendingCount),
 	}
 	if st.Pending != nil {
 		lines = append(lines, fmt.Sprintf("pending: [%d] %s %s", st.Pending.ID, st.Pending.Tool, st.Pending.Action))
@@ -456,4 +458,17 @@ func parsePositiveInt(s string) (int, error) {
 		n = n*10 + int(r-'0')
 	}
 	return n, nil
+}
+
+func resolveWeeklyPath() string {
+	candidates := []string{
+		"weekly.md",
+		"docs/updates/WEEKLY_TEMPLATE.md",
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return "weekly.md"
 }

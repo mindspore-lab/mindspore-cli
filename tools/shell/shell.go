@@ -18,7 +18,7 @@ func NewTool(workDir string, timeout time.Duration) *Tool {
 	}
 }
 
-// Run executes a shell command in zsh.
+// Run executes a shell command via bash -lc.
 func (t *Tool) Run(ctx context.Context, command string) (string, int, error) {
 	res := t.runner.Run(ctx, command)
 	return res.Output, res.ExitCode, res.Err

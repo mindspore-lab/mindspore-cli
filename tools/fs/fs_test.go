@@ -59,3 +59,30 @@ func TestToolGrep_LongLine(t *testing.T) {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
 }
+
+func TestToolGlobRecursivePattern(t *testing.T) {
+	root := t.TempDir()
+	tool := NewTool(root)
+
+	files := []string{
+		filepath.Join(root, "configs", "a.yaml"),
+		filepath.Join(root, "configs", "nested", "b.yaml"),
+		filepath.Join(root, "configs", "nested", "c.txt"),
+	}
+	for _, p := range files {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	matches, err := tool.Glob(".", "configs/**/*.yaml", 10)
+	if err != nil {
+		t.Fatalf("Glob failed: %v", err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 yaml matches, got %d (%v)", len(matches), matches)
+	}
+}

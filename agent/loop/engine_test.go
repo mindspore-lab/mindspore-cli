@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vigo999/ms-cli/integrations/domain"
 )
@@ -58,6 +59,9 @@ func (c shellLoopClient) Generate(ctx context.Context, req domain.GenerateReques
 type nopFS struct{}
 
 func (nopFS) Read(path string) (string, error) { return "", nil }
+func (nopFS) Glob(path, pattern string, maxMatches int) ([]string, error) {
+	return nil, nil
+}
 func (nopFS) Grep(path, pattern string, maxMatches int) ([]string, error) {
 	return nil, nil
 }
@@ -155,5 +159,109 @@ func TestRunWithContext_RepeatedShellLoopGuardStops(t *testing.T) {
 	}
 	if !strings.Contains(last.Message, "重复命令循环") {
 		t.Fatalf("expected loop-guard stop message, got %q", last.Message)
+	}
+}
+
+type budgetFactory struct{}
+
+func (f budgetFactory) ClientFor(spec domain.ModelSpec) (domain.ModelClient, error) {
+	return budgetClient{}, nil
+}
+
+func (f budgetFactory) Providers() []domain.ProviderInfo { return nil }
+
+type budgetClient struct{}
+
+func (c budgetClient) Generate(ctx context.Context, req domain.GenerateRequest) (*domain.GenerateResponse, error) {
+	return &domain.GenerateResponse{
+		Text: `{"action":"final","final":"done"}`,
+		Usage: domain.Usage{
+			PromptTokens:     120,
+			CompletionTokens: 40,
+			TotalTokens:      160,
+		},
+	}, nil
+}
+
+func TestRunWithContext_StopsOnTokenBudget(t *testing.T) {
+	engine := NewEngine(Config{
+		ModelFactory:   budgetFactory{},
+		DefaultMaxStep: 1,
+		MaxTotalTokens: 100,
+	})
+
+	events, err := engine.RunWithContext(context.Background(), Task{
+		Description: "analyze quickly",
+		Model: ModelSpec{
+			Provider: "openai",
+			Name:     "gpt-4o-mini",
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunWithContext failed: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatalf("expected events")
+	}
+	last := events[len(events)-1]
+	if last.Type != EventReply || !strings.Contains(last.Message, "token budget exceeded") {
+		t.Fatalf("expected budget stop reply, got %#v", last)
+	}
+}
+
+type approvalFactory struct{}
+
+func (f approvalFactory) ClientFor(spec domain.ModelSpec) (domain.ModelClient, error) {
+	return approvalClient{}, nil
+}
+
+func (f approvalFactory) Providers() []domain.ProviderInfo { return nil }
+
+type approvalClient struct{}
+
+func (c approvalClient) Generate(ctx context.Context, req domain.GenerateRequest) (*domain.GenerateResponse, error) {
+	return &domain.GenerateResponse{
+		Text: `{"action":"shell","command":"rm -rf /tmp/x"}`,
+		Usage: domain.Usage{
+			PromptTokens:     10,
+			CompletionTokens: 5,
+			TotalTokens:      15,
+		},
+	}, nil
+}
+
+func TestRunWithContext_BlocksOnApproval(t *testing.T) {
+	pm := NewPermissionManager(false, nil)
+	engine := NewEngine(Config{
+		FS:                   nopFS{},
+		Shell:                nopShell{},
+		ModelFactory:         approvalFactory{},
+		Permission:           pm,
+		RequireApprovalBlock: true,
+		DefaultMaxStep:       1,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
+	defer cancel()
+
+	events, err := engine.RunWithContext(ctx, Task{
+		Description: "dangerous task",
+		Model: ModelSpec{
+			Provider: "openai",
+			Name:     "gpt-4o-mini",
+		},
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded while waiting approval, got %v", err)
+	}
+	foundApproval := false
+	for _, ev := range events {
+		if ev.Type == EventApprovalRequired {
+			foundApproval = true
+			break
+		}
+	}
+	if !foundApproval {
+		t.Fatalf("expected approval required event, got %#v", events)
 	}
 }

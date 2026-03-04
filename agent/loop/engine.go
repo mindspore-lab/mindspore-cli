@@ -16,7 +16,7 @@ const plannerSystemPrompt = `You are ms-cli planner.
 Return ONLY JSON, no markdown.
 Schema:
 {
-  "action":"read|grep|edit|write|shell|final",
+  "action":"glob|read|grep|edit|write|shell|final",
   "path":"optional",
   "pattern":"optional regex for grep",
   "old_text":"optional for edit",
@@ -45,6 +45,10 @@ type Config struct {
 	ContextCompactionRate float64
 	ContextMaxEntries     int
 	MaxRepeatedShell      int
+	MaxWallTimeSec        int
+	MaxTotalTokens        int
+	MaxTotalCostUSD       float64
+	RequireApprovalBlock  bool
 }
 
 // Engine drives task execution and emits events.
@@ -60,6 +64,10 @@ type Engine struct {
 	contextCompactionRate float64
 	contextMaxEntries     int
 	maxRepeatedShell      int
+	maxWallTime           time.Duration
+	maxTotalTokens        int
+	maxTotalCostUSD       float64
+	requireApprovalBlock  bool
 }
 
 const assistantSystemPrompt = `You are ms-cli assistant in a terminal UI.
@@ -101,6 +109,15 @@ func NewEngine(cfg Config) *Engine {
 	if maxRepeatedShell <= 0 {
 		maxRepeatedShell = 2
 	}
+	maxWallTime := time.Duration(cfg.MaxWallTimeSec) * time.Second
+	maxTotalTokens := cfg.MaxTotalTokens
+	if maxTotalTokens < 0 {
+		maxTotalTokens = 0
+	}
+	maxTotalCostUSD := cfg.MaxTotalCostUSD
+	if maxTotalCostUSD < 0 {
+		maxTotalCostUSD = 0
+	}
 
 	return &Engine{
 		fs:                    cfg.FS,
@@ -114,6 +131,10 @@ func NewEngine(cfg Config) *Engine {
 		contextCompactionRate: contextRatio,
 		contextMaxEntries:     contextEntries,
 		maxRepeatedShell:      maxRepeatedShell,
+		maxWallTime:           maxWallTime,
+		maxTotalTokens:        maxTotalTokens,
+		maxTotalCostUSD:       maxTotalCostUSD,
+		requireApprovalBlock:  cfg.RequireApprovalBlock,
 	}
 }
 
@@ -197,10 +218,18 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 
 	totalCtx := 0
 	totalTokens := 0
+	totalCostUSD := 0.0
+	startedAt := time.Now()
 
 	for step := 1; ; step++ {
 		if maxSteps > 0 && step > maxSteps {
 			break
+		}
+		if e.maxWallTime > 0 && time.Since(startedAt) > e.maxWallTime {
+			msg := fmt.Sprintf("Stopped: wall-time budget exceeded (%s).", e.maxWallTime.Round(time.Second))
+			push(e.newEvent(EventReply, msg, "", ""))
+			_ = e.writeTrace("budget_exceeded", map[string]any{"type": "wall_time", "limit_sec": int(e.maxWallTime.Seconds())})
+			return events, nil
 		}
 		if err := ctx.Err(); err != nil {
 			push(e.newEvent(EventReply, "任务已暂停。", "", ""))
@@ -216,12 +245,25 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 		if usage != nil {
 			totalCtx += usage.PromptTokens
 			totalTokens += usage.TotalTokens
+			totalCostUSD += estimateCostUSD(task.Model.Provider, *usage)
 			push(Event{
 				Type:       EventTokenUsage,
 				CtxUsed:    totalCtx,
 				TokensUsed: totalTokens,
 				Time:       time.Now().UTC(),
 			})
+			if e.maxTotalTokens > 0 && totalTokens >= e.maxTotalTokens {
+				msg := fmt.Sprintf("Stopped: token budget exceeded (%d/%d).", totalTokens, e.maxTotalTokens)
+				push(e.newEvent(EventReply, msg, "", ""))
+				_ = e.writeTrace("budget_exceeded", map[string]any{"type": "tokens", "used": totalTokens, "limit": e.maxTotalTokens})
+				return events, nil
+			}
+			if e.maxTotalCostUSD > 0 && totalCostUSD >= e.maxTotalCostUSD {
+				msg := fmt.Sprintf("Stopped: estimated cost budget exceeded (%.4f/%.4f USD).", totalCostUSD, e.maxTotalCostUSD)
+				push(e.newEvent(EventReply, msg, "", ""))
+				_ = e.writeTrace("budget_exceeded", map[string]any{"type": "cost_usd", "used": totalCostUSD, "limit": e.maxTotalCostUSD})
+				return events, nil
+			}
 		}
 		if planErr != nil {
 			if errors.Is(planErr, context.Canceled) {
@@ -252,8 +294,40 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 			_ = e.writeTrace("task_complete", map[string]any{"task": task.Description, "steps": step})
 			return events, nil
 
+		case "glob":
+			pattern := strings.TrimSpace(action.Pattern)
+			if pattern == "" {
+				pattern = strings.TrimSpace(action.Path)
+			}
+			if pattern == "" {
+				pattern = "**/*"
+			}
+			target := "."
+			allowed, permErr := e.checkPermission(ctx, "glob", pattern, target, push)
+			if permErr != nil {
+				return events, permErr
+			}
+			if !allowed {
+				ctxManager.Add("glob", "denied by permissions: "+pattern)
+				continue
+			}
+			matches, globErr := e.fs.Glob(target, pattern, 100)
+			if globErr != nil {
+				push(e.newEvent(EventToolError, globErr.Error(), "Glob", ""))
+				ctxManager.Add("glob", "failed: "+globErr.Error())
+				continue
+			}
+			msg := fmt.Sprintf("%q in %s", pattern, target)
+			push(e.newEvent(EventToolGlob, msg, "Glob", fmt.Sprintf("%d files", len(matches))))
+			ctxManager.Add("glob", fmt.Sprintf("%s\n%s", msg, truncate(strings.Join(matches, "\n"), 2000)))
+			_ = e.writeTrace("tool_glob", map[string]any{"path": target, "pattern": pattern, "matches": len(matches)})
+
 		case "read":
-			if !e.checkPermission("read", action.Path, action.Path, &events, emit) {
+			allowed, permErr := e.checkPermission(ctx, "read", action.Path, action.Path, push)
+			if permErr != nil {
+				return events, permErr
+			}
+			if !allowed {
 				ctxManager.Add("read", "denied by permissions: "+strings.TrimSpace(action.Path))
 				continue
 			}
@@ -279,7 +353,11 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 			if target == "" {
 				target = "."
 			}
-			if !e.checkPermission("grep", action.Pattern, target, &events, emit) {
+			allowed, permErr := e.checkPermission(ctx, "grep", action.Pattern, target, push)
+			if permErr != nil {
+				return events, permErr
+			}
+			if !allowed {
 				ctxManager.Add("grep", fmt.Sprintf("denied by permissions: %q in %s", action.Pattern, target))
 				continue
 			}
@@ -295,7 +373,11 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 			_ = e.writeTrace("tool_grep", map[string]any{"path": target, "pattern": action.Pattern, "matches": len(matches)})
 
 		case "edit":
-			if !e.checkPermission("edit", action.Path, action.Path, &events, emit) {
+			allowed, permErr := e.checkPermission(ctx, "edit", action.Path, action.Path, push)
+			if permErr != nil {
+				return events, permErr
+			}
+			if !allowed {
 				ctxManager.Add("edit", "denied by permissions: "+strings.TrimSpace(action.Path))
 				continue
 			}
@@ -310,7 +392,11 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 			_ = e.writeTrace("tool_edit", map[string]any{"path": action.Path})
 
 		case "write":
-			if !e.checkPermission("write", action.Path, action.Path, &events, emit) {
+			allowed, permErr := e.checkPermission(ctx, "write", action.Path, action.Path, push)
+			if permErr != nil {
+				return events, permErr
+			}
+			if !allowed {
 				ctxManager.Add("write", "denied by permissions: "+strings.TrimSpace(action.Path))
 				continue
 			}
@@ -326,7 +412,11 @@ func (e *Engine) runWithContext(ctx context.Context, task Task, emit func(Event)
 			_ = e.writeTrace("tool_write", map[string]any{"path": action.Path, "bytes": written})
 
 		case "shell":
-			if !e.checkPermission("shell", action.Command, "", &events, emit) {
+			allowed, permErr := e.checkPermission(ctx, "shell", action.Command, "", push)
+			if permErr != nil {
+				return events, permErr
+			}
+			if !allowed {
 				ctxManager.Add("shell", "denied by permissions: "+strings.TrimSpace(action.Command))
 				continue
 			}
@@ -422,29 +512,97 @@ func (e *Engine) planNext(
 	return action, &resp.Usage, raw, nil
 }
 
-func (e *Engine) checkPermission(tool, action, path string, events *[]Event, emit func(Event)) bool {
+func (e *Engine) checkPermission(ctx context.Context, tool, action, path string, push func(Event)) (bool, error) {
 	if e.permission == nil {
-		return true
+		return true, nil
 	}
-	allowed, err := e.permission.Request(tool, action, path)
-	if err != nil {
-		ev := e.newEvent(EventToolError, err.Error(), title(tool), "")
-		*events = append(*events, ev)
-		if emit != nil {
-			emit(ev)
+	var pending *ApprovalRequest
+
+	for {
+		decision, req, err := e.permission.Request(tool, action, path)
+		if err != nil {
+			push(e.newEvent(EventToolError, err.Error(), title(tool), ""))
+			return false, err
 		}
-		return false
-	}
-	if !allowed {
-		msg := fmt.Sprintf("permission denied: %s %s", tool, strings.TrimSpace(action))
-		ev := e.newEvent(EventToolError, msg, title(tool), "")
-		*events = append(*events, ev)
-		if emit != nil {
-			emit(ev)
+
+		switch decision {
+		case DecisionAllow:
+			if pending != nil {
+				push(Event{
+					Type:           EventApprovalResolved,
+					Message:        fmt.Sprintf("approval resolved: #%d approved", pending.ID),
+					ApprovalID:     pending.ID,
+					ApprovalTool:   pending.Tool,
+					ApprovalAction: pending.Action,
+					Time:           time.Now().UTC(),
+				})
+				_ = e.writeTrace("approval_resolved", map[string]any{
+					"id":     pending.ID,
+					"tool":   pending.Tool,
+					"action": pending.Action,
+					"result": "approved",
+				})
+			}
+			return true, nil
+
+		case DecisionDeny:
+			msg := fmt.Sprintf("permission denied: %s %s", tool, strings.TrimSpace(action))
+			push(e.newEvent(EventToolError, msg, title(tool), ""))
+			if req != nil {
+				push(Event{
+					Type:           EventApprovalResolved,
+					Message:        fmt.Sprintf("approval resolved: #%d rejected", req.ID),
+					ApprovalID:     req.ID,
+					ApprovalTool:   req.Tool,
+					ApprovalAction: req.Action,
+					Time:           time.Now().UTC(),
+				})
+				_ = e.writeTrace("approval_resolved", map[string]any{
+					"id":     req.ID,
+					"tool":   req.Tool,
+					"action": req.Action,
+					"result": "rejected",
+				})
+			}
+			return false, nil
+
+		case DecisionPending:
+			if req == nil {
+				return false, fmt.Errorf("permission pending without request details")
+			}
+			if pending == nil {
+				pending = req
+				msg := (&ApprovalRequiredError{Request: *req}).Error()
+				push(e.newEvent(EventToolError, msg, title(tool), ""))
+				push(Event{
+					Type:           EventApprovalRequired,
+					Message:        msg,
+					ApprovalID:     req.ID,
+					ApprovalTool:   req.Tool,
+					ApprovalAction: req.Action,
+					Time:           time.Now().UTC(),
+				})
+				_ = e.writeTrace("approval_required", map[string]any{
+					"id":     req.ID,
+					"tool":   req.Tool,
+					"action": req.Action,
+					"path":   req.Path,
+				})
+			}
+			if !e.requireApprovalBlock {
+				return false, nil
+			}
+			select {
+			case <-ctx.Done():
+				push(e.newEvent(EventReply, "任务已暂停。", "", ""))
+				return false, ctx.Err()
+			case <-time.After(300 * time.Millisecond):
+			}
+
+		default:
+			return false, fmt.Errorf("unsupported permission decision: %q", decision)
 		}
-		return false
 	}
-	return true
 }
 
 func (e *Engine) newEvent(t EventType, msg, toolName, summary string) Event {
@@ -512,6 +670,18 @@ func splitLines(s string, max int) []string {
 		out = append(out, "... output truncated ...")
 	}
 	return out
+}
+
+func estimateCostUSD(provider string, usage domain.Usage) float64 {
+	// Conservative fallback estimate when per-model pricing is not configured.
+	ratePer1K := 0.01
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "openrouter":
+		ratePer1K = 0.01
+	case "openai":
+		ratePer1K = 0.01
+	}
+	return (float64(usage.TotalTokens) / 1000.0) * ratePer1K
 }
 
 type shellLoopGuard struct {

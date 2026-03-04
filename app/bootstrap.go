@@ -41,11 +41,11 @@ func Bootstrap(demo bool) (*Application, error) {
 	}
 
 	openAIKey := strings.TrimSpace(os.Getenv(cfg.Providers.OpenAI.APIKeyEnv))
-	if openAIKey == "" {
+	if openAIKey == "" && cfg.Session.PersistAPIKeys {
 		openAIKey = strings.TrimSpace(sessionState.APIKeys.OpenAI)
 	}
 	openRouterKey := strings.TrimSpace(os.Getenv(cfg.Providers.OpenRouter.APIKeyEnv))
-	if openRouterKey == "" {
+	if openRouterKey == "" && cfg.Session.PersistAPIKeys {
 		openRouterKey = strings.TrimSpace(sessionState.APIKeys.OpenRouter)
 	}
 
@@ -86,15 +86,23 @@ func Bootstrap(demo bool) (*Application, error) {
 		ContextMaxTokens:      cfg.Context.MaxTokens,
 		ContextCompactionRate: cfg.Context.CompactionRatio,
 		ContextMaxEntries:     cfg.Memory.MaxItems,
-		MaxRepeatedShell:      2,
+		MaxRepeatedShell:      cfg.Engine.MaxRepeatedShell,
+		MaxWallTimeSec:        cfg.Engine.MaxWallTimeSec,
+		MaxTotalTokens:        cfg.Budget.MaxTokenLimit(),
+		MaxTotalCostUSD:       cfg.Budget.MaxCost,
+		RequireApprovalBlock:  cfg.Permissions.RequireApprovalBlock,
 	})
 
 	sessionState.Model = sessionModel
-	if openAIKey != "" {
-		sessionState.APIKeys.OpenAI = openAIKey
-	}
-	if openRouterKey != "" {
-		sessionState.APIKeys.OpenRouter = openRouterKey
+	if cfg.Session.PersistAPIKeys {
+		if openAIKey != "" {
+			sessionState.APIKeys.OpenAI = openAIKey
+		}
+		if openRouterKey != "" {
+			sessionState.APIKeys.OpenRouter = openRouterKey
+		}
+	} else {
+		sessionState.APIKeys = PersistedAPIKeys{}
 	}
 	if saveErr := SavePersistentState(sessionPath, sessionState); saveErr != nil {
 		return nil, saveErr

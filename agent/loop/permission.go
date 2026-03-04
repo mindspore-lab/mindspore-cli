@@ -8,9 +8,17 @@ import (
 	"time"
 )
 
+type Decision string
+
+const (
+	DecisionAllow   Decision = "allow"
+	DecisionDeny    Decision = "deny"
+	DecisionPending Decision = "pending"
+)
+
 // PermissionService controls tool-call permissions.
 type PermissionService interface {
-	Request(tool, action, path string) (bool, error)
+	Request(tool, action, path string) (Decision, *ApprovalRequest, error)
 }
 
 type ApprovalRequest struct {
@@ -41,6 +49,7 @@ type PermissionStatus struct {
 	Blacklist       []string
 	SessionApproved int
 	Pending         *ApprovalRequest
+	PendingCount    int
 }
 
 type PermissionManager struct {
@@ -50,7 +59,9 @@ type PermissionManager struct {
 	blacklist        map[string]struct{}
 	sessionApprovals map[string]struct{}
 	onceApprovalKey  string
-	pending          *ApprovalRequest
+	deniedByKey      map[string]ApprovalRequest
+	pendingQueue     []ApprovalRequest
+	pendingByKey     map[string]ApprovalRequest
 	nextID           int64
 }
 
@@ -60,6 +71,9 @@ func NewPermissionManager(skipRequests bool, allowedTools []string) *PermissionM
 		whitelist:        make(map[string]struct{}, len(allowedTools)),
 		blacklist:        map[string]struct{}{},
 		sessionApprovals: map[string]struct{}{},
+		deniedByKey:      map[string]ApprovalRequest{},
+		pendingQueue:     make([]ApprovalRequest, 0, 8),
+		pendingByKey:     map[string]ApprovalRequest{},
 		nextID:           0,
 	}
 	for _, t := range allowedTools {
@@ -77,7 +91,7 @@ func NewStaticPermissionService(skipRequests bool, allowedTools []string) *Permi
 	return NewPermissionManager(skipRequests, allowedTools)
 }
 
-func (m *PermissionManager) Request(tool, action, path string) (bool, error) {
+func (m *PermissionManager) Request(tool, action, path string) (Decision, *ApprovalRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -86,36 +100,43 @@ func (m *PermissionManager) Request(tool, action, path string) (bool, error) {
 	p := strings.TrimSpace(path)
 
 	if m.yoloMode {
-		return true, nil
+		return DecisionAllow, nil, nil
 	}
 	if _, blocked := m.blacklist[t]; blocked {
-		return false, fmt.Errorf("permission denied by blacklist: %s", t)
+		return DecisionDeny, nil, nil
 	}
 	if len(m.whitelist) > 0 {
 		if _, ok := m.whitelist[t]; !ok {
-			return false, fmt.Errorf("permission denied: %s not in whitelist", t)
+			return DecisionDeny, nil, nil
 		}
 	}
 
 	if !requiresApproval(t, a, p) {
-		return true, nil
+		return DecisionAllow, nil, nil
 	}
 
 	key := requestKey(t, a, p)
 	if _, ok := m.sessionApprovals[key]; ok {
-		return true, nil
+		return DecisionAllow, nil, nil
 	}
 	if m.onceApprovalKey == key {
 		m.onceApprovalKey = ""
-		return true, nil
+		return DecisionAllow, nil, nil
 	}
 
-	if m.pending != nil && m.pending.Key == key {
-		return false, &ApprovalRequiredError{Request: *m.pending}
+	if deniedReq, denied := m.deniedByKey[key]; denied {
+		delete(m.deniedByKey, key)
+		req := deniedReq
+		return DecisionDeny, &req, nil
+	}
+
+	if req, ok := m.pendingByKey[key]; ok {
+		c := req
+		return DecisionPending, &c, nil
 	}
 
 	m.nextID++
-	req := &ApprovalRequest{
+	req := ApprovalRequest{
 		ID:        m.nextID,
 		Tool:      t,
 		Action:    a,
@@ -123,42 +144,42 @@ func (m *PermissionManager) Request(tool, action, path string) (bool, error) {
 		Key:       key,
 		CreatedAt: time.Now().UTC(),
 	}
-	m.pending = req
-	return false, &ApprovalRequiredError{Request: *req}
+	m.pendingQueue = append(m.pendingQueue, req)
+	m.pendingByKey[key] = req
+	c := req
+	return DecisionPending, &c, nil
 }
 
 func (m *PermissionManager) ApproveOncePending() (ApprovalRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.pending == nil {
+	req, ok := m.popNextPending()
+	if !ok {
 		return ApprovalRequest{}, fmt.Errorf("no pending approval request")
 	}
-	req := *m.pending
 	m.onceApprovalKey = req.Key
-	m.pending = nil
 	return req, nil
 }
 
 func (m *PermissionManager) ApproveSessionPending() (ApprovalRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.pending == nil {
+	req, ok := m.popNextPending()
+	if !ok {
 		return ApprovalRequest{}, fmt.Errorf("no pending approval request")
 	}
-	req := *m.pending
 	m.sessionApprovals[req.Key] = struct{}{}
-	m.pending = nil
 	return req, nil
 }
 
 func (m *PermissionManager) RejectPending() (ApprovalRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.pending == nil {
+	req, ok := m.popNextPending()
+	if !ok {
 		return ApprovalRequest{}, fmt.Errorf("no pending approval request")
 	}
-	req := *m.pending
-	m.pending = nil
+	m.deniedByKey[req.Key] = req
 	return req, nil
 }
 
@@ -206,12 +227,23 @@ func (m *PermissionManager) Status() PermissionStatus {
 		Whitelist:       sortedKeys(m.whitelist),
 		Blacklist:       sortedKeys(m.blacklist),
 		SessionApproved: len(m.sessionApprovals),
+		PendingCount:    len(m.pendingQueue),
 	}
-	if m.pending != nil {
-		c := *m.pending
+	if len(m.pendingQueue) > 0 {
+		c := m.pendingQueue[0]
 		s.Pending = &c
 	}
 	return s
+}
+
+func (m *PermissionManager) popNextPending() (ApprovalRequest, bool) {
+	if len(m.pendingQueue) == 0 {
+		return ApprovalRequest{}, false
+	}
+	req := m.pendingQueue[0]
+	m.pendingQueue = append([]ApprovalRequest{}, m.pendingQueue[1:]...)
+	delete(m.pendingByKey, req.Key)
+	return req, true
 }
 
 func normalizeTool(tool string) string {

@@ -9,13 +9,14 @@ providers:
     endpoint: https://openrouter.ai/api/v1
     api_key_env: OPENROUTER_API_KEY
 budget:
-  max_tokens: 32768
+  max_tokens_m: 1
   max_cost_usd: 10
 ui:
   enabled: true
 permissions:
   skip_requests: false
   allowed_tools: []
+  require_approval_block: true
 context:
   max_tokens: 24000
   compaction_threshold: 0.85
@@ -27,6 +28,10 @@ engine:
   max_steps: 0
   shell_timeout_sec: 120
   max_output_lines: 200
+  max_wall_time_sec: 1800
+  max_repeated_shell: 2
+session:
+  persist_api_keys: false
 trace:
   enabled: true
   path: .cache/mscli/trace.jsonl

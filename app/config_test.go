@@ -57,3 +57,49 @@ func TestConfigMaxStepsZeroMeansUnlimited(t *testing.T) {
 		t.Fatalf("max_steps should stay 0 after defaults, got %d", cfg.Engine.MaxSteps)
 	}
 }
+
+func TestLoadConfig_DefaultApprovalBlockEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "mscli.yaml")
+	content := `
+model:
+  default_provider: openai
+  default_model: gpt-4o-mini
+providers:
+  openai:
+    endpoint: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+  openrouter:
+    endpoint: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if !cfg.Permissions.RequireApprovalBlock {
+		t.Fatalf("require_approval_block should default to true")
+	}
+	if cfg.Session.PersistAPIKeys {
+		t.Fatalf("persist_api_keys should default to false")
+	}
+}
+
+func TestBudgetMaxTokensM_DefaultIsOneMillion(t *testing.T) {
+	cfg := defaultConfig()
+	if cfg.Budget.MaxTokenLimit() != 1_000_000 {
+		t.Fatalf("default max token limit=%d want 1000000", cfg.Budget.MaxTokenLimit())
+	}
+}
+
+func TestBudgetMaxTokens_BackwardCompatibility(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Budget.MaxTokensM = 0
+	cfg.Budget.MaxTokens = 120000
+	if cfg.Budget.MaxTokenLimit() != 120000 {
+		t.Fatalf("legacy max_tokens should still work, got %d", cfg.Budget.MaxTokenLimit())
+	}
+}
