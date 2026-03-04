@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,6 +14,10 @@ import (
 // Run starts the TUI. In demo mode it feeds fake events; in real mode it
 // bridges user input to the engine.
 func (a *Application) Run() error {
+	if closer, ok := a.traceWriter.(interface{ Close() error }); ok {
+		defer closer.Close()
+	}
+
 	if a.Demo {
 		return a.runDemo()
 	}
@@ -23,7 +28,9 @@ func (a *Application) Run() error {
 // channel, dispatches to the engine, and sends resulting events back.
 func (a *Application) runReal() error {
 	userCh := make(chan string, 8)
-	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL)
+	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.MaxTokens)
+	// Mouse wheel scrolling is enabled by default.
+	// Use /mouse off to disable if needed.
 	p := tea.NewProgram(tui, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	go a.inputLoop(userCh)
@@ -55,33 +62,188 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
-	// Free-form: send to engine
+	// Free-form: send to engine in a goroutine
+	go a.runTask(trimmed)
+}
+
+// runTask runs a task through the engine and sends events to UI.
+func (a *Application) runTask(description string) {
+	// Send thinking event
 	a.EventCh <- model.Event{Type: model.AgentThinking}
 
-	events, err := a.Engine.Run(loop.Task{Description: trimmed})
+	task := loop.Task{
+		ID:          generateTaskID(),
+		Description: description,
+	}
+
+	events, err := a.Engine.Run(task)
 	if err != nil {
+		// Provide user-friendly error message
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "deadline") {
+			errMsg = fmt.Sprintf("%s\n\nTip: The request timed out. This can happen with long conversations. Try:\n  1. Run /compact to reduce context size\n  2. Start a new conversation with /clear\n  3. Increase timeout in config (model.timeout_sec)", errMsg)
+		}
 		a.EventCh <- model.Event{
 			Type:     model.ToolError,
 			ToolName: "Engine",
-			Message:  err.Error(),
+			Message:  errMsg,
 		}
 		return
 	}
 
+	// Convert loop events to UI events
 	for _, ev := range events {
-		a.EventCh <- model.Event{
-			Type:    model.AgentReply,
-			Message: ev.Message,
+		uiEvent := a.convertEvent(ev)
+		if uiEvent != nil {
+			a.EventCh <- *uiEvent
 		}
 	}
+}
+
+// convertEvent converts a loop event to a UI event.
+func (a *Application) convertEvent(ev loop.Event) *model.Event {
+	switch ev.Type {
+	case loop.EventAgentReply:
+		return &model.Event{
+			Type:       model.AgentReply,
+			Message:    ev.Message,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventAgentThinking:
+		return &model.Event{
+			Type:       model.AgentThinking,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventToolRead:
+		return &model.Event{
+			Type:       model.ToolRead,
+			Message:    ev.Message,
+			ToolName:   ev.ToolName,
+			Summary:    ev.Summary,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventToolGrep:
+		return &model.Event{
+			Type:       model.ToolGrep,
+			Message:    ev.Message,
+			ToolName:   ev.ToolName,
+			Summary:    ev.Summary,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventToolGlob:
+		return &model.Event{
+			Type:       model.ToolGlob,
+			Message:    ev.Message,
+			ToolName:   ev.ToolName,
+			Summary:    ev.Summary,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventToolEdit:
+		return &model.Event{
+			Type:       model.ToolEdit,
+			Message:    ev.Message,
+			ToolName:   ev.ToolName,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventToolWrite:
+		return &model.Event{
+			Type:       model.ToolWrite,
+			Message:    ev.Message,
+			ToolName:   ev.ToolName,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventToolError:
+		return &model.Event{
+			Type:       model.ToolError,
+			Message:    ev.Message,
+			ToolName:   ev.ToolName,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventCmdStarted:
+		return &model.Event{
+			Type:       model.CmdStarted,
+			Message:    ev.Message,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventAnalysisReady:
+		return &model.Event{
+			Type:       model.AnalysisReady,
+			Message:    ev.Message,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventTokenUpdate:
+		return &model.Event{
+			Type:       model.TokenUpdate,
+			CtxUsed:    ev.CtxUsed,
+			CtxMax:     ev.CtxMax,
+			TokensUsed: ev.TokensUsed,
+		}
+
+	case loop.EventTaskCompleted:
+		// Task completed, no specific UI event needed
+		return nil
+
+	case loop.EventTaskFailed:
+		return &model.Event{
+			Type:     model.ToolError,
+			ToolName: "Task",
+			Message:  ev.Message,
+		}
+
+	default:
+		// Map other events to AgentReply
+		if ev.Message != "" {
+			return &model.Event{
+				Type:    model.AgentReply,
+				Message: ev.Message,
+			}
+		}
+		return nil
+	}
+}
+
+// generateTaskID generates a unique task ID.
+func generateTaskID() string {
+	return time.Now().Format("20060102-150405-000")
 }
 
 // runDemo starts the TUI with fake events for preview/testing.
 func (a *Application) runDemo() error {
 	go a.fakeAgentLoop()
 
-	tui := ui.New(a.EventCh, nil, Version, a.WorkDir, a.RepoURL)
-	p := tea.NewProgram(tui, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	tui := ui.New(a.EventCh, nil, Version, a.WorkDir, a.RepoURL, "demo-model", a.Config.Context.MaxTokens)
+	// Mouse support disabled to allow free text selection.
+	p := tea.NewProgram(tui, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
