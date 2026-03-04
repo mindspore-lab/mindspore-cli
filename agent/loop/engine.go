@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	ctxmanager "github.com/vigo999/ms-cli/agent/context"
@@ -32,7 +33,7 @@ type Engine struct {
 	permission PermissionService
 
 	// Plan Mode 组件
-	planner   *Planner
+	planner      *Planner
 	planExecutor *PlanExecutor
 	modeCallback ModeCallback
 }
@@ -116,10 +117,10 @@ func (e *Engine) RunWithContext(ctx context.Context, task Task) ([]Event, error)
 // runStandard 标准模式执行
 func (e *Engine) runStandard(ctx context.Context, task Task) ([]Event, error) {
 	exec := &executor{
-		engine:     e,
-		task:       task,
-		events:     make([]Event, 0),
-		startTime:  time.Now(),
+		engine:    e,
+		task:      task,
+		events:    make([]Event, 0),
+		startTime: time.Now(),
 	}
 	return exec.run(ctx)
 }
@@ -269,7 +270,7 @@ func (ex *executor) run(ctx context.Context) ([]Event, error) {
 		if timeout == 0 {
 			timeout = 180 * time.Second // Default 3 minutes
 		}
-		
+
 		llmCtx, cancel := context.WithTimeout(ctx, timeout)
 		resp, err := ex.engine.provider.Complete(llmCtx, &llm.CompletionRequest{
 			Model:       "", // Use provider default
@@ -283,7 +284,7 @@ func (ex *executor) run(ctx context.Context) ([]Event, error) {
 			// Check if it's a timeout error and provide helpful message
 			errMsg := fmt.Sprintf("LLM error: %v", err)
 			if ctx.Err() == context.DeadlineExceeded || llmCtx.Err() == context.DeadlineExceeded {
-				errMsg = fmt.Sprintf("Request timeout. The conversation may be too long (ctx: %d tokens). Try /compact to reduce context size.", 
+				errMsg = fmt.Sprintf("Request timeout. The conversation may be too long (ctx: %d tokens). Try /compact to reduce context size.",
 					ex.engine.ctxManager.TokenUsage().Current)
 			}
 			ex.addEvent(NewEvent(EventTaskFailed, errMsg))
@@ -361,6 +362,16 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 
 	// Check permission
 	action := string(tc.Function.Arguments)
+	if toolName == "shell" {
+		var shellArgs struct {
+			Command string `json:"command"`
+		}
+		if err := json.Unmarshal(tc.Function.Arguments, &shellArgs); err == nil {
+			if cmd := strings.TrimSpace(shellArgs.Command); cmd != "" {
+				action = cmd
+			}
+		}
+	}
 	granted, err := ex.engine.permission.Request(ctx, toolName, action, "")
 	if err != nil {
 		return err
