@@ -13,6 +13,7 @@ import (
 	"github.com/vigo999/ms-cli/configs"
 	"github.com/vigo999/ms-cli/executor"
 	"github.com/vigo999/ms-cli/integrations/llm"
+	anthropic "github.com/vigo999/ms-cli/integrations/llm/anthropic"
 	openai "github.com/vigo999/ms-cli/integrations/llm/openai"
 	"github.com/vigo999/ms-cli/permission"
 	"github.com/vigo999/ms-cli/tools"
@@ -101,6 +102,10 @@ func Bootstrap(cfg BootstrapConfig) (*Application, error) {
 	}
 	if cfg.Key != "" {
 		config.Model.Key = cfg.Key
+	}
+	config.Model.Protocol = configs.NormalizeProtocol(config.Model.Protocol)
+	if strings.TrimSpace(config.Model.URL) == "" {
+		config.Model.URL = defaultURLForProtocol(config.Model.Protocol)
 	}
 
 	// In demo mode, use stub engine
@@ -193,6 +198,9 @@ func Bootstrap(cfg BootstrapConfig) (*Application, error) {
 }
 
 func applyModelSnapshot(cfg *configs.Config, snap session.ModelSnapshot) {
+	if snap.Protocol != "" {
+		cfg.Model.Protocol = configs.NormalizeProtocol(snap.Protocol)
+	}
 	if snap.URL != "" {
 		cfg.Model.URL = snap.URL
 	}
@@ -244,32 +252,59 @@ func sessionMessagesToUI(messages []llm.Message) []model.Message {
 
 // initProvider initializes the LLM provider.
 func initProvider(cfg configs.ModelConfig) (llm.Provider, error) {
+	protocol := configs.NormalizeProtocol(cfg.Protocol)
+	if !configs.IsSupportedProtocol(protocol) {
+		return nil, fmt.Errorf("unsupported protocol: %s", cfg.Protocol)
+	}
+
 	key := strings.TrimSpace(cfg.Key)
 	if key == "" {
 		key = strings.TrimSpace(os.Getenv("MSCLI_API_KEY"))
 	}
 	if key == "" {
-		key = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	}
-	if key == "" {
-		return nil, fmt.Errorf("API key not found (set MSCLI_API_KEY/OPENAI_API_KEY or key in config)")
+		switch protocol {
+		case configs.ProtocolAnthropic:
+			key = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+		default:
+			key = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+		}
 	}
 
 	url := strings.TrimSpace(cfg.URL)
 	if url == "" {
-		url = "https://api.openai.com/v1"
+		url = defaultURLForProtocol(protocol)
 	}
 
-	client, err := openai.NewClient(openai.Config{
-		Key:     key,
-		URL:     url,
-		Model:   cfg.Model,
-		Timeout: time.Duration(cfg.TimeoutSec) * time.Second,
-	})
-	if err != nil {
-		return nil, err
+	if key == "" {
+		return newUnconfiguredProvider(protocol, cfg.Model), nil
 	}
-	return client, nil
+
+	timeout := time.Duration(cfg.TimeoutSec) * time.Second
+	switch protocol {
+	case configs.ProtocolAnthropic:
+		client, err := anthropic.NewClient(anthropic.Config{
+			Key:       key,
+			URL:       url,
+			Model:     cfg.Model,
+			MaxTokens: cfg.MaxTokens,
+			Timeout:   timeout,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return client, nil
+	default:
+		client, err := openai.NewClient(openai.Config{
+			Key:     key,
+			URL:     url,
+			Model:   cfg.Model,
+			Timeout: timeout,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return client, nil
+	}
 }
 
 // initTools initializes the tool registry.

@@ -12,7 +12,6 @@ import (
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/permission"
 	"github.com/vigo999/ms-cli/tools"
-	"github.com/vigo999/ms-cli/trace"
 )
 
 // EngineConfig holds engine configuration.
@@ -34,7 +33,7 @@ type Engine struct {
 	tools      *tools.Registry
 	ctxManager *ctxmanager.Manager
 	permission permission.PermissionService
-	trace      trace.Writer
+	trace      TraceWriter
 	msgSink    MessageSink
 
 	// Plan Mode 组件
@@ -119,7 +118,7 @@ func (e *Engine) SetRunMode(mode plan.RunMode) {
 }
 
 // SetTraceWriter sets the trace writer.
-func (e *Engine) SetTraceWriter(w trace.Writer) {
+func (e *Engine) SetTraceWriter(w TraceWriter) {
 	e.trace = w
 }
 
@@ -329,6 +328,11 @@ type executor struct {
 
 // MessageSink persists chat messages generated during execution.
 type MessageSink func(msg llm.Message) error
+
+// TraceWriter is the minimal trace sink used by the loop engine.
+type TraceWriter interface {
+	Write(eventType string, payload any) error
+}
 
 // run executes the ReAct loop.
 func (ex *executor) run(ctx context.Context) ([]Event, error) {

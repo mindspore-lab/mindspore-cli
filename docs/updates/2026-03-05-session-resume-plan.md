@@ -4,7 +4,7 @@
 - 支持严格模式恢复：`ms-cli resume <session-id>`
 - 支持会话发现：`ms-cli sessions list`
 - 将运行期 session 接入主链路，实现消息实时落盘
-- 将 trace writer 迁入 `agent/session`，`trace` 包保留兼容包装
+- 将 trace writer 迁入 `agent/session`，并移除旧 `trace/writer.go`
 - 恢复时包含：上下文消息、UI 历史、模型快照、权限快照
 
 ## 已落地内容
@@ -42,7 +42,7 @@
 - 运行期 trace 固定写入：
   - `<workdir>/.mscli/sessions/<session-id>.trajectory.jsonl`
   - 同一 session 多次 resume 持续 append。
-- `trace/writer.go` 改为兼容包装层，内部委托 `agent/session` 实现。
+- 旧 `trace/writer.go` 已移除，`agent/loop` 通过最小 `TraceWriter` 接口直接接收会话 writer。
 
 ### 5. 命令行为对齐
 - `/permission`、`/yolo` 修改策略后同步更新 session runtime snapshot。

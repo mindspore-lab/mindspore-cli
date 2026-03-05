@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/vigo999/ms-cli/agent/context"
@@ -11,7 +12,6 @@ import (
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/permission"
 	"github.com/vigo999/ms-cli/tools"
-	"github.com/vigo999/ms-cli/trace"
 	"github.com/vigo999/ms-cli/ui/model"
 )
 
@@ -29,20 +29,38 @@ type Application struct {
 	ctxManager        *context.Manager
 	permService       permission.PermissionService
 	stateManager      *configs.StateManager
-	traceWriter       trace.Writer
+	traceWriter       traceWriter
 	sessionManager    *session.Manager
 	currentSessionID  session.ID
 	initialUIMessages []model.Message
 }
 
-// SetProvider updates model/key and reinitializes the engine.
-// providerName is kept for command compatibility and only accepts "openai".
+type traceWriter interface {
+	Write(eventType string, payload any) error
+	Path() string
+}
+
+// SetProvider updates provider/model/key and reinitializes the engine.
 func (a *Application) SetProvider(providerName, modelName, apiKey string) error {
-	if providerName != "" && providerName != "openai" {
-		return fmt.Errorf("unsupported provider: %s (only openai-compatible is supported)", providerName)
+	currentProtocol := configs.NormalizeProtocol(a.Config.Model.Protocol)
+	targetProtocol := currentProtocol
+	if strings.TrimSpace(providerName) != "" {
+		targetProtocol = configs.NormalizeProtocol(providerName)
+		if !configs.IsSupportedProtocol(targetProtocol) {
+			return fmt.Errorf("unsupported provider: %s (supported: %s, %s)", providerName, configs.ProtocolOpenAI, configs.ProtocolAnthropic)
+		}
+	}
+
+	// If switching provider and URL is default/empty, move to new provider default endpoint.
+	if targetProtocol != currentProtocol {
+		currentURL := strings.TrimSpace(a.Config.Model.URL)
+		if currentURL == "" || currentURL == defaultURLForProtocol(currentProtocol) {
+			a.Config.Model.URL = defaultURLForProtocol(targetProtocol)
+		}
 	}
 
 	// Update config
+	a.Config.Model.Protocol = targetProtocol
 	if modelName != "" {
 		a.Config.Model.Model = modelName
 	}
@@ -115,6 +133,7 @@ func (a *Application) syncSessionRuntime() error {
 
 	snapshot := session.RuntimeSnapshot{
 		Model: session.ModelSnapshot{
+			Protocol:    a.Config.Model.Protocol,
 			URL:         a.Config.Model.URL,
 			Model:       a.Config.Model.Model,
 			Temperature: a.Config.Model.Temperature,
@@ -154,13 +173,9 @@ func collectPermissionSnapshot(ps permission.PermissionService) session.Permissi
 	return snapshot
 }
 
-func currentTracePath(w trace.Writer) string {
+func currentTracePath(w traceWriter) string {
 	if w == nil {
 		return ""
 	}
-	withPath, ok := w.(interface{ Path() string })
-	if !ok {
-		return ""
-	}
-	return withPath.Path()
+	return w.Path()
 }

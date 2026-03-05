@@ -162,10 +162,11 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if val == "" {
 			return a, nil
 		}
+		displayVal := maskSensitiveInput(val)
 		// Reset stats for new task
 		a.state = a.state.ResetStats()
 		a.state = a.state.WithThinking(false)
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: val})
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: displayVal})
 		a.input = a.input.Reset()
 		a.viewport = a.viewport.SetSize(a.width-4, a.chatHeight())
 		a.updateViewport()
@@ -417,4 +418,20 @@ func (a App) View() string {
 		input,
 		hintBar,
 	)
+}
+
+func maskSensitiveInput(input string) string {
+	trimmed := strings.TrimSpace(input)
+	if !strings.HasPrefix(trimmed, "/model") {
+		return input
+	}
+
+	parts := strings.Fields(trimmed)
+	if len(parts) < 3 {
+		return input
+	}
+	if !strings.EqualFold(parts[1], "key") {
+		return input
+	}
+	return "/model key ****"
 }

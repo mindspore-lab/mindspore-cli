@@ -3,9 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/vigo999/ms-cli/agent/context"
+	"github.com/vigo999/ms-cli/agent/loop"
 	"github.com/vigo999/ms-cli/agent/session"
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/permission"
@@ -131,5 +133,45 @@ func TestCmdClearClearsContextAndSession(t *testing.T) {
 	}
 	if len(msgs) != 0 {
 		t.Fatalf("session messages = %d, want 0", len(msgs))
+	}
+}
+
+func TestBootstrapAllowsNoKeyAndFailsLazily(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	defer os.Chdir(wd)
+
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	app, err := Bootstrap(BootstrapConfig{})
+	if err != nil {
+		t.Fatalf("Bootstrap failed without key: %v", err)
+	}
+	defer func() {
+		if c, ok := app.traceWriter.(interface{ Close() error }); ok {
+			_ = c.Close()
+		}
+		if app.sessionManager != nil {
+			_ = app.sessionManager.Close()
+		}
+	}()
+
+	_, err = app.Engine.Run(loop.Task{
+		ID:          "no-key",
+		Description: "say hello",
+	})
+	if err == nil {
+		t.Fatal("expected error when running task without api key")
+	}
+	if !strings.Contains(err.Error(), "API key is not configured") {
+		t.Fatalf("error = %v, want missing key guidance", err)
 	}
 }

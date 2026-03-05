@@ -42,6 +42,7 @@ type RuntimeSnapshot struct {
 
 // ModelSnapshot stores model settings for session resume.
 type ModelSnapshot struct {
+	Protocol    string
 	URL         string
 	Model       string
 	Temperature float64

@@ -92,7 +92,7 @@
 | `agent/session/store.go` | 存储接口抽象 | `Store`（save/load/list/filter/delete/exists） | `Manager` 依赖该接口 |
 | `agent/session/file_store.go` | 文件存储实现 | 基于 JSON 文件存取、过滤、排序、导入导出、清理过期会话 | 默认实现，可被 manager 强转用于 import/export/cleanup |
 | `agent/session/manager.go` | 会话管理器 | 创建/加载/当前会话切换/归档/标签/消息管理/清理/导入导出、runtime 快照更新 | 对内编排 store + 缓存 + autosave |
-| `agent/session/event_writer.go` | 会话轨迹写入 | `EventWriter`、`NewSessionTraceWriter`、`TracePathForSession` | 作为 trace 真实落盘实现（`trace` 包为兼容包装） |
+| `agent/session/event_writer.go` | 会话轨迹写入 | `EventWriter`、`NewSessionTraceWriter`、`TracePathForSession` | 作为 trace 真实落盘实现，供 loop 通过最小 `TraceWriter` 接口注入 |
 | `agent/session/manager_test.go` | 测试覆盖 | 覆盖 manager 生命周期、标签、归档、导入导出、cleanup、ID 格式与冲突后缀 | 验证 session 层行为一致性 |
 | `agent/session/runtime_compat_test.go` | 兼容与恢复测试 | 旧 session JSON 兼容加载、同会话 trace append | 验证恢复与兼容行为 |
 | `agent/session/event_writer_test.go` | 轨迹写入测试 | session trace 路径与写盘行为 | 验证轨迹写入契约 |
@@ -126,7 +126,7 @@ session ---> (通过 app 层接入运行时；包级仍与 loop/context/plan 解
 4. LLM 返回：
    - 有 `ToolCalls`：走 `executeToolCall`，经 `permission.Request` 授权后执行 `tools.Registry` 工具，再把结果 `AddToolResult` 回灌上下文。
    - 无 `ToolCalls`：直接产生 `EventAgentReply` 并结束循环。
-5. 全流程事件通过 `Event` 列表输出，并可同步写入 `trace.Writer`。
+5. 全流程事件通过 `Event` 列表输出，并可同步写入 `TraceWriter`（默认由 `session.EventWriter` 实现）。
 
 ## 3.3 Plan/Review 模式链路
 
@@ -156,7 +156,7 @@ session ---> (通过 app 层接入运行时；包级仍与 loop/context/plan 解
 | --- | --- | --- |
 | `app/main.go` + `app/cli.go` | 解析 `run/resume/sessions list` | 提供会话恢复与可发现性入口 |
 | `app/bootstrap.go` | 创建 `session.Manager`、`context.Manager` 与 `loop.Engine`，并在 `resume` 时恢复消息/模型/权限快照 | 生产模式主装配入口 |
-| `app/wire.go` | `SetProvider` 时重建 `loop.Engine`，复用原 `ctxManager`/`permService`/`trace`，并同步 session runtime 快照 | 模型切换后保持上下文与会话状态一致 |
+| `app/wire.go` | `SetProvider` 时重建 `loop.Engine`，复用原 `ctxManager`/`permService`/`traceWriter`，并同步 session runtime 快照 | 模型切换后保持上下文与会话状态一致 |
 | `app/run.go` | `Engine.Run(task)` 执行任务，`loop.Event` -> `ui/model.Event` 映射 | UI 与 agent 的桥接层 |
 | `executor/runner.go` | 使用 `loop.Task` 类型（兼容接口） | 遗留兼容函数，真实执行由 `Engine.Run` 完成 |
 

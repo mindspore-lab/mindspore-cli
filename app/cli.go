@@ -45,7 +45,7 @@ func parseCLIArgs(args []string) (cliOptions, error) {
 	fs.SetOutput(io.Discard)
 	fs.BoolVar(&opts.Bootstrap.Demo, "demo", false, "Run in demo mode")
 	fs.StringVar(&opts.Bootstrap.ConfigPath, "config", "", "Path to config file")
-	fs.StringVar(&opts.Bootstrap.URL, "url", "", "OpenAI-compatible base URL")
+	fs.StringVar(&opts.Bootstrap.URL, "url", "", "Model API base URL")
 	fs.StringVar(&opts.Bootstrap.Model, "model", "", "Model name")
 	fs.StringVar(&opts.Bootstrap.Key, "api-key", "", "API key")
 	if err := fs.Parse(flagArgs); err != nil {
