@@ -1,94 +1,265 @@
 ## Detailed Code Review: PR #5 - Tool System Update
 
+**PR:** #5 (`townwish4git/ms-cli:tool0306` -> `main`)
+**Author:** townwish4git
+**Scope:** 60 files, +6,818 / -3,070 lines
+
+---
+
 ### Overall Assessment
 
-This is a **substantial architectural refactoring** (60 files, +6,818/-3,070 lines) that modernizes the tool system from simple stubs into a production-ready, extensible framework. The direction is sound, but there are several issues that should be addressed before merging.
+This is a substantial architectural refactoring that modernizes the tool system from simple stubs into a production-ready, extensible framework. The direction is sound — interface-based registry, structured results, permission engine, event bus — but there are several issues across security, concurrency, and test coverage that should be addressed before merging.
 
 ---
 
 ### Architecture (Positive)
 
-1. **Interface-based Registry** (`registry.Registry` interface replacing `*tools.Registry` pointer) — Good move. This enables proper mocking in tests and decouples consumers from implementation details.
+1. **Interface-based Registry** (`registry.Registry` replacing `*tools.Registry`) — Enables proper mocking and decouples consumers from implementation. The `DefaultRegistry` with RWMutex and `BuiltInRegistry` extension is well-structured.
 
-2. **Structured ToolResult with Parts** — The multi-part result model (`PartTypeText`, `PartTypeJSON`, `PartTypeBinary`, `PartTypeArtifact`) is well-designed and future-proof for multi-modal tool outputs.
+2. **Structured ToolResult with Parts** (`tools/result.go`) — Multi-part result model (`Text`, `JSON`, `Binary`, `Artifact`, `Error`) with helper constructors (`NewTextResult`, `NewJSONResult`, `NewErrorResult`) is clean and future-proof.
 
-3. **Permission Engine with Rule Caching** — Moving from the simple `PermissionService` interface to `permission.Engine` with rule evaluation, wildcard matching, and caching is a major improvement.
+3. **ToolDefinition with Rich Metadata** (`tools/definition.go`) — `ToolMeta` with `CostLevel`, `Permission`, `ReadOnly`, `Idempotent`, `Timeout` provides excellent introspection for both the permission system and LLM.
 
-4. **Event Bus Pattern** — The `tools/events/bus.go` with both sync (`DefaultEventBus`) and async (`AsyncEventBus`) implementations provides good flexibility.
+4. **Multi-protocol Resolver** (`tools/resolver/resolver.go`) — Supporting MCP, OpenAI, and Internal schemas in `convertToProviderSchema()` is forward-thinking and well-abstracted.
+
+5. **Permission Engine with Caching** (`tools/permission/engine.go`) — Rule-based evaluation with wildcard matching and cache invalidation on ruleset update is a major improvement over the old `PermissionService`.
 
 ---
 
-### Issues & Concerns
+### Critical Issues
 
-#### 1. **Breaking Change Magnitude — No Migration Path**
-- This PR removes the entire old tool system (`tools/fs/`, `tools/shell/`, `tools/registry.go`, old `permission.PermissionService`) in one shot.
-- The `SetExecutorRun()` pattern and `executor` variable in the old `engine.go` are completely eliminated.
-- **Suggestion**: Consider if this could be split into 2-3 PRs (interfaces first, then implementation, then removal of old code) to reduce review burden and merge risk.
+#### 1. Plan Executor Bypasses Permissions (Security)
 
-#### 2. **`generateID()` in `invocation.go` — Weak ID Generation**
+**File:** `agent/plan/executor.go`
+
+```go
+type simpleToolExecutor struct{}
+func (e *simpleToolExecutor) AskPermission(req tools.PermissionRequest) error { return nil }
+```
+
+The `executeTool()` method creates a `simpleToolExecutor` that auto-approves everything. Plans executing destructive tools (bash, write, edit) will **never** get permission-gated, even when the user has set them to "ask" or "deny".
+
+The `SetPermissionEngine(pe permission.Engine)` method exists on `PlanExecutor` and stores `permEngine`, but `executeTool()` never uses it — it always creates a fresh `simpleToolExecutor`.
+
+**Fix:** Create a proper executor that delegates to `e.permEngine`:
+```go
+func (e *PlanExecutor) executeTool(ctx context.Context, toolName string, params map[string]any) (string, error) {
+    // ...
+    toolExec := &planToolExecutor{permEngine: e.permEngine}
+    // ...
+}
+```
+
+#### 2. `generateID()` in `invocation.go` — Collision-Prone
+
 ```go
 func generateID() string {
     return fmt.Sprintf("inv_%d_%d", time.Now().UnixNano(), rand.Intn(10000))
 }
 ```
-- `rand.Intn(10000)` with default seed is **not collision-safe** in concurrent scenarios. Two goroutines calling this at the same nanosecond could generate the same ID.
-- **Fix**: Use `crypto/rand` or `uuid` package, or at minimum `rand.Int63()` with a wider range.
 
-#### 3. **`ToolContext.AbortSignal` is `context.Context` but Tagged `json:"-"`**
+- `rand.Intn(10000)` has only 10,000 possible values. Two goroutines calling this within the same nanosecond will collide.
+- Go 1.20+ auto-seeds `math/rand`, but the range is still too small.
+
+**Fix:** Use `crypto/rand`, `uuid`, or at minimum `rand.Int63()`:
 ```go
-type ToolContext struct {
-    AbortSignal context.Context `json:"-"`
-    // ...
+func generateID() string {
+    return fmt.Sprintf("inv_%d_%x", time.Now().UnixNano(), rand.Int63())
 }
 ```
-- The `ContextOrBackground()` helper is good, but the naming `AbortSignal` is unconventional in Go. Standard Go convention would be to either embed the context or name it `Ctx` / `Context`.
-- **Minor**: Consider renaming for Go idiom consistency.
 
-#### 4. **Permission Engine — Potential Deadlock Risk**
-The `DefaultEngine.Ask()` method acquires a write lock (`e.mu.Lock()`), stores a pending request, then publishes an event and waits on a channel. If the event handler (which may respond to the permission request) also needs to call methods on the engine that acquire the lock, this could deadlock.
-- **Suggestion**: Review the lock scope. Consider using the read lock for the wait phase or switching to a lock-free channel-based design for pending requests.
+#### 3. Permission Engine — Potential Deadlock
 
-#### 5. **AsyncEventBus — Silent Event Drop**
+**File:** `tools/permission/engine.go`
+
+The `DefaultEngine.Ask()` method:
+1. Acquires write lock (`e.mu.Lock()`)
+2. Stores pending request with response channel
+3. Publishes event via event bus
+4. Waits on the response channel
+
+If the event handler that responds to `permission:requested` needs to call any engine method (e.g., `CanExecute`, `GetRuleset`), it will deadlock because the write lock is still held.
+
+**Fix:** Release the lock before waiting on the channel:
 ```go
-// Non-blocking publish that returns "event bus is full" when capacity exceeded
+e.mu.Lock()
+e.pending[req.ID] = ch
+e.mu.Unlock()
+// publish event...
+// wait on ch (no lock held)
 ```
-- When the async event bus buffer is full, events are silently dropped with just an error return. For permission-related events (`permission:requested`), this could mean a tool execution hangs forever waiting for a response that was never delivered.
-- **Fix**: At minimum, log a warning. Better: block with timeout for critical topics or increase buffer size dynamically.
 
-#### 6. **`simpleToolExecutor` in `plan/executor.go` — No-Op Permission**
+#### 4. AsyncEventBus — Silent Event Drop on Permission Events
+
+When the async event bus buffer is full, `Publish()` returns an error but the caller in `Ask()` may not handle it. If a `permission:requested` event is dropped, the tool execution will hang forever waiting for a response that was never delivered.
+
+**Fix:** For critical topics (`permission:*`), either block with timeout or return an error immediately to the caller. At minimum, log a warning.
+
+---
+
+### Major Issues
+
+#### 5. Missing Tests (Biggest Gap)
+
+60 files changed, but only import-path updates in existing tests (`engine_context_test.go`, `engine_trace_test.go`). **Zero unit tests** for:
+
+- `ToolResult` / `NewTextResult` / `NewErrorResult` (result.go)
+- `ToolContext.ContextOrBackground()` / `Done()` (context.go)
+- `DefaultEventBus` / `AsyncEventBus` — subscribe, publish, unsubscribe, close (events/bus.go)
+- `DefaultEngine` — rule evaluation, wildcard matching, caching, ask flow (permission/engine.go)
+- `DefaultRegistry` / `BuiltInRegistry` — register, get, list, ToLLMTools (registry/registry.go)
+- `DefaultResolver` — resolve, permission pre-filter, schema conversion (resolver/resolver.go)
+- `PlanExecutor.executeTool()` — tool lookup, execution, error handling (plan/executor.go)
+- `BashTool` — dangerous command detection, timeout, permission check (builtin/bash.go)
+- `EditTool` — case-insensitive replace, multiline (builtin/edit.go)
+- `ReadTool` — offset/limit handling (builtin/read.go)
+- `WriteTool` — append mode, directory creation (builtin/write.go)
+
+The permission system and event bus are **critical infrastructure** — they must have unit tests before merging.
+
+#### 6. `DefaultResolver` — Not Thread-Safe
+
+**File:** `tools/resolver/resolver.go`
+
 ```go
-type simpleToolExecutor struct{}
-func (e *simpleToolExecutor) AskPermission(req tools.PermissionRequest) error { return nil }
+type DefaultResolver struct {
+    tools map[string]tools.ExecutableTool  // No mutex!
+    permEngine permission.Engine
+}
 ```
-- This bypasses all permission checks during plan execution, which is a security concern. Plans executing destructive tools (bash, write, edit) would never get permission-gated.
-- **Suggestion**: Wire the real `permEngine` into plan execution. The `SetPermissionEngine()` method exists but `executeTool()` doesn't use it.
 
-#### 7. **`buildPermissionConfig()` in `bootstrap.go` — Hardcoded Dangerous Tool List**
+The `tools` map is accessed by `Register()`, `Get()`, `Resolve()`, etc. without any synchronization. If multiple goroutines register/resolve concurrently, this will panic with a concurrent map access.
+
+**Fix:** Add `sync.RWMutex` like `DefaultRegistry` does.
+
+#### 7. `isDangerousCommand()` — Easily Bypassed
+
+**File:** `tools/registry/builtin/bash.go`
+
 ```go
-// Dangerous tool warnings (write, edit, shell, bash)
+func isDangerousCommand(command string) bool {
+    lower := strings.ToLower(command)
+    dangerousPatterns := []string{
+        "rm -rf /",
+        "> /dev/sda",
+        // ...
+    }
+    for _, pattern := range dangerousPatterns {
+        if strings.Contains(lower, pattern) {
+            return true
+        }
+    }
+    return false
+}
 ```
-- Hardcoding which tools are "dangerous" is fragile. The `ToolMeta.Cost` field (`CostLevelCritical`) and `Permission.RequireConfirm` already provide this metadata.
-- **Suggestion**: Use `ToolMeta.Cost >= CostLevelHigh` or `Permission.RequireConfirm` to determine danger level dynamically.
 
-#### 8. **`extractResultContent()` in `engine.go` — Only Handles Text Parts**
-Based on the diff, `extractResultContent()` iterates `result.Parts` but only extracts `PartTypeText` content. JSON parts are silently ignored, meaning tool results with structured data would appear empty in traces/events.
-- **Fix**: Handle `PartTypeJSON` by marshaling to string, or at minimum include a `[JSON data]` placeholder.
+This blacklist is trivially bypassed:
+- `rm -rf /` is caught, but `rm -rf /*` or `rm -r -f /` is not.
+- `cat /dev/urandom > /dev/sda` bypasses `> /dev/sda` because of the space before `>`.
+- Any obfuscation (variable expansion, base64 decode, eval) bypasses all patterns.
 
-#### 9. **Missing Tests for New Code**
-- 60 files changed but only `engine_context_test.go` and `engine_trace_test.go` are updated (and only import path changes).
-- No tests for: `ToolResult`, `ToolContext`, `EventBus`, `DefaultEngine` permission evaluation, `DefaultRegistry`, `DefaultResolver`, or `PlanExecutor.executeTool()`.
-- **This is the biggest concern.** The permission system and event bus are critical infrastructure — they must have unit tests before merging.
+**Suggestion:** This provides a false sense of security. Either invest in proper sandboxing (seccomp, namespaces) or remove this check and rely entirely on the permission system (which is the correct architectural approach given this PR's design). The permission engine's `RequireConfirm: true` on bash is the right layer for this.
 
-#### 10. **Chinese Comments Throughout**
-- All comments are in Chinese (e.g., `// 工具成本等级`, `// 权限标识`). This is fine for the team, but should be a conscious decision — mixing Chinese comments with English API names/variable names can be inconsistent.
-- **Suggestion**: Consider standardizing on one language for code comments, or at minimum ensure exported type/method docs are in English for `godoc` compatibility.
+#### 8. `extractResultContent()` — Ignores Non-Text Parts
 
-#### 11. **`ReportToMarkdown()` Uses Emoji**
+**File:** `agent/loop/engine.go`
+
+Only `PartTypeText` content is extracted. Tool results with `PartTypeJSON` data (like `EditTool` which adds both JSON and Text parts) will lose the structured data in traces/events.
+
+**Fix:**
+```go
+func extractResultContent(result *tools.ToolResult) string {
+    var parts []string
+    for _, p := range result.Parts {
+        switch p.Type {
+        case tools.PartTypeText:
+            parts = append(parts, p.Content)
+        case tools.PartTypeJSON:
+            if data, err := json.Marshal(p.Data); err == nil {
+                parts = append(parts, string(data))
+            }
+        }
+    }
+    return strings.Join(parts, "\n")
+}
+```
+
+---
+
+### Minor Issues
+
+#### 9. `ToolContext.AbortSignal` — Non-Idiomatic Go Naming
+
+```go
+AbortSignal context.Context `json:"-"`
+```
+
+Go convention is to name context fields `ctx` or embed `context.Context`. `AbortSignal` comes from JavaScript/TypeScript conventions. Consider `Ctx` for Go idiom consistency.
+
+#### 10. `buildPermissionConfig()` — Hardcoded Dangerous Tool List
+
+**File:** `app/bootstrap.go`
+
+```go
+dangerousTools := []string{"write", "edit", "shell", "bash"}
+```
+
+This duplicates knowledge already encoded in `ToolMeta.Cost` (bash is `CostLevelHigh`) and `Permission.RequireConfirm: true`. If a new dangerous tool is added to `builtin/`, this list won't update automatically.
+
+**Suggestion:** Iterate registered tools and use `tool.Info().Meta.Cost >= CostLevelHigh || hasRequireConfirm(tool)` instead.
+
+#### 11. Chinese Comments on Exported Types
+
+All comments are in Chinese (`// 工具成本等级`, `// 权限标识`, `// 创建新的Bash工具`). For `godoc` compatibility and wider readability, exported type/method comments should be in English. Internal comments can stay in Chinese per team convention.
+
+#### 12. `EditTool.replaceAllCaseInsensitive()` — O(n*m) Performance
+
+**File:** `tools/registry/builtin/edit.go`
+
+```go
+func replaceAllCaseInsensitive(content, oldText, newText string) (string, int) {
+    for {
+        idx := strings.Index(lowerContent, lowerOldText)
+        // ...
+        lowerContent = strings.ToLower(content)  // Re-lowercases entire content each iteration!
+    }
+}
+```
+
+Each iteration calls `strings.ToLower(content)` on the full content. For a file with many matches, this is O(n*m) where n = content length and m = match count. Use `strings.NewReplacer` or track offset instead.
+
+#### 13. PR Size — Consider Splitting
+
+60 files, ~10,000 lines changed in a single PR is very hard to review thoroughly. Consider splitting into:
+1. **PR A:** New interfaces and types (`tools/definition.go`, `result.go`, `context.go`, `invocation.go`)
+2. **PR B:** Infrastructure (`events/bus.go`, `permission/engine.go`, `registry/registry.go`, `resolver/resolver.go`) + tests
+3. **PR C:** Built-in tools (`builtin/bash.go`, `read.go`, `write.go`, `edit.go`) + tests
+4. **PR D:** Integration (`engine.go`, `bootstrap.go`, `commands.go`, remove old code)
+
+#### 14. `cmdYolo()` — Uses Emoji in Code Output
+
+**File:** `app/commands.go`
+
+```go
+Message: "⚡ YOLO mode enabled! All operations will be auto-approved. Use with caution!",
+```
+
+And `ReportToMarkdown()` in `plan/executor.go`:
 ```go
 status := "⏳"  // ✅ ❌ ⏭️
 ```
-- Emoji in programmatic output can cause issues with terminals that don't support Unicode or with log parsing tools.
-- **Suggestion**: Use text labels (`[PASS]`, `[FAIL]`, `[SKIP]`) as default, emoji as optional.
+
+Emoji in programmatic output can cause width calculation issues in terminals. Use text labels as default.
+
+#### 15. `WriteTool` — Mode Parameter Takes Decimal
+
+```go
+"default": 420, // 0644 in decimal
+```
+
+The JSON schema says `"type": "integer"` and the default is `420` (0644 decimal). Users sending `644` intending octal permissions will get `os.FileMode(644)` = `01204` in octal, which is wrong. Either:
+- Accept string input (`"0644"`) and parse with `strconv.ParseInt(s, 8, 32)`, or
+- Document clearly that the value must be decimal.
 
 ---
 
@@ -96,11 +267,16 @@ status := "⏳"  // ✅ ❌ ⏭️
 
 | Area | Rating | Notes |
 |------|--------|-------|
-| Architecture | ✅ Good | Clean interface-based design |
-| Code Quality | ⚠️ Needs Work | ID generation, lock safety, silent drops |
-| Security | ⚠️ Concern | Plan executor bypasses permissions |
-| Test Coverage | ❌ Insufficient | Nearly zero tests for new code |
-| Documentation | ⚠️ Mixed | Chinese/English inconsistency |
-| PR Size | ⚠️ Too Large | Consider splitting into smaller PRs |
+| Architecture | Good | Clean interface-based design, multi-protocol support |
+| Code Quality | Needs Work | ID collision, thread safety, performance |
+| Security | Concern | Plan executor bypasses permissions, weak command blacklist |
+| Concurrency | Concern | Resolver not thread-safe, permission engine deadlock risk |
+| Test Coverage | Insufficient | Zero tests for new critical infrastructure |
+| PR Size | Too Large | 60 files, recommend splitting into 3-4 PRs |
 
-**Recommendation**: Request changes — primarily need tests and the permission bypass fix before merging.
+**Recommendation:** Request changes. Priority fixes before merge:
+1. Wire permission engine into plan executor (security)
+2. Add `sync.RWMutex` to `DefaultResolver` (crash prevention)
+3. Fix permission engine lock scope (deadlock prevention)
+4. Add unit tests for permission engine, event bus, and registry (correctness)
+5. Fix `generateID()` collision risk (correctness)
