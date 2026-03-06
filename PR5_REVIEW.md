@@ -50,21 +50,21 @@ func (e *PlanExecutor) executeTool(ctx context.Context, toolName string, params 
 }
 ```
 
-#### 2. `generateID()` in `invocation.go` — Collision-Prone
+#### 2. `generateID()` / `generateRequestID()` — Weak ID Generation
 
+`invocation.go` uses `rand.Int63()` which is reasonable, but `permission/engine.go` uses:
 ```go
-func generateID() string {
-    return fmt.Sprintf("inv_%d_%d", time.Now().UnixNano(), rand.Intn(10000))
+func generateRequestID() string {
+    return fmt.Sprintf("perm_%d", time.Now().UnixNano())
 }
 ```
 
-- `rand.Intn(10000)` has only 10,000 possible values. Two goroutines calling this within the same nanosecond will collide.
-- Go 1.20+ auto-seeds `math/rand`, but the range is still too small.
+This has **no random component** — two concurrent permission requests at the same nanosecond will collide, causing one response to be lost.
 
-**Fix:** Use `crypto/rand`, `uuid`, or at minimum `rand.Int63()`:
+**Fix:** Add randomness or use `atomic.AddInt64` counter:
 ```go
-func generateID() string {
-    return fmt.Sprintf("inv_%d_%x", time.Now().UnixNano(), rand.Int63())
+func generateRequestID() string {
+    return fmt.Sprintf("perm_%d_%x", time.Now().UnixNano(), rand.Int63())
 }
 ```
 
@@ -279,4 +279,4 @@ The JSON schema says `"type": "integer"` and the default is `420` (0644 decimal)
 2. Add `sync.RWMutex` to `DefaultResolver` (crash prevention)
 3. Fix permission engine lock scope (deadlock prevention)
 4. Add unit tests for permission engine, event bus, and registry (correctness)
-5. Fix `generateID()` collision risk (correctness)
+5. Fix `generateRequestID()` collision risk — no random component (correctness)
