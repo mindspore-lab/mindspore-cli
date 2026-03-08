@@ -121,7 +121,7 @@ func RenderTrainHintBar(width int, copyMode bool, retryEnabled bool, chatActive 
 }
 
 func ResolveTrainEmbeddedChatLayout(d model.TrainDashboard, width, height int, copyMode bool) TrainEmbeddedChatLayout {
-	if width < 48 || height < 12 {
+	if width < 48 || height < 12 || isTrainConnectionPhase(d) {
 		return TrainEmbeddedChatLayout{}
 	}
 
@@ -193,7 +193,7 @@ func renderTrainLeftPanel(d model.TrainDashboard, width, height int, copyMode bo
 	}
 
 	content := fitLines(lines, height-2)
-	if lowerPanel != nil {
+	if lowerPanel != nil && !isTrainConnectionPhase(d) {
 		lowerHeight := resolveTrainLeftLowerPanelHeight(height)
 		upperHeight := (height - 2) - (lowerHeight + 2)
 		if upperHeight < 1 {
@@ -271,13 +271,8 @@ func resolveTrainLeftLowerPanelHeight(height int) int {
 
 func renderTrainStageSection(d model.TrainDashboard) []string {
 	lines := []string{trainTitleStyle.Render("Stages")}
-	if areAllTrainStagesSuccessful(d) {
-		lines = append(lines, renderKV("summary", fmt.Sprintf("all %d stages succeeded", len(d.StageOrder))))
-		if d.FinishedAt.IsZero() {
-			lines = append(lines, renderKV("state", "workflow complete"))
-		} else {
-			lines = append(lines, renderKV("state", "workflow complete"))
-		}
+	if shouldCollapseTrainStages(d) {
+		lines = append(lines, renderCollapsedTrainStageSummary(d)...)
 		return lines
 	}
 
@@ -293,6 +288,10 @@ func renderTrainStageSection(d model.TrainDashboard) []string {
 	return lines
 }
 
+func shouldCollapseTrainStages(d model.TrainDashboard) bool {
+	return areAllTrainStagesSuccessful(d) || isTrainDashboardPhase(d)
+}
+
 func areAllTrainStagesSuccessful(d model.TrainDashboard) bool {
 	if strings.TrimSpace(strings.ToLower(d.Status)) != "success" || len(d.StageOrder) == 0 {
 		return false
@@ -303,6 +302,52 @@ func areAllTrainStagesSuccessful(d model.TrainDashboard) bool {
 		}
 	}
 	return true
+}
+
+func isTrainDashboardPhase(d model.TrainDashboard) bool {
+	if d.CurrentStage == "dashboard" {
+		return true
+	}
+	switch d.StageStatus["dashboard"] {
+	case model.TrainStageRunning, model.TrainStageSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
+func renderCollapsedTrainStageSummary(d model.TrainDashboard) []string {
+	if areAllTrainStagesSuccessful(d) {
+		return []string{
+			renderKV("summary", fmt.Sprintf("all %d stages succeeded", len(d.StageOrder))),
+			renderKV("state", "workflow complete"),
+		}
+	}
+
+	setupDone := 0
+	setupTotal := 0
+	for _, stage := range d.StageOrder {
+		if stage == "dashboard" {
+			continue
+		}
+		setupTotal++
+		if d.StageStatus[stage] == model.TrainStageSuccess {
+			setupDone++
+		}
+	}
+
+	state := "realtime dashboard active"
+	switch d.StageStatus["dashboard"] {
+	case model.TrainStageSuccess:
+		state = "realtime dashboard complete"
+	case model.TrainStageFailed:
+		state = "realtime dashboard failed"
+	}
+
+	return []string{
+		renderKV("summary", fmt.Sprintf("%d/%d setup stages completed", setupDone, setupTotal)),
+		renderKV("state", state),
+	}
 }
 
 func resolveTrainRightPanelLayout(d model.TrainDashboard, height int, copyMode bool, failureLineCount int) trainRightPanelLayout {
@@ -369,13 +414,19 @@ func renderLossChart(d model.TrainDashboard, width, height int) (string, string,
 	}
 
 	xMax := 0
+	xTotalHint := 0
 	maxLoss := 0.0
 	hasPoint := false
 
 	for _, hostName := range d.HostOrder {
 		host := d.Hosts[hostName]
-		if host != nil && host.TotalStep > xMax {
-			xMax = host.TotalStep
+		if host != nil {
+			if host.TotalStep > xTotalHint {
+				xTotalHint = host.TotalStep
+			}
+			if host.Step > xMax {
+				xMax = host.Step
+			}
 		}
 		series := d.Series[hostName]
 		for _, pt := range series {
@@ -393,7 +444,7 @@ func renderLossChart(d model.TrainDashboard, width, height int) (string, string,
 	}
 
 	if xMax <= 0 {
-		xMax = 100
+		xMax = resolveDynamicTrainXMax(xTotalHint)
 	}
 
 	plotRows := height - 1
@@ -492,6 +543,17 @@ func renderLossChart(d model.TrainDashboard, width, height int) (string, string,
 	xRange := fmt.Sprintf("x(total step): 0 -> %d", xMax)
 	yRange := fmt.Sprintf("y(loss): 0 -> %s", formatAxisFloat(yMax, yStep))
 	return strings.Join(rows, "\n"), xRange, yRange
+}
+
+func resolveDynamicTrainXMax(totalHint int) int {
+	switch {
+	case totalHint > 0 && totalHint <= 100:
+		return totalHint
+	case totalHint > 0:
+		return 100
+	default:
+		return 100
+	}
 }
 
 func renderLegend(d model.TrainDashboard, width int) string {

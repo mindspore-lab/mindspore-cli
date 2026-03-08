@@ -188,6 +188,28 @@ func TestRenderTrainDashboardShowsConnectionLogsDuringConnect(t *testing.T) {
 	}
 }
 
+func TestRenderTrainDashboardSanitizesRecentLogs(t *testing.T) {
+	d := model.NewTrainDashboard()
+	d.Apply(model.TrainUpdate{
+		Kind:  model.TrainUpdateOpen,
+		RunID: "run-001",
+		Hosts: []string{"gpuA"},
+	})
+	d.Apply(model.TrainUpdate{
+		Kind:    model.TrainUpdateLog,
+		Host:    "gpuA",
+		Message: "\r\x1b[32m  5/3708 [00:13<2:41:19,  2.61s/it]\x1b[0m",
+	})
+
+	rendered := RenderTrainDashboard(d, 90, 24, false, nil)
+	if strings.Contains(rendered, "\r") || strings.Contains(rendered, "\x1b") {
+		t.Fatalf("expected rendered dashboard to strip terminal control characters, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "5/3708 [00:13<2:41:19,  2.61s/it]") {
+		t.Fatalf("expected sanitized log content to remain visible, got %q", rendered)
+	}
+}
+
 func TestRenderTrainStageSectionCollapsesAfterSuccess(t *testing.T) {
 	d := model.NewTrainDashboard()
 	d.Apply(model.TrainUpdate{
@@ -217,6 +239,42 @@ func TestRenderTrainStageSectionCollapsesAfterSuccess(t *testing.T) {
 	}
 	if strings.Contains(joined, "Push Code (rsync)") {
 		t.Fatalf("did not expect expanded stage list after success, got %q", joined)
+	}
+}
+
+func TestRenderTrainStageSectionCollapsesWhenDashboardStarts(t *testing.T) {
+	d := model.NewTrainDashboard()
+	d.Apply(model.TrainUpdate{
+		Kind:  model.TrainUpdateOpen,
+		RunID: "run-001",
+		Hosts: []string{"gpuA"},
+	})
+	for _, stage := range []string{"sync", "launch", "master", "stream"} {
+		d.Apply(model.TrainUpdate{
+			Kind:   model.TrainUpdateStage,
+			Stage:  stage,
+			Status: string(model.TrainStageSuccess),
+		})
+	}
+	d.Apply(model.TrainUpdate{
+		Kind:   model.TrainUpdateStage,
+		Stage:  "dashboard",
+		Status: string(model.TrainStageRunning),
+	})
+
+	lines := renderTrainStageSection(d)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "summary:") {
+		t.Fatalf("expected collapsed stage summary when dashboard starts, got %q", joined)
+	}
+	if !strings.Contains(joined, "4/4 setup stages completed") {
+		t.Fatalf("expected setup-stage summary when dashboard starts, got %q", joined)
+	}
+	if !strings.Contains(joined, "realtime dashboard active") {
+		t.Fatalf("expected realtime dashboard state when dashboard starts, got %q", joined)
+	}
+	if strings.Contains(joined, "Push Code (rsync)") {
+		t.Fatalf("did not expect expanded stage list after dashboard starts, got %q", joined)
 	}
 }
 
@@ -327,6 +385,47 @@ func TestRenderLossChartUsesTotalStepAxisAndContinuousLine(t *testing.T) {
 	}
 	if !strings.Contains(chart, "└") || !strings.Contains(chart, "┬") {
 		t.Fatalf("expected explicit axis baseline and tick marks, got %q", chart)
+	}
+}
+
+func TestRenderLossChartUsesDynamicObservedXRangeInsteadOfTotalStepHint(t *testing.T) {
+	d := model.NewTrainDashboard()
+	d.Apply(model.TrainUpdate{
+		Kind:  model.TrainUpdateOpen,
+		RunID: "run-001",
+		Hosts: []string{"npuA"},
+	})
+
+	for _, update := range []model.TrainUpdate{
+		{
+			Kind:         model.TrainUpdateMetric,
+			Host:         "npuA",
+			Stage:        "dashboard",
+			Step:         4,
+			TotalStep:    3708,
+			Loss:         3.52,
+			HasStep:      true,
+			HasTotalStep: true,
+			HasLoss:      true,
+		},
+		{
+			Kind:         model.TrainUpdateMetric,
+			Host:         "npuA",
+			Stage:        "dashboard",
+			Step:         8,
+			TotalStep:    3708,
+			Loss:         3.24,
+			HasStep:      true,
+			HasTotalStep: true,
+			HasLoss:      true,
+		},
+	} {
+		d.Apply(update)
+	}
+
+	_, xRange, _ := renderLossChart(d, 48, 12)
+	if xRange != "x(total step): 0 -> 8" {
+		t.Fatalf("expected dynamic observed x-range instead of total-step hint, got %q", xRange)
 	}
 }
 

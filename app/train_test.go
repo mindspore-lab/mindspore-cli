@@ -53,6 +53,29 @@ func TestParseTrainMetricPythonDictLine(t *testing.T) {
 	}
 }
 
+func TestParseTrainMetricProgressBarLine(t *testing.T) {
+	line := "  5/3708 [00:13<2:41:19,  2.61s/it]"
+	parsed := parseTrainMetric(line)
+
+	if !parsed.HasStep || parsed.Step != 5 {
+		t.Fatalf("expected step=5 from progress bar, got %+v", parsed)
+	}
+	if !parsed.HasTotalStep || parsed.TotalStep != 3708 {
+		t.Fatalf("expected total_step=3708 from progress bar, got %+v", parsed)
+	}
+}
+
+func TestSanitizeTrainLogLineStripsCarriageReturnAndAnsi(t *testing.T) {
+	line := "\r\x1b[32m  5/3708 [00:13<2:41:19,  2.61s/it]\x1b[0m"
+	got := sanitizeTrainLogLine(line)
+	if strings.Contains(got, "\r") || strings.Contains(got, "\x1b") {
+		t.Fatalf("expected control sequences to be removed, got %q", got)
+	}
+	if got != "5/3708 [00:13<2:41:19,  2.61s/it]" {
+		t.Fatalf("unexpected sanitized output: %q", got)
+	}
+}
+
 func TestBuildLaunchCommandReplacesRunID(t *testing.T) {
 	workflow := trainWorkflow{
 		RunID: "run-001",

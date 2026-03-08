@@ -167,7 +167,7 @@ func TestRenderTrainViewShowsAnalysisChatAfterDashboardStage(t *testing.T) {
 	}
 }
 
-func TestRenderTrainViewShowsAnalysisChatDuringLaunchStage(t *testing.T) {
+func TestRenderTrainViewDefersAnalysisChatUntilDashboardStage(t *testing.T) {
 	train := model.NewTrainDashboard()
 	train.Active = true
 	train.Status = "running"
@@ -188,8 +188,8 @@ func TestRenderTrainViewShowsAnalysisChatDuringLaunchStage(t *testing.T) {
 	app.updateViewport()
 
 	rendered := app.renderTrainView()
-	if !strings.Contains(rendered, "Analysis Chat") {
-		t.Fatalf("expected embedded analysis chat panel during launch stage, got %q", rendered)
+	if strings.Contains(rendered, "Analysis Chat") {
+		t.Fatalf("did not expect analysis chat panel before dashboard stage, got %q", rendered)
 	}
 	if !strings.Contains(rendered, "Connection Logs") {
 		t.Fatalf("expected right panel to keep connection logs during launch stage, got %q", rendered)
@@ -221,6 +221,13 @@ func TestTrainViewportHidesToolLogsAndPreTrainMessages(t *testing.T) {
 		Hosts: []string{"gpuA"},
 	}
 	next, _ := app.handleEvent(model.Event{Type: model.TrainUpdateEvent, Train: &open})
+	app = next.(App)
+	dashboard := model.TrainUpdate{
+		Kind:   model.TrainUpdateStage,
+		Stage:  "dashboard",
+		Status: string(model.TrainStageRunning),
+	}
+	next, _ = app.handleEvent(model.Event{Type: model.TrainUpdateEvent, Train: &dashboard})
 	app = next.(App)
 	app.state = app.state.WithMessage(model.Message{Kind: model.MsgUser, Content: "analyze this run"})
 	app.state = app.state.WithMessage(model.Message{Kind: model.MsgTool, Content: "$ python inspect.py\nstep logs"})

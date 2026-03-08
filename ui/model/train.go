@@ -2,7 +2,10 @@ package model
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // TrainUpdateKind indicates the kind of training-dashboard event.
@@ -20,6 +23,8 @@ const (
 	TrainUpdateStopped TrainUpdateKind = "stopped"
 	TrainUpdateClose   TrainUpdateKind = "close"
 )
+
+var trainDashboardANSIEscapeRE = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))`)
 
 // TrainStageStatus is the state of a workflow stage.
 type TrainStageStatus string
@@ -358,6 +363,7 @@ func (d *TrainDashboard) appendSeriesPoint(host string, u TrainUpdate, metrics *
 }
 
 func (d *TrainDashboard) appendLog(line string) {
+	line = sanitizeTrainDashboardLog(line)
 	if line == "" {
 		return
 	}
@@ -369,6 +375,47 @@ func (d *TrainDashboard) appendLog(line string) {
 	if len(d.RecentLogs) > maxLogs {
 		d.RecentLogs = d.RecentLogs[len(d.RecentLogs)-maxLogs:]
 	}
+}
+
+func sanitizeTrainDashboardLog(line string) string {
+	line = strings.ReplaceAll(line, "\r\n", "\n")
+	if strings.Contains(line, "\r") {
+		parts := strings.Split(line, "\r")
+		for i := len(parts) - 1; i >= 0; i-- {
+			part := strings.TrimSpace(parts[i])
+			if part != "" {
+				line = part
+				break
+			}
+		}
+	}
+
+	line = trainDashboardANSIEscapeRE.ReplaceAllString(line, "")
+
+	var b strings.Builder
+	lastSpace := false
+	for _, r := range line {
+		switch {
+		case r == '\n':
+			b.WriteRune('\n')
+			lastSpace = false
+		case r == '\r' || r == '\t':
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
+			}
+		case unicode.IsControl(r):
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
+			}
+		default:
+			b.WriteRune(r)
+			lastSpace = unicode.IsSpace(r)
+		}
+	}
+
+	return strings.TrimSpace(b.String())
 }
 
 func toStageStatus(status string) TrainStageStatus {

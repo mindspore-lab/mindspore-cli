@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/vigo999/ms-cli/configs"
 	"github.com/vigo999/ms-cli/ui/model"
@@ -130,6 +131,8 @@ var (
 
 	trainTotalStepRE = regexp.MustCompile(`(?i)['"]?total[_\s-]*steps?['"]?\s*[:=]\s*(\d+)`)
 
+	trainProgressRE = regexp.MustCompile(`\b(\d+)\s*/\s*(\d+)\s*\[`)
+
 	trainLossRE = regexp.MustCompile(`(?i)['"]?loss['"]?\s*[:=]\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)`)
 
 	trainThroughputRE = regexp.MustCompile(`(?i)(?:['"]?throughput['"]?|samples/s|sample/s|tok/s|tokens/s|it/s)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)`)
@@ -137,6 +140,8 @@ var (
 	trainGradNormRE = regexp.MustCompile(`(?i)['"]?(?:grad(?:ient)?[_\s-]*norm)['"]?\s*[:=]\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)`)
 
 	trainModelRE = regexp.MustCompile(`(?i)['"]?model['"]?\s*[:=]\s*['"]?([A-Za-z0-9._/\-]+)['"]?`)
+
+	trainANSIEscapeRE = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))`)
 )
 
 // cmdTrain handles "/train [run_id|retry|stop|task...]".
@@ -629,17 +634,18 @@ func (a *Application) streamHostLogs(ctx context.Context, host trainHost, comman
 			}
 			return nil
 		case line := <-lines:
-			if strings.TrimSpace(line) == "" {
+			displayLine := sanitizeTrainLogLine(line)
+			if strings.TrimSpace(displayLine) == "" {
 				continue
 			}
 			a.emitTrainBestEffort(model.TrainUpdate{
 				Kind:    model.TrainUpdateLog,
 				Host:    host.Name,
 				Stage:   "dashboard",
-				Message: line,
+				Message: displayLine,
 			})
 
-			metric := parseTrainMetric(line)
+			metric := parseTrainMetric(displayLine)
 			if metric.HasLoss && !metric.HasStep {
 				lastStep++
 				metric.Step = lastStep
@@ -676,6 +682,10 @@ func (a *Application) streamHostLogs(ctx context.Context, host trainHost, comman
 
 func parseTrainMetric(line string) trainMetricParse {
 	var parsed trainMetricParse
+	line = sanitizeTrainLogLine(line)
+	if line == "" {
+		return parsed
+	}
 
 	if m := trainStepRE.FindStringSubmatch(line); len(m) == 2 {
 		if v, err := strconv.Atoi(m[1]); err == nil {
@@ -687,6 +697,20 @@ func parseTrainMetric(line string) trainMetricParse {
 		if v, err := strconv.Atoi(m[1]); err == nil {
 			parsed.TotalStep = v
 			parsed.HasTotalStep = true
+		}
+	}
+	if m := trainProgressRE.FindStringSubmatch(line); len(m) == 3 {
+		if !parsed.HasStep {
+			if v, err := strconv.Atoi(m[1]); err == nil {
+				parsed.Step = v
+				parsed.HasStep = true
+			}
+		}
+		if !parsed.HasTotalStep {
+			if v, err := strconv.Atoi(m[2]); err == nil {
+				parsed.TotalStep = v
+				parsed.HasTotalStep = true
+			}
 		}
 	}
 	if m := trainLossRE.FindStringSubmatch(line); len(m) == 2 {
@@ -713,6 +737,48 @@ func parseTrainMetric(line string) trainMetricParse {
 	}
 
 	return parsed
+}
+
+func sanitizeTrainLogLine(line string) string {
+	line = strings.TrimRight(strings.ReplaceAll(line, "\r\n", "\n"), "\n")
+	if line == "" {
+		return ""
+	}
+
+	if strings.Contains(line, "\r") {
+		parts := strings.Split(line, "\r")
+		for i := len(parts) - 1; i >= 0; i-- {
+			part := strings.TrimSpace(parts[i])
+			if part != "" {
+				line = part
+				break
+			}
+		}
+	}
+
+	line = trainANSIEscapeRE.ReplaceAllString(line, "")
+
+	var b strings.Builder
+	lastSpace := false
+	for _, r := range line {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
+			}
+		case unicode.IsControl(r):
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
+			}
+		default:
+			b.WriteRune(r)
+			lastSpace = unicode.IsSpace(r)
+		}
+	}
+
+	return strings.TrimSpace(b.String())
 }
 
 func buildRsyncCommand(workflow trainWorkflow, host trainHost) string {
