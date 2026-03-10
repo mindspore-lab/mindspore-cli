@@ -77,6 +77,7 @@ type Event struct {
 	CtxUsed    int
 	CtxMax     int
 	TokensUsed int
+	Train      *TrainEventData // non-nil for train events only
 }
 
 // TaskStats tracks execution statistics for the current task.

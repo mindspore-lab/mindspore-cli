@@ -1,0 +1,88 @@
+{
+  "name": "perf_opt",
+  "summary": "Qwen training bottleneck analysis and operator optimization",
+  "timeline": [
+    {
+      "stage": "Analysis",
+      "events": [
+        {"type": "AgentThinking", "delay_ms": 800},
+        {"type": "AgentReply", "message": "I'll analyze the Qwen 7B training performance. Let me check the config and recent logs.", "delay_ms": 1200},
+        {"type": "ToolRead", "message": "configs/train.yaml", "summary": "42 lines", "delay_ms": 400},
+        {"type": "ToolGrep", "message": "\"throughput\" logs/train_20260309.log", "summary": "28 matches", "delay_ms": 400},
+        {"type": "TokenUpdate", "ctx_used": 8600, "tokens_used": 3400, "delay_ms": 200}
+      ]
+    },
+    {
+      "stage": "Training Baseline",
+      "events": [
+        {"type": "AgentReply", "message": "Found training config. Running baseline measurement across 100 steps.", "delay_ms": 600},
+        {"type": "CmdStarted", "message": "python train.py --model qwen-7b --steps 100 --profile", "delay_ms": 300},
+        {"type": "CmdOutput", "message": "Loading model qwen-7b...", "delay_ms": 800},
+        {"type": "CmdOutput", "message": "Step 20/100  loss=2.31  throughput=120.5 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Step 40/100  loss=2.18  throughput=118.2 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Step 60/100  loss=2.05  throughput=121.7 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Step 80/100  loss=1.94  throughput=119.8 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Step 100/100 loss=1.87  throughput=120.1 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Baseline: avg throughput 120.1 tok/s, profile saved to prof/baseline.json", "delay_ms": 400},
+        {"type": "CmdFinished", "delay_ms": 300},
+        {"type": "TokenUpdate", "ctx_used": 24000, "tokens_used": 12400, "delay_ms": 200}
+      ]
+    },
+    {
+      "stage": "Profiling",
+      "events": [
+        {"type": "AgentThinking", "delay_ms": 1500},
+        {"type": "AgentReply", "message": "Baseline is 120.1 tok/s. Let me profile the operator breakdown to find bottlenecks.", "delay_ms": 800},
+        {"type": "ToolRead", "message": "prof/baseline.json", "summary": "156 lines", "delay_ms": 400},
+        {"type": "CmdStarted", "message": "python tools/profile_ops.py prof/baseline.json --top 10", "delay_ms": 300},
+        {"type": "CmdOutput", "message": "", "delay_ms": 100},
+        {"type": "CmdOutput", "message": "Operator           Time(ms)  Pct    Calls", "delay_ms": 200},
+        {"type": "CmdOutput", "message": "─────────────────  ────────  ─────  ─────", "delay_ms": 100},
+        {"type": "CmdOutput", "message": "flash_attention     37.2     28.1%   192", "delay_ms": 300},
+        {"type": "CmdOutput", "message": "matmul_fp16         22.8     17.2%   384", "delay_ms": 300},
+        {"type": "CmdOutput", "message": "layer_norm          12.4      9.4%   128", "delay_ms": 300},
+        {"type": "CmdOutput", "message": "gelu_activation      8.1      6.1%    64", "delay_ms": 300},
+        {"type": "CmdOutput", "message": "allreduce            6.9      5.2%    32", "delay_ms": 300},
+        {"type": "CmdOutput", "message": "", "delay_ms": 100},
+        {"type": "CmdOutput", "message": "Top bottleneck: flash_attention (28.1% of step time)", "delay_ms": 400},
+        {"type": "CmdFinished", "delay_ms": 300},
+        {"type": "TokenUpdate", "ctx_used": 42000, "tokens_used": 24800, "delay_ms": 200}
+      ]
+    },
+    {
+      "stage": "Optimization",
+      "events": [
+        {"type": "AgentThinking", "delay_ms": 1800},
+        {"type": "AgentReply", "message": "flash_attention takes 28.1% of step time. The current implementation uses naive block tiling. I'll generate an optimized kernel with better memory coalescing.", "delay_ms": 1000},
+        {"type": "ToolRead", "message": "kernels/flash_attention.py", "summary": "89 lines", "delay_ms": 400},
+        {"type": "ToolEdit", "message": "kernels/flash_attention.py\n\n-    block_size = 64\n-    for i in range(0, seq_len, block_size):\n-        q_block = q[i:i+block_size]\n+    block_size = 128\n+    for i in range(0, seq_len, block_size):\n+        q_block = q[i:i+block_size].contiguous()\n+        # fused softmax + value multiply\n+        attn = fused_softmax_v(q_block, k_cache, v_cache)", "delay_ms": 800},
+        {"type": "AgentReply", "message": "Patched flash_attention: doubled block size + fused softmax-value multiply. Running optimized training.", "delay_ms": 600},
+        {"type": "TokenUpdate", "ctx_used": 58000, "tokens_used": 36000, "delay_ms": 200}
+      ]
+    },
+    {
+      "stage": "Rerun",
+      "events": [
+        {"type": "CmdStarted", "message": "python train.py --model qwen-7b --steps 100 --profile --kernel optimized", "delay_ms": 300},
+        {"type": "CmdOutput", "message": "Loading model qwen-7b (optimized kernel)...", "delay_ms": 800},
+        {"type": "CmdOutput", "message": "Step 20/100  loss=2.29  throughput=138.4 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Step 40/100  loss=2.16  throughput=141.2 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Step 60/100  loss=2.03  throughput=140.7 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Step 80/100  loss=1.92  throughput=142.1 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Step 100/100 loss=1.85  throughput=141.8 tok/s", "delay_ms": 600},
+        {"type": "CmdOutput", "message": "Optimized: avg throughput 141.8 tok/s (+18.1% vs baseline)", "delay_ms": 400},
+        {"type": "CmdFinished", "delay_ms": 300},
+        {"type": "TokenUpdate", "ctx_used": 78000, "tokens_used": 48000, "delay_ms": 200}
+      ]
+    },
+    {
+      "stage": "Summary",
+      "events": [
+        {"type": "AgentThinking", "delay_ms": 1500},
+        {"type": "ToolWrite", "message": "reports/perf_opt_qwen7b.md\n\n+ # Performance Optimization Report\n+ ## Baseline: 120.1 tok/s\n+ ## Optimized: 141.8 tok/s (+18.1%)\n+ ## Key Change: flash_attention block tiling + fused softmax", "delay_ms": 800},
+        {"type": "AnalysisReady", "message": "Optimization complete. Throughput improved from 120.1 → 141.8 tok/s (+18.1%). Bottleneck was flash_attention block tiling (28.1% of step time). Fix: doubled block size + fused softmax-value multiply. Report saved to reports/perf_opt_qwen7b.md.", "delay_ms": 1000},
+        {"type": "TokenUpdate", "ctx_used": 92000, "tokens_used": 56000, "delay_ms": 200}
+      ]
+    }
+  ]
+}

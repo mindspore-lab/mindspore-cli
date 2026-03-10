@@ -37,6 +37,8 @@ func (a *Application) handleCommand(input string) {
 		a.cmdPermission(parts[1:])
 	case "/yolo":
 		a.cmdYolo()
+	case "/train":
+		a.cmdTrain(parts[1:])
 	case "/mouse":
 		a.cmdMouse(parts[1:])
 	case "/help":
@@ -364,6 +366,7 @@ func (a *Application) cmdMouse(args []string) {
 func (a *Application) cmdHelp() {
 	helpText := `Available commands:
 
+  /train <model> <method> Set up and run model training (e.g. /train qwen3 lora)
   /roadmap status [path]  Check roadmap status (default: roadmap.yaml)
   /weekly status [path]   Check weekly update status (default: weekly.md)
   /model [model-name]     Show or switch model

@@ -1,6 +1,7 @@
-// Package executor will provide the real workflow engine that executes
-// structured plans. For now it is a stub that signals "not implemented"
-// so the orchestrator can fall back to agent mode.
+// Package executor provides workflow execution backends.
+// The orchestrator dispatches to a WorkflowExecutor; this package
+// supplies concrete implementations: Stub (real, not yet built) and
+// DemoExecutor (scenario playback).
 package executor
 
 import (
@@ -15,8 +16,8 @@ import (
 // implementation when the workflow engine is built.
 type Stub struct{}
 
-// New creates a workflow executor stub.
-func New() *Stub {
+// NewStub creates a workflow executor stub.
+func NewStub() *Stub {
 	return &Stub{}
 }
 

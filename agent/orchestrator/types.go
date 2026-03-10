@@ -18,6 +18,7 @@ type RunEvent struct {
 	CtxMax     int
 	TokensUsed int
 	Timestamp  time.Time
+	DelayMs    int // optional: delay before emitting this event (used by demo/scenario playback)
 }
 
 // NewRunEvent creates a new run event.

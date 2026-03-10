@@ -171,6 +171,12 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
+		Name:        "/train",
+		Description: "Set up and run model training",
+		Usage:       "/train <model> <method>",
+	})
+
+	r.Register(Command{
 		Name:        "/help",
 		Description: "Show available commands",
 		Usage:       "/help",

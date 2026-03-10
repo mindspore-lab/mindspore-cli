@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vigo999/ms-cli/agent/orchestrator"
+	"github.com/vigo999/ms-cli/agent/planner"
 	"github.com/vigo999/ms-cli/ui"
 	"github.com/vigo999/ms-cli/ui/model"
 )
@@ -83,11 +84,17 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
+	// Train mode intercepts non-slash input
+	if a.isTrainMode() {
+		a.handleTrainInput(trimmed)
+		return
+	}
+
 	go a.runTask(trimmed)
 }
 
 func (a *Application) runTask(description string) {
-	if !a.llmReady {
+	if !a.llmReady && !a.Demo {
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
 			Message: provideAPIKeyFirstMsg,
@@ -117,6 +124,9 @@ func (a *Application) runTask(description string) {
 	}
 
 	for _, ev := range events {
+		if ev.DelayMs > 0 {
+			time.Sleep(time.Duration(ev.DelayMs) * time.Millisecond)
+		}
 		uiEvent := convertRunEvent(ev)
 		if uiEvent != nil {
 			a.EventCh <- *uiEvent
@@ -171,9 +181,76 @@ func generateTaskID() string {
 }
 
 func (a *Application) runDemo() error {
-	go a.fakeAgentLoop()
-	tui := ui.New(a.EventCh, nil, Version, a.WorkDir, a.RepoURL, "demo-model", a.Config.Context.MaxTokens)
-	p := tea.NewProgram(tui, tea.WithAltScreen())
+	userCh := make(chan string, 8)
+	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, "demo-model", a.Config.Context.MaxTokens)
+	p := tea.NewProgram(tui, tea.WithAltScreen(), tea.WithMouseCellMotion())
+
+	go a.demoInputLoop(userCh)
+
 	_, err := p.Run()
+	close(userCh)
 	return err
+}
+
+// demoInputLoop handles user input in demo mode. Slash commands are handled
+// normally; free-text input is routed to the demo workflow executor which
+// plays back a scenario through the real orchestrator dispatch path.
+func (a *Application) demoInputLoop(userCh <-chan string) {
+	for input := range userCh {
+		trimmed := strings.TrimSpace(input)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "/") {
+			a.handleCommand(trimmed)
+			continue
+		}
+		if a.isTrainMode() {
+			a.handleTrainInput(trimmed)
+			continue
+		}
+		go a.runDemoTask(trimmed)
+	}
+}
+
+// runDemoTask runs a user request through the demo workflow executor.
+// Since demo mode has no LLM provider, the orchestrator would fall back to
+// agent mode (which has no provider either). Instead, we call the workflow
+// executor directly with a synthetic plan, preserving the executor contract.
+func (a *Application) runDemoTask(description string) {
+	a.EventCh <- model.Event{Type: model.AgentThinking}
+
+	req := orchestrator.RunRequest{
+		ID:          generateTaskID(),
+		Description: description,
+	}
+
+	// Build a synthetic plan pointing to the demo scenario.
+	// In a future version with a real planner, this flows through
+	// orchestrator.Run() → planner → dispatch → workflow executor.
+	plan := planner.Plan{
+		Mode:     planner.ModeWorkflow,
+		Goal:     description,
+		Workflow: "perf_opt",
+	}
+
+	events, err := a.Orchestrator.RunWorkflow(req, plan)
+	if err != nil {
+		a.EventCh <- model.Event{
+			Type:     model.ToolError,
+			ToolName: "DemoExecutor",
+			Message:  err.Error(),
+		}
+		return
+	}
+
+	for _, ev := range events {
+		if ev.DelayMs > 0 {
+			time.Sleep(time.Duration(ev.DelayMs) * time.Millisecond)
+		}
+		uiEvent := convertRunEvent(ev)
+		if uiEvent != nil {
+			a.EventCh <- *uiEvent
+		}
+	}
 }

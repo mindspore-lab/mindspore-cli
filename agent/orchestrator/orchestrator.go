@@ -96,6 +96,12 @@ func (o *Orchestrator) dispatch(ctx context.Context, req RunRequest, plan planne
 	}
 }
 
+// RunWorkflow executes a pre-built plan directly, bypassing the planner.
+// Useful when the caller already knows the plan (e.g. demo mode, retry).
+func (o *Orchestrator) RunWorkflow(req RunRequest, plan planner.Plan) ([]RunEvent, error) {
+	return o.runWorkflow(context.Background(), req, plan)
+}
+
 // runWorkflow executes a workflow plan with callback notifications.
 func (o *Orchestrator) runWorkflow(ctx context.Context, req RunRequest, plan planner.Plan) ([]RunEvent, error) {
 	var events []RunEvent

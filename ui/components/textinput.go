@@ -50,6 +50,12 @@ func (t TextInput) Focus() (TextInput, tea.Cmd) {
 	return t, cmd
 }
 
+// Blur removes focus from the input.
+func (t TextInput) Blur() TextInput {
+	t.Model.Blur()
+	return t
+}
+
 // Update handles key events.
 func (t TextInput) Update(msg tea.Msg) (TextInput, tea.Cmd) {
 	switch msg := msg.(type) {

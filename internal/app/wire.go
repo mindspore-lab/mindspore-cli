@@ -1,21 +1,23 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/vigo999/ms-cli/agent/context"
+	agentctx "github.com/vigo999/ms-cli/agent/context"
 	"github.com/vigo999/ms-cli/agent/loop"
 	"github.com/vigo999/ms-cli/agent/orchestrator"
 	"github.com/vigo999/ms-cli/agent/planner"
-	wfexec "github.com/vigo999/ms-cli/workflow/executor"
 	"github.com/vigo999/ms-cli/configs"
 	"github.com/vigo999/ms-cli/integrations/llm"
 	openai "github.com/vigo999/ms-cli/integrations/llm/openai"
+	itrain "github.com/vigo999/ms-cli/internal/train"
 	"github.com/vigo999/ms-cli/permission"
 	rshell "github.com/vigo999/ms-cli/runtime/shell"
 	"github.com/vigo999/ms-cli/tools"
@@ -23,6 +25,7 @@ import (
 	"github.com/vigo999/ms-cli/tools/shell"
 	"github.com/vigo999/ms-cli/trace"
 	"github.com/vigo999/ms-cli/ui/model"
+	wfexec "github.com/vigo999/ms-cli/workflow/executor"
 )
 
 var errAPIKeyNotFound = errors.New("api key not found")
@@ -41,10 +44,19 @@ type Application struct {
 	Config       *configs.Config
 	provider     llm.Provider
 	toolRegistry *tools.Registry
-	ctxManager   *context.Manager
+	ctxManager   *agentctx.Manager
 	permService  permission.PermissionService
 	stateManager *configs.StateManager
 	traceWriter  trace.Writer
+
+	// Train mode state
+	trainMode      bool
+	trainPhase     string // "setup","ready","running","launch_failed","analyzing","fix_ready","evaluating","drift_detected","rerunning","verified","completed","failed"
+	trainReq       *itrain.Request
+	trainCancel    context.CancelFunc
+	trainIssueType string // "runtime", "accuracy", or ""
+	trainRunID     uint64
+	trainMu        sync.RWMutex
 }
 
 // BootstrapConfig holds bootstrap configuration.
@@ -93,13 +105,17 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	if cfg.Demo {
 		engine := loop.NewEngine(loop.EngineConfig{}, nil, nil)
+		adapter := newEngineAdapter(engine)
+		demoWf := wfexec.NewDemo(filepath.Join(workDir, "demo", "scenarios"))
+		orch := orchestrator.New(orchestrator.Config{}, adapter, nil, demoWf)
 		return &Application{
-			Engine:  engine,
-			EventCh: make(chan model.Event, 64),
-			Demo:    true,
-			WorkDir: workDir,
-			RepoURL: "github.com/vigo999/ms-cli",
-			Config:  config,
+			Engine:       engine,
+			Orchestrator: orch,
+			EventCh:      make(chan model.Event, 64),
+			Demo:         true,
+			WorkDir:      workDir,
+			RepoURL:      "github.com/vigo999/ms-cli",
+			Config:       config,
 		}, nil
 	}
 
@@ -116,7 +132,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	toolRegistry := initTools(config, workDir)
 
-	ctxManager := context.NewManager(context.ManagerConfig{
+	ctxManager := agentctx.NewManager(agentctx.ManagerConfig{
 		MaxTokens:           config.Context.MaxTokens,
 		ReserveTokens:       config.Context.ReserveTokens,
 		CompactionThreshold: config.Context.CompactionThreshold,
@@ -143,7 +159,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	// Build orchestrator (planner is nil when LLM is not ready)
 	adapter := newEngineAdapter(engine)
-	wf := wfexec.New()
+	wf := wfexec.NewStub()
 	var orch *orchestrator.Orchestrator
 	if provider != nil {
 		p := planner.New(provider, planner.DefaultConfig())
@@ -214,7 +230,7 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 	// Always rebuild orchestrator so it uses the new engine adapter.
 	// When provider is nil, planner is nil → orchestrator falls back to agent mode.
 	newAdapter := newEngineAdapter(newEngine)
-	newWf := wfexec.New()
+	newWf := wfexec.NewStub()
 	var p *planner.Planner
 	if provider != nil {
 		p = planner.New(provider, planner.DefaultConfig())
