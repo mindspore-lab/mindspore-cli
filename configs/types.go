@@ -15,6 +15,7 @@ type Config struct {
 	Memory      MemoryConfig      `yaml:"memory"`
 	Skills      SkillsConfig      `yaml:"skills"`
 	Execution   ExecutionConfig   `yaml:"execution"`
+	SSH         SSHConfig         `yaml:"ssh,omitempty"`
 }
 
 // ModelConfig holds the LLM model configuration.
@@ -92,6 +93,21 @@ type DockerConfig struct {
 	Memory  string            `yaml:"memory"`
 	Network string            `yaml:"network"`
 	Env     map[string]string `yaml:"env,omitempty"`
+}
+
+// SSHConfig holds the SSH remote execution configuration.
+type SSHConfig struct {
+	Hosts          map[string]HostConfig `yaml:"hosts,omitempty"`    // 预配置的主机别名
+	DefaultTimeout int                   `yaml:"default_timeout"`    // 默认超时秒数
+}
+
+// HostConfig holds the configuration for a single SSH host.
+type HostConfig struct {
+	Address  string `yaml:"address"`              // 主机地址（IP 或域名）
+	User     string `yaml:"user"`                 // 用户名
+	KeyPath  string `yaml:"key_path,omitempty"`   // SSH 私钥路径（优先）
+	Password string `yaml:"password,omitempty"`   // SSH 密码（备选）
+	Port     int    `yaml:"port,omitempty"`       // 端口（默认 22）
 }
 
 // DefaultConfig returns a configuration with default values.

@@ -20,8 +20,10 @@ import (
 	itrain "github.com/vigo999/ms-cli/internal/train"
 	"github.com/vigo999/ms-cli/permission"
 	rshell "github.com/vigo999/ms-cli/runtime/shell"
+	rssh "github.com/vigo999/ms-cli/runtime/ssh"
 	"github.com/vigo999/ms-cli/tools"
 	"github.com/vigo999/ms-cli/tools/fs"
+	"github.com/vigo999/ms-cli/tools/remote"
 	"github.com/vigo999/ms-cli/tools/shell"
 	"github.com/vigo999/ms-cli/trace"
 	"github.com/vigo999/ms-cli/ui/model"
@@ -48,6 +50,7 @@ type Application struct {
 	permService  permission.PermissionService
 	stateManager *configs.StateManager
 	traceWriter  trace.Writer
+	sshPool      *rssh.Pool
 
 	// Train mode state
 	trainMode      bool
@@ -130,7 +133,10 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		}
 	}
 
-	toolRegistry := initTools(config, workDir)
+	// Initialize SSH pool for remote execution
+	sshPool := rssh.NewPool(config.SSH)
+
+	toolRegistry := initTools(config, workDir, sshPool)
 
 	ctxManager := agentctx.NewManager(agentctx.ManagerConfig{
 		MaxTokens:           config.Context.MaxTokens,
@@ -184,6 +190,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		permService:  permService,
 		stateManager: stateManager,
 		traceWriter:  traceWriter,
+		sshPool:      sshPool,
 		llmReady:     llmReady,
 	}, nil
 }
@@ -287,7 +294,7 @@ func initProvider(cfg configs.ModelConfig) (llm.Provider, error) {
 	return client, nil
 }
 
-func initTools(cfg *configs.Config, workDir string) *tools.Registry {
+func initTools(cfg *configs.Config, workDir string, sshPool *rssh.Pool) *tools.Registry {
 	registry := tools.NewRegistry()
 
 	registry.MustRegister(fs.NewReadTool(workDir))
@@ -304,6 +311,16 @@ func initTools(cfg *configs.Config, workDir string) *tools.Registry {
 		RequireConfirm: []string{"rm", "mv", "cp"},
 	})
 	registry.MustRegister(shell.NewShellTool(shellRunner))
+
+	// Register remote SSH tools
+	if sshPool != nil {
+		registry.MustRegister(remote.NewShellTool(sshPool))
+		registry.MustRegister(remote.NewReadTool(sshPool))
+		registry.MustRegister(remote.NewWriteTool(sshPool))
+		registry.MustRegister(remote.NewEditTool(sshPool))
+		registry.MustRegister(remote.NewGlobTool(sshPool))
+		registry.MustRegister(remote.NewGrepTool(sshPool))
+	}
 
 	return registry
 }
