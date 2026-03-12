@@ -150,7 +150,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if a.trainView.Active {
 		switch msg.String() {
-		case "esc":
+		case "tab":
 			if a.trainFocus == trainFocusActions {
 				return a, a.setTrainFocus(trainFocusInput)
 			}
