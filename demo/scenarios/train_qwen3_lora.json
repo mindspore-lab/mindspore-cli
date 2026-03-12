@@ -1,0 +1,48 @@
+{
+  "name": "train_qwen3_lora",
+  "description": "Phase 1 demo: Qwen3 LoRA fine-tuning on remote on-prem SSH target",
+  "target": {
+    "provider": "onprem",
+    "backend": "ssh_host",
+    "name": "torch-npu-910b-0",
+    "config": {
+      "address": "10.0.1.10:22",
+      "env_manager": "docker",
+      "npu_model": "Ascend 910B",
+      "npu_count": 8,
+      "npu_memory": "64 GB HBM"
+    }
+  },
+  "local_context": {
+    "os": "darwin/arm64",
+    "python": "3.10.14",
+    "torch": "2.3.1",
+    "transformers": "4.42.0",
+    "repo": "git:main @ a3f2c1e",
+    "train_script": "scripts/train_lora.py (142 lines)",
+    "base_model": "models/qwen3-7b (13.2 GB, sha256 verified)"
+  },
+  "target_context": {
+    "os": "Linux 5.15",
+    "python": "3.10.14",
+    "framework": "PyTorch 2.3.1",
+    "accelerator": "torch-npu / Ascend",
+    "env_manager": "docker",
+    "npu": "8x Ascend 910B (64 GB HBM each)"
+  },
+  "training": {
+    "total_steps": 300,
+    "steps": [
+      {"step": 10,  "loss": 2.891, "lr": 2.0e-4, "throughput": 487.2},
+      {"step": 25,  "loss": 2.374, "lr": 2.0e-4, "throughput": 512.8},
+      {"step": 50,  "loss": 1.956, "lr": 1.8e-4, "throughput": 518.3},
+      {"step": 75,  "loss": 1.638, "lr": 1.5e-4, "throughput": 516.7},
+      {"step": 100, "loss": 1.401, "lr": 1.2e-4, "throughput": 519.1},
+      {"step": 150, "loss": 1.142, "lr": 8.0e-5, "throughput": 517.4},
+      {"step": 200, "loss": 0.964, "lr": 5.0e-5, "throughput": 518.9},
+      {"step": 250, "loss": 0.882, "lr": 3.0e-5, "throughput": 519.2},
+      {"step": 300, "loss": 0.831, "lr": 2.0e-5, "throughput": 518.5}
+    ],
+    "final_loss": 0.831
+  }
+}

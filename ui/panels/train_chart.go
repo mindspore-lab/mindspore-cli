@@ -8,6 +8,95 @@ import (
 	"github.com/vigo999/ms-cli/ui/model"
 )
 
+// ── Compact sparkline (for metrics panel) ───────────────────
+
+const (
+	sparkHeight = 6  // fixed rows
+	sparkWidth  = 30 // fixed columns
+)
+
+// RenderLossSparkline renders a small loss trend chart that fits within height.
+// No axis labels — just dots showing the direction.
+func RenderLossSparkline(series []model.TrainPoint, width, height int) string {
+	dotStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
+
+	if len(series) < 2 {
+		return emptyStyle.Render("  waiting for data...")
+	}
+
+	chartW := sparkWidth
+	if chartW > width-4 {
+		chartW = width - 4
+	}
+	if chartW < 5 {
+		chartW = 5
+	}
+	// Reserve 1 line for "loss curve" label above the dots.
+	chartH := height - 1
+	if chartH > sparkHeight {
+		chartH = sparkHeight
+	}
+	if chartH < 1 {
+		chartH = 1
+	}
+
+	// Find range
+	minVal, maxVal := series[0].Value, series[0].Value
+	for _, p := range series {
+		if p.Value < minVal {
+			minVal = p.Value
+		}
+		if p.Value > maxVal {
+			maxVal = p.Value
+		}
+	}
+	valRange := maxVal - minVal
+	if valRange < 0.001 {
+		valRange = 0.001
+		minVal -= 0.0005
+		maxVal += 0.0005
+	}
+	pad := valRange * 0.05
+	minVal -= pad
+	maxVal += pad
+	valRange = maxVal - minVal
+
+	cols := resampleSeries(series, chartW)
+	colRows := make([]int, chartW)
+	for i, v := range cols {
+		norm := (v - minVal) / valRange
+		row := chartH - 1 - int(norm*float64(chartH-1))
+		if row < 0 {
+			row = 0
+		}
+		if row >= chartH {
+			row = chartH - 1
+		}
+		colRows[i] = row
+	}
+
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true)
+	var lines []string
+	lines = append(lines, "  "+labelStyle.Render("loss curve"))
+	for row := 0; row < chartH; row++ {
+		var b strings.Builder
+		b.WriteString("  ")
+		for col := 0; col < chartW; col++ {
+			if colRows[col] == row {
+				b.WriteString(dotStyle.Render("."))
+			} else {
+				b.WriteString(" ")
+			}
+		}
+		lines = append(lines, b.String())
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// ── Full chart (for lane panel) ─────────────────────────────
+
 // RenderLaneChart renders an ASCII loss curve for a single lane.
 func RenderLaneChart(series []model.TrainPoint, title string, pointColor, lineColor string, width, height int) string {
 	if width < 10 || height < 4 {
@@ -112,7 +201,7 @@ func RenderLaneChart(series []model.TrainPoint, title string, pointColor, lineCo
 		for col := 0; col < chartWidth; col++ {
 			targetRow := colRows[col]
 			if row == targetRow {
-				line.WriteString(pointStyle.Render("●"))
+				line.WriteString(pointStyle.Render("·"))
 			} else if col > 0 {
 				prevRow := colRows[col-1]
 				minR, maxR := prevRow, targetRow

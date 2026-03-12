@@ -26,6 +26,7 @@ import (
 	"github.com/vigo999/ms-cli/trace"
 	"github.com/vigo999/ms-cli/ui/model"
 	wfexec "github.com/vigo999/ms-cli/workflow/executor"
+	wtrain "github.com/vigo999/ms-cli/workflow/train"
 )
 
 var errAPIKeyNotFound = errors.New("api key not found")
@@ -50,13 +51,18 @@ type Application struct {
 	traceWriter  trace.Writer
 
 	// Train mode state
-	trainMode      bool
-	trainPhase     string // "setup","ready","running","launch_failed","analyzing","fix_ready","evaluating","drift_detected","rerunning","verified","completed","failed"
-	trainReq       *itrain.Request
-	trainCancel    context.CancelFunc
-	trainIssueType string // "runtime", "accuracy", or ""
-	trainRunID     uint64
-	trainMu        sync.RWMutex
+	trainMode       bool
+	trainPhase      string // "setup","ready","running","failed","analyzing","fixing","evaluating","drift_detected","completed","stopped"
+	trainReq        *itrain.Request
+	trainReqs       map[string]itrain.Request
+	trainBootstrap  map[string]*bootstrapRunState
+	trainCurrentRun string
+	trainCancel     context.CancelFunc
+	trainIssueType  string // "runtime", "accuracy", or ""
+	trainRunID      uint64
+	trainTasks      map[uint64]struct{}
+	trainController *wtrain.Controller
+	trainMu         sync.RWMutex
 }
 
 // BootstrapConfig holds bootstrap configuration.

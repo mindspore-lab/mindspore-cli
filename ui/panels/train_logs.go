@@ -14,7 +14,7 @@ var (
 			Padding(0, 1)
 
 	logLineStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("250"))
+			Foreground(lipgloss.Color("244"))
 
 	logMetricLineStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("39"))
@@ -86,8 +86,6 @@ func styleLogLine(line string, maxLen int) string {
 	switch {
 	case strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "fatal"):
 		return logErrorLineStyle.Render(display)
-	case strings.Contains(lower, "loss") && strings.Contains(lower, "step"):
-		return logMetricLineStyle.Render(display)
 	case strings.Contains(lower, "saved") || strings.Contains(lower, "complete") || strings.Contains(lower, "passed"):
 		return logHighlightStyle.Render(display)
 	case strings.Contains(lower, "loading") || strings.Contains(lower, "checking") || strings.Contains(lower, "rsync"):

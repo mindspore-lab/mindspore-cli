@@ -26,9 +26,13 @@ func NewViewport(width, height int) Viewport {
 
 // SetSize updates the viewport dimensions.
 func (v Viewport) SetSize(width, height int) Viewport {
+	follow := v.AtBottom()
 	v.Model.Width = width
 	v.Model.Height = height
 	v.Model.SetContent(strings.Join(v.lines, "\n"))
+	if follow {
+		v.Model.GotoBottom()
+	}
 	return v
 }
 
@@ -74,4 +78,19 @@ func (v Viewport) Update(msg tea.Msg) (Viewport, tea.Cmd) {
 // View renders the viewport.
 func (v Viewport) View() string {
 	return v.Model.View()
+}
+
+// TotalLines returns the total number of content lines.
+func (v Viewport) TotalLines() int {
+	return len(v.lines)
+}
+
+// VisibleHeight returns the viewport height.
+func (v Viewport) VisibleHeight() int {
+	return v.Model.Height
+}
+
+// YOffset returns the current scroll offset.
+func (v Viewport) YOffset() int {
+	return v.Model.YOffset
 }

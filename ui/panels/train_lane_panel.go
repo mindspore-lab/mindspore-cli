@@ -29,16 +29,10 @@ var (
 				Padding(0, 1)
 
 	laneBadgeFailed = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("255")).
-				Background(lipgloss.Color("196")).
-				Padding(0, 1)
-
-	laneBadgeRerunning = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("16")).
-				Background(lipgloss.Color("69")).
-				Padding(0, 1)
+			Bold(true).
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("196")).
+			Padding(0, 1)
 
 	laneBadgePending = lipgloss.NewStyle().
 				Bold(true).
@@ -47,125 +41,96 @@ var (
 				Padding(0, 1)
 
 	laneMetricLabel = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("244"))
+			Foreground(lipgloss.Color("244"))
 
 	laneMetricValue = lipgloss.NewStyle().
-				Bold(true)
+			Bold(true)
 )
 
-// RenderLanePanel renders a complete lane panel: header + chart + logs.
-func RenderLanePanel(lane model.TrainLaneView, width, height int) string {
+// RenderLanePanel remains as a reusable per-run renderer for optional compare views.
+func RenderLanePanel(run model.TrainRunState, width, height int) string {
 	if width < 10 || height < 6 {
 		return strings.Repeat("\n", height-1)
 	}
 
 	var sections []string
+	sections = append(sections, " "+laneHeaderStyle.Render(run.Label)+"  "+laneBadgeForPhase(run.Phase))
+	sections = append(sections, " "+laneSubStyle.Render(fmt.Sprintf("%s · %s · %s", run.TargetName, run.Device, run.Framework)))
 
-	// ── Header: title + badge ──
-	badge := laneBadgeForStatus(lane.Status)
-	sections = append(sections, " "+laneHeaderStyle.Render(lane.Title)+"  "+badge)
-	sections = append(sections, " "+laneSubStyle.Render(fmt.Sprintf("%s · %s · %s", lane.Host, lane.Device, lane.Framework)))
-
-	// ── Metrics row (when running or completed) ──
-	if lane.Metrics.TotalSteps > 0 {
-		metricsLine := metricsRowForLane(lane)
-		sections = append(sections, " "+metricsLine)
+	if run.CurrentMetrics.TotalSteps > 0 {
+		sections = append(sections, " "+metricsRowForRun(run))
 	}
 
 	headerHeight := len(sections)
-
-	// ── Chart + Logs ──
 	remaining := height - headerHeight
 	chartHeight := remaining * 40 / 100
 	if chartHeight < 4 {
 		chartHeight = 4
 	}
-	logsHeight := remaining - chartHeight - 1 // 1 for separator
+	logsHeight := remaining - chartHeight - 1
 	if logsHeight < 2 {
 		logsHeight = 2
 	}
 
-	pointColor, lineColor := laneColors(lane.ID)
-	chart := RenderLaneChart(lane.LossSeries, "", pointColor, lineColor, width, chartHeight)
+	pointColor, lineColor := laneColors(run.ID)
+	chart := RenderLaneChart(run.LossSeries, "", pointColor, lineColor, width, chartHeight)
+	sep := lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render(strings.Repeat("─", width))
+	logs := RenderLaneLogs(run.Logs.Lines, "", width, logsHeight)
 
-	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("236"))
-	sep := sepStyle.Render(strings.Repeat("─", width))
-
-	logs := RenderLaneLogs(lane.Logs, "", width, logsHeight)
-
-	sections = append(sections, chart)
-	sections = append(sections, sep)
-	sections = append(sections, logs)
-
-	final := strings.Join(sections, "\n")
-	lines := strings.Split(final, "\n")
-	if len(lines) > height {
-		lines = lines[:height]
-	}
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
-
-	return strings.Join(lines, "\n")
+	sections = append(sections, chart, sep, logs)
+	return trimPanelHeight(strings.Join(sections, "\n"), height)
 }
 
-func laneBadgeForStatus(status string) string {
-	switch status {
-	case "running":
+func laneBadgeForPhase(phase model.TrainPhase) string {
+	switch phase {
+	case model.TrainPhaseRunning, model.TrainPhaseEvaluating:
 		return laneBadgeRunning.Render(" RUNNING ")
-	case "completed":
-		return laneBadgeCompleted.Render(" COMPLETED ")
-	case "failed":
+	case model.TrainPhaseCompleted, model.TrainPhaseReady:
+		return laneBadgeCompleted.Render(" READY ")
+	case model.TrainPhaseFailed, model.TrainPhaseDriftDetected:
 		return laneBadgeFailed.Render(" FAILED ")
-	case "rerunning":
-		return laneBadgeRerunning.Render(" RERUNNING ")
 	default:
 		return laneBadgePending.Render(" PENDING ")
 	}
 }
 
-func metricsRowForLane(lane model.TrainLaneView) string {
-	m := lane.Metrics
+func metricsRowForRun(run model.TrainRunState) string {
+	m := run.CurrentMetrics
 	parts := []string{}
 
 	if m.TotalSteps > 0 {
-		valStyle := laneMetricValue.Foreground(laneAccent(lane.ID))
-		parts = append(parts,
-			laneMetricLabel.Render("step ")+valStyle.Render(fmt.Sprintf("%d/%d", m.Step, m.TotalSteps)))
+		valStyle := laneMetricValue.Foreground(laneAccent(run.ID))
+		parts = append(parts, laneMetricLabel.Render("step ")+valStyle.Render(fmt.Sprintf("%d/%d", m.Step, m.TotalSteps)))
 	}
 	if m.Loss > 0 {
-		valStyle := laneMetricValue.Foreground(laneAccent(lane.ID))
-		parts = append(parts,
-			laneMetricLabel.Render("loss ")+valStyle.Render(fmt.Sprintf("%.4f", m.Loss)))
+		valStyle := laneMetricValue.Foreground(laneAccent(run.ID))
+		parts = append(parts, laneMetricLabel.Render("loss ")+valStyle.Render(fmt.Sprintf("%.4f", m.Loss)))
 	}
 	if m.Throughput > 0 {
-		valStyle := laneMetricValue.Foreground(laneAccent(lane.ID))
-		parts = append(parts,
-			laneMetricLabel.Render("tput ")+valStyle.Render(fmt.Sprintf("%.0f", m.Throughput)))
+		valStyle := laneMetricValue.Foreground(laneAccent(run.ID))
+		parts = append(parts, laneMetricLabel.Render("tput ")+valStyle.Render(fmt.Sprintf("%.0f", m.Throughput)))
 	}
 
 	return strings.Join(parts, "  ")
 }
 
-// laneColors returns point and line colors for chart rendering.
-func laneColors(id model.TrainLaneID) (pointColor, lineColor string) {
+func laneColors(id string) (pointColor, lineColor string) {
 	switch id {
-	case model.LaneGPU:
-		return "39", "69" // cyan, light blue
-	case model.LaneNPU:
-		return "114", "78" // green, lighter green
+	case "torch_npu":
+		return "39", "69"
+	case "mindspore_npu":
+		return "114", "78"
 	default:
 		return "252", "244"
 	}
 }
 
-// laneAccent returns the primary accent color for a lane.
-func laneAccent(id model.TrainLaneID) lipgloss.Color {
+func laneAccent(id string) lipgloss.Color {
 	switch id {
-	case model.LaneGPU:
-		return lipgloss.Color("39") // cyan
-	case model.LaneNPU:
-		return lipgloss.Color("114") // green
+	case "torch_npu":
+		return lipgloss.Color("39")
+	case "mindspore_npu":
+		return lipgloss.Color("114")
 	default:
 		return lipgloss.Color("252")
 	}

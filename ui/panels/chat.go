@@ -69,7 +69,8 @@ var (
 
 // RenderMessages converts messages into styled text for the viewport.
 // stats is used to show summary when thinking is done.
-func RenderMessages(state model.State, spinnerView string) string {
+// compact uses single-line spacing (for the train agent box).
+func RenderMessages(state model.State, spinnerView string, compact ...bool) string {
 	var parts []string
 	messages := state.Messages
 	stats := state.Stats
@@ -94,7 +95,11 @@ func RenderMessages(state model.State, spinnerView string) string {
 		}
 	}
 
-	return strings.Join(parts, "\n\n")
+	sep := "\n\n"
+	if len(compact) > 0 && compact[0] {
+		sep = "\n"
+	}
+	return strings.Join(parts, sep)
 }
 
 func renderUserMsg(content string) string {

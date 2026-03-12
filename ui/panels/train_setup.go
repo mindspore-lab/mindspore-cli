@@ -9,7 +9,6 @@ import (
 )
 
 var (
-	// Title and headers
 	trainTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("214"))
@@ -20,7 +19,6 @@ var (
 				Background(lipgloss.Color("236")).
 				Padding(0, 1)
 
-	// Phase badges
 	phaseBadgeSetup = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("16")).
@@ -69,57 +67,21 @@ var (
 				Background(lipgloss.Color("214")).
 				Padding(0, 1)
 
-	phaseBadgeVerified = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("16")).
-				Background(lipgloss.Color("114")).
-				Padding(0, 1)
-
 	phaseBadgeRerunning = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("16")).
 				Background(lipgloss.Color("69")).
 				Padding(0, 1)
 
-	// Check items
-	checkPassedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("114"))
+	checkPassedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
+	checkFailedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	checkRunningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	checkPendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	checkDetailStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 
-	checkFailedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("196"))
+	trainDividerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("236"))
+	metricLabelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 
-	checkRunningStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("214"))
-
-	checkPendingStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("240"))
-
-	checkDetailStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("244"))
-
-	// Hosts
-	hostConnectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("114"))
-
-	hostConnectingStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("214"))
-
-	hostAddrStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244"))
-
-	// Hints and borders
-	trainHintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Italic(true)
-
-	trainDividerStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("236"))
-
-	// Metrics
-	metricLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("244"))
-
-	// Action buttons
 	actionNormalStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("252")).
 				Background(lipgloss.Color("238")).
@@ -150,87 +112,47 @@ var (
 				Padding(0, 2)
 )
 
-// RenderTrainSetup renders the left panel: request, phase, targets, compare, issue, actions.
-func RenderTrainSetup(tv model.TrainViewState, width, height int) string {
+func RenderTrainSidebar(tv model.TrainWorkspaceState, width, height int) string {
 	var sections []string
 
-	// ── Header: model/method + phase badge ──
-	title := trainTitleStyle.Render(fmt.Sprintf(" %s / %s", tv.Model, tv.Method))
-	badge := phaseBadge(tv.Phase)
-	sections = append(sections, title+"  "+badge)
-	sections = append(sections, "")
+	title := trainTitleStyle.Render(fmt.Sprintf(" %s / %s", tv.Request.Model, tv.Request.Mode))
+	sections = append(sections, title+"  "+workspaceStageBadge(tv.Stage), "")
+	sections = append(sections, " "+sectionHeaderStyle.Render("Run Jobs"))
+	sections = append(sections, renderRunNavigator(tv, width)...)
 
-	// ── Preflight Checks (during setup) ──
-	if tv.Phase == "setup" || tv.Phase == "ready" {
-		sections = append(sections, " "+sectionHeaderStyle.Render("Preflight Checks"))
-		for _, c := range tv.Checks {
-			sections = append(sections, renderCheck(c))
-		}
-	}
-
-	// ── Hosts (during setup) ──
-	if (tv.Phase == "setup" || tv.Phase == "ready") && len(tv.Hosts) > 0 {
-		sections = append(sections, "")
-		sections = append(sections, " "+sectionHeaderStyle.Render("Compute Hosts"))
-		for _, h := range tv.Hosts {
-			sections = append(sections, renderHost(h))
-		}
-	}
-
-	// ── Targets (after setup) ──
-	showTargets := tv.Phase != "setup" && tv.Phase != "ready"
-	if showTargets {
-		sections = append(sections, " "+sectionHeaderStyle.Render("Targets"))
-		sections = append(sections, renderTarget(tv.GPULane))
-		sections = append(sections, renderTarget(tv.NPULane))
-	}
-
-	// ── Compare summary ──
-	cmpLines := RenderCompareSummary(tv)
-	if len(cmpLines) > 0 {
+	if tv.Compare != nil && tv.Compare.Enabled {
 		sections = append(sections, "")
 		sections = append(sections, " "+sectionHeaderStyle.Render("Compare"))
-		sections = append(sections, cmpLines...)
+		sections = append(sections, RenderCompareSummary(tv)...)
 	}
 
-	// ── Issue summary ──
-	if tv.Issue != nil {
+	run := tv.ActiveRun()
+	if run != nil && (run.CurrentIssue != nil || run.Issue != nil || len(run.AgentActions) > 0) {
 		sections = append(sections, "")
-		issueHeader := "Issue"
-		if tv.Issue.Type == "runtime" {
-			issueHeader = "Issue (Runtime)"
-		} else if tv.Issue.Type == "accuracy" {
-			issueHeader = "Issue (Accuracy)"
+		header := "Issue / Analysis"
+		if tv.Focus == model.TrainPanelIssue {
+			header += " [focused]"
 		}
-		sections = append(sections, " "+sectionHeaderStyle.Render(issueHeader))
-		sections = append(sections, "   "+metricLabelStyle.Render(tv.Issue.Title))
-		if tv.Issue.Detail != "" {
-			for _, line := range wrapText(tv.Issue.Detail, width-6) {
-				sections = append(sections, "   "+checkDetailStyle.Render(line))
-			}
-		}
-		if tv.Issue.FixSummary != "" {
-			sections = append(sections, "   "+checkPassedStyle.Render("Fix: "+tv.Issue.FixSummary))
-		}
-		if tv.Issue.Confidence != "" {
-			confStyle := checkPassedStyle
-			if tv.Issue.Confidence != "high" {
-				confStyle = checkRunningStyle
-			}
-			sections = append(sections, "   "+metricLabelStyle.Render("Confidence: ")+confStyle.Render(tv.Issue.Confidence))
-		}
-		if tv.Issue.DiffText != "" {
-			sections = append(sections, "   "+metricLabelStyle.Render("Diff:"))
-			for _, line := range renderDiffPreview(tv.Issue.DiffText, width-6, 8) {
-				sections = append(sections, "   "+line)
-			}
-		}
+		sections = append(sections, " "+sectionHeaderStyle.Render(header))
+		sections = append(sections, RenderTrainIssue(tv, width)...)
 	}
 
-	// ── Action row (pinned to bottom) ──
+	if setupLines := renderSidebarSetupSummary(tv, width); len(setupLines) > 0 {
+		sections = append(sections, "")
+		header := "Setup / Env"
+		if tv.Focus == model.TrainPanelStatus {
+			header += " [focused]"
+		}
+		sections = append(sections, " "+sectionHeaderStyle.Render(header))
+		sections = append(sections, setupLines...)
+	}
+
 	content := strings.Join(sections, "\n")
 	contentLines := strings.Split(content, "\n")
-	actionLines := 3
+	actionLines := 0
+	if len(tv.GlobalActions.Items) > 0 {
+		actionLines = 2
+	}
 	gapNeeded := height - len(contentLines) - actionLines
 	if gapNeeded > 0 {
 		for i := 0; i < gapNeeded; i++ {
@@ -238,203 +160,427 @@ func RenderTrainSetup(tv model.TrainViewState, width, height int) string {
 		}
 	}
 
-	divider := trainDividerStyle.Render(" " + strings.Repeat("─", width-2))
-	sections = append(sections, divider)
-	sections = append(sections, renderActionRow(tv))
-
-	final := strings.Join(sections, "\n")
-	lines := strings.Split(final, "\n")
-	if len(lines) > height {
-		lines = lines[:height]
+	if len(tv.GlobalActions.Items) > 0 {
+		divider := trainDividerStyle.Render(" " + strings.Repeat("─", width-2))
+		sections = append(sections, divider)
+		sections = append(sections, renderActionRow(tv))
 	}
 
-	return strings.Join(lines, "\n")
+	return clampPanelWidth(trimPanelHeight(strings.Join(sections, "\n"), height), width)
 }
 
-func renderTarget(lane model.TrainLaneView) string {
-	statusStyle := checkPendingStyle
-	icon := "○"
-	switch lane.Status {
-	case "running", "rerunning":
-		statusStyle = checkRunningStyle
-		icon = "●"
-	case "completed":
-		statusStyle = checkPassedStyle
-		icon = "✓"
-	case "failed":
-		statusStyle = checkFailedStyle
-		icon = "✗"
+func RenderTrainStatus(tv model.TrainWorkspaceState, width, height int) string {
+	run := tv.ActiveRun()
+	if run == nil {
+		return trimPanelHeight("", height)
 	}
 
-	label := fmt.Sprintf("%s %s", lane.Host, lane.Device)
-	tag := ""
-	if lane.Role == "baseline" {
-		tag = " " + checkDetailStyle.Render("[baseline]")
-	} else if lane.Role == "candidate" {
-		tag = " " + checkDetailStyle.Render("[candidate]")
+	var sections []string
+	title := run.Label
+	if title == "" {
+		title = run.ID
 	}
-	return "   " + statusStyle.Render(icon+" "+label) + tag
+	sections = append(sections, " "+trainTitleStyle.Render(title)+"  "+phaseBadge(run.Phase))
+	meta := []string{}
+	if run.Framework != "" {
+		meta = append(meta, run.Framework)
+	}
+	if run.Device != "" {
+		meta = append(meta, run.Device)
+	}
+	if run.TargetName != "" {
+		meta = append(meta, run.TargetName)
+	}
+	if len(meta) > 0 {
+		sections = append(sections, " "+checkDetailStyle.Render(strings.Join(meta, " · ")))
+	}
+	sections = append(sections, "")
+
+	if run.StatusMessage != "" && run.Phase != model.TrainPhaseSetup && run.Phase != model.TrainPhaseReady {
+		sections = append(sections, " "+checkDetailStyle.Render(run.StatusMessage))
+	}
+	if run.ErrorMessage != "" {
+		sections = append(sections, " "+checkFailedStyle.Render(run.ErrorMessage))
+	}
+	if run.StatusMessage != "" || run.ErrorMessage != "" {
+		sections = append(sections, "")
+	}
+
+	if len(run.Metrics) > 0 {
+		sections = append(sections, " "+sectionHeaderStyle.Render("Metrics"))
+		sections = append(sections, renderMetricsSummary(run.Metrics))
+	}
+
+	return trimPanelHeight(strings.Join(sections, "\n"), height)
 }
 
-func phaseBadge(phase string) string {
-	switch phase {
-	case "setup":
-		return phaseBadgeSetup.Render(" SETUP ")
-	case "ready":
-		return phaseBadgeReady.Render(" READY ")
-	case "launch_failed":
-		return phaseBadgeFailed.Render(" LAUNCH FAILED ")
-	case "running":
-		return phaseBadgeRunning.Render(" RUNNING ")
-	case "evaluating":
-		return phaseBadgeRunning.Render(" EVALUATING ")
-	case "drift_detected":
-		return phaseBadgeDrift.Render(" DRIFT DETECTED ")
-	case "analyzing":
-		return phaseBadgeAnalyzing.Render(" ANALYZING ")
-	case "fix_ready":
-		return phaseBadgeAnalyzing.Render(" FIX READY ")
-	case "rerunning":
-		return phaseBadgeRerunning.Render(" RERUNNING ")
-	case "verified":
-		return phaseBadgeVerified.Render(" FIX VERIFIED ")
-	case "completed":
-		return phaseBadgeCompleted.Render(" COMPLETED ")
-	case "failed":
-		return phaseBadgeFailed.Render(" FAILED ")
-	case "stopped":
-		return phaseBadgeStopped.Render(" STOPPED ")
-	default:
-		return phaseBadgeStopped.Render(" " + strings.ToUpper(phase) + " ")
-	}
-}
+func renderRunNavigator(tv model.TrainWorkspaceState, width int) []string {
+	lines := make([]string, 0, len(tv.Runs))
+	activeID := tv.ActiveRunID
+	focused := tv.Focus == model.TrainPanelRunList
 
-func renderCheck(c model.TrainCheckView) string {
-	var icon, label, detail string
-
-	switch c.Status {
-	case "passed":
-		icon = checkPassedStyle.Render(" ✓ ")
-		label = checkPassedStyle.Render(c.Label)
-		if c.Detail != "" {
-			detail = " " + checkDetailStyle.Render(c.Detail)
+	for _, run := range tv.Runs {
+		marker := "○"
+		style := checkPendingStyle
+		switch run.Phase {
+		case model.TrainPhaseRunning, model.TrainPhaseEvaluating:
+			marker = "●"
+			style = checkRunningStyle
+		case model.TrainPhaseCompleted, model.TrainPhaseReady:
+			marker = "✓"
+			style = checkPassedStyle
+		case model.TrainPhaseFailed, model.TrainPhaseDriftDetected:
+			marker = "✗"
+			style = checkFailedStyle
 		}
-	case "failed":
-		icon = checkFailedStyle.Render(" ✗ ")
-		label = checkFailedStyle.Render(c.Label)
-		if c.Detail != "" {
-			detail = " " + checkFailedStyle.Render(c.Detail)
+
+		label := run.Label
+		if label == "" {
+			label = run.ID
 		}
-	case "checking":
-		icon = checkRunningStyle.Render(" ⟳ ")
-		label = checkRunningStyle.Render(c.Label + "...")
-	default:
-		icon = checkPendingStyle.Render(" ○ ")
-		label = checkPendingStyle.Render(c.Label)
-	}
-
-	return "  " + icon + " " + label + detail
-}
-
-func wrapText(s string, width int) []string {
-	if width <= 0 || len(s) <= width {
-		return []string{s}
-	}
-
-	var lines []string
-	remaining := strings.TrimSpace(s)
-	for len(remaining) > width {
-		split := strings.LastIndex(remaining[:width], " ")
-		if split <= 0 {
-			split = width
+		line := "   " + style.Render(marker+" "+truncateRunText(label, width-8))
+		if run.ID == activeID {
+			line += " " + checkDetailStyle.Render("[active]")
+			if focused {
+				line = " " + actionFocusedStyle.Render(strings.TrimSpace(line))
+			}
 		}
-		lines = append(lines, strings.TrimSpace(remaining[:split]))
-		remaining = strings.TrimSpace(remaining[split:])
+		lines = append(lines, line)
 	}
-	if remaining != "" {
-		lines = append(lines, remaining)
+
+	if len(lines) == 0 {
+		lines = append(lines, "   "+checkPendingStyle.Render("No runs"))
 	}
 	return lines
 }
 
-func renderDiffPreview(diff string, width, maxLines int) []string {
-	lines := strings.Split(diff, "\n")
-	if maxLines > 0 && len(lines) > maxLines {
-		lines = append(lines[:maxLines], "...")
-	}
-
-	rendered := make([]string, 0, len(lines))
-	for _, line := range lines {
-		display := line
-		if width > 0 && len(display) > width {
-			display = display[:width-1] + "..."
+func renderMetricsSummary(metrics []model.MetricItem) string {
+	parts := make([]string, 0, len(metrics))
+	for _, metric := range metrics {
+		if metric.Value == "" {
+			continue
 		}
-		style := checkDetailStyle
-		switch {
-		case strings.HasPrefix(line, "+"):
-			style = checkPassedStyle
-		case strings.HasPrefix(line, "-"):
-			style = checkFailedStyle
-		case strings.HasPrefix(line, "@@"):
-			style = checkRunningStyle
-		}
-		rendered = append(rendered, style.Render(display))
+		parts = append(parts, fmt.Sprintf("%s %s", metric.Name, metric.Value))
 	}
-	return rendered
+	return "   " + metricLabelStyle.Render(strings.Join(parts, "  "))
 }
 
-func renderHost(h model.TrainHostView) string {
-	switch h.Status {
-	case "connected":
-		addr := ""
-		if h.Address != "" {
-			addr = " " + hostAddrStyle.Render(h.Address)
+func renderCheck(c model.ChecklistItem, width int) string {
+	icon := "○"
+	iconStyle := checkPendingStyle
+	switch c.Status {
+	case model.TrainCheckPass:
+		icon = "✓"
+		iconStyle = checkPassedStyle
+	case model.TrainCheckFail:
+		icon = "[!]"
+		iconStyle = checkFailedStyle
+	case model.TrainCheckRunning:
+		icon = "●"
+		iconStyle = checkRunningStyle
+	}
+	name := displayCheckName(c.Name)
+	detail := c.Summary
+	if detail == "" {
+		detail = "checking..."
+		if c.Status == model.TrainCheckPass {
+			detail = "ok"
+		} else if c.Status == model.TrainCheckFail {
+			detail = "failed"
 		}
-		return "   " + hostConnectedStyle.Render("● "+h.Name) + addr
-	case "connecting":
-		addr := ""
-		if h.Address != "" {
-			addr = " " + hostAddrStyle.Render(h.Address)
+	}
+	line := "   " + iconStyle.Render(icon) + " " + metricLabelStyle.Render(name+": ") + checkDetailStyle.Render(truncateRunText(detail, width-len(name)-10))
+	return line
+}
+
+func renderSidebarSetupSummary(tv model.TrainWorkspaceState, width int) []string {
+	run := tv.ActiveRun()
+	if run == nil {
+		return nil
+	}
+
+	lines := []string{}
+	if target := activeTargetLine(tv, run); target != "" {
+		sshLine := "   "
+		maxTargetWidth := width - 14
+		if strings.TrimSpace(run.StatusMessage) == "Fixing..." {
+			sshLine += checkFailedStyle.Render("fixing... ")
+			maxTargetWidth = width - 24
 		}
-		return "   " + hostConnectingStyle.Render("◌ "+h.Name+"...") + addr
-	case "failed":
-		return "   " + checkFailedStyle.Render("✗ "+h.Name+" connection failed")
+		sshLine += metricLabelStyle.Render("ssh: ")
+		sshLine += checkDetailStyle.Render(truncateRunText(target, maxTargetWidth))
+		lines = append(lines, sshLine)
+	}
+
+	for _, item := range sidebarEnvItems(tv, run.ID) {
+		lines = append(lines, "   "+metricLabelStyle.Render(item.label+": ")+checkDetailStyle.Render(truncateRunText(item.value, width-12)))
+	}
+
+	localChecks := tv.ChecksByGroup(run.ID, model.TrainCheckGroupLocal)
+	if len(localChecks) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "   "+metricLabelStyle.Render("local checks"))
+		for _, c := range localChecks {
+			lines = append(lines, renderCheck(c, width))
+		}
+	}
+
+	targetChecks := tv.ChecksByGroup(run.ID, model.TrainCheckGroupTarget)
+	if len(targetChecks) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "   "+metricLabelStyle.Render("target checks"))
+		for _, c := range targetChecks {
+			lines = append(lines, renderCheck(c, width))
+		}
+		if strings.TrimSpace(run.StatusMessage) != "" && strings.TrimSpace(run.StatusMessage) != "Fixing..." {
+			lines = append(lines, "   "+checkDetailStyle.Render(truncateRunText(run.StatusMessage, width-6)))
+		}
+	} else if strings.TrimSpace(run.StatusMessage) != "" && strings.TrimSpace(run.StatusMessage) != "Fixing..." {
+		lines = append(lines, "")
+		lines = append(lines, "   "+checkDetailStyle.Render(truncateRunText(run.StatusMessage, width-6)))
+	}
+
+	if tv.TrainPlan != nil {
+		lines = append(lines, "")
+		lines = append(lines, "   "+metricLabelStyle.Render("plan: ")+checkPassedStyle.Render("ready-to-start"))
+	}
+
+	return lines
+}
+
+type envItem struct {
+	label string
+	value string
+}
+
+func sidebarEnvItems(tv model.TrainWorkspaceState, runID string) []envItem {
+	items := []envItem{}
+	checks := append([]model.ChecklistItem{}, tv.ChecksByGroup(runID, model.TrainCheckGroupLocal)...)
+	checks = append(checks, tv.ChecksByGroup(runID, model.TrainCheckGroupTarget)...)
+
+	for _, check := range checks {
+		if check.Status != model.TrainCheckPass {
+			continue
+		}
+		switch check.Name {
+		case "target_workdir":
+			items = appendIfMissing(items, envItem{label: "workdir", value: check.Summary})
+		case "target_aiframework":
+			items = appendIfMissing(items, envItem{label: "model-lib", value: check.Summary})
+		case "train_script":
+			items = appendIfMissing(items, envItem{label: "script", value: check.Summary})
+		case "base_model":
+			items = appendIfMissing(items, envItem{label: "model", value: check.Summary})
+		case "local_repo":
+			items = appendIfMissing(items, envItem{label: "repo", value: check.Summary})
+		case "local_aiframework":
+			items = appendIfMissing(items, envItem{label: "local-lib", value: check.Summary})
+		}
+	}
+
+	if tv.SetupContext.EnvKind != "" {
+		items = appendIfMissing(items, envItem{label: "env", value: tv.SetupContext.EnvKind})
+	}
+	if tv.SetupContext.Workdir != "" {
+		items = appendIfMissing(items, envItem{label: "workdir", value: tv.SetupContext.Workdir})
+	}
+	if tv.SetupContext.ScriptPath != "" {
+		items = appendIfMissing(items, envItem{label: "script", value: tv.SetupContext.ScriptPath})
+	}
+	if tv.SetupContext.BaseModelRef != "" {
+		items = appendIfMissing(items, envItem{label: "model", value: tv.SetupContext.BaseModelRef})
+	}
+	if tv.TrainPlan != nil && tv.TrainPlan.RepoSource != "" {
+		items = appendIfMissing(items, envItem{label: "source", value: tv.TrainPlan.RepoSource})
+	}
+
+	return items
+}
+
+func activeTargetLine(tv model.TrainWorkspaceState, run *model.TrainRunState) string {
+	targetName := run.TargetName
+	if targetName == "" {
+		targetName = tv.Request.TargetName
+	}
+	if targetName == "" {
+		return ""
+	}
+	for _, host := range tv.Hosts {
+		if host.Name == targetName {
+			if host.Address != "" {
+				return host.Name + " @ " + host.Address
+			}
+			return host.Name
+		}
+	}
+	return targetName
+}
+
+func appendIfMissing(items []envItem, item envItem) []envItem {
+	if strings.TrimSpace(item.value) == "" {
+		return items
+	}
+	for _, existing := range items {
+		if existing.label == item.label {
+			return items
+		}
+	}
+	return append(items, item)
+}
+
+func displayCheckName(name string) string {
+	switch name {
+	case "local_repo":
+		return "repo"
+	case "local_os":
+		return "os"
+	case "local_aiframework":
+		return "libs"
+	case "train_script":
+		return "script"
+	case "base_model":
+		return "model"
+	case "ssh":
+		return "ssh connect"
+	case "target_os":
+		return "os"
+	case "target_aiframework":
+		return "libs"
+	case "target_workdir":
+		return "workdir"
+	case "target_algo":
+		return "script/config"
+	case "target_gpu":
+		return "gpu"
+	case "target_npu":
+		return "npu"
 	default:
-		return "   " + checkPendingStyle.Render("○ "+h.Name)
+		return name
 	}
 }
 
-func renderActionRow(tv model.TrainViewState) string {
-	if len(tv.Actions) == 0 {
-		return trainHintStyle.Render("  Setting up...")
+func phaseBadge(phase model.TrainPhase) string {
+	switch phase {
+	case model.TrainPhaseSetup:
+		return phaseBadgeSetup.Render(" SETUP ")
+	case model.TrainPhaseReady:
+		return phaseBadgeReady.Render(" READY ")
+	case model.TrainPhaseRunning:
+		return phaseBadgeRunning.Render(" RUNNING ")
+	case model.TrainPhaseCompleted:
+		return phaseBadgeCompleted.Render(" COMPLETED ")
+	case model.TrainPhaseFailed:
+		return phaseBadgeFailed.Render(" FAILED ")
+	case model.TrainPhaseStopped:
+		return phaseBadgeStopped.Render(" STOPPED ")
+	case model.TrainPhaseDriftDetected:
+		return phaseBadgeDrift.Render(" DRIFT ")
+	case model.TrainPhaseAnalyzing:
+		return phaseBadgeAnalyzing.Render(" ANALYZING ")
+	case model.TrainPhaseFixing:
+		return phaseBadgeAnalyzing.Render(" FIXING ")
+	case model.TrainPhaseEvaluating:
+		return phaseBadgeRerunning.Render(" EVALUATING ")
+	default:
+		return phaseBadgeStopped.Render(" IDLE ")
 	}
-
-	var buttons []string
-	for i, action := range tv.Actions {
-		style := actionStyleFor(action, tv.ActionRowFocused && i == tv.FocusedAction)
-		buttons = append(buttons, style.Render(action.Label))
-	}
-
-	row := "  " + strings.Join(buttons, "  ")
-	hint := trainHintStyle.Render("  Esc focuses actions  i focuses chat  Arrow selects  Enter activates")
-	return row + "\n" + hint
 }
 
-func actionStyleFor(action model.TrainActionItem, focused bool) lipgloss.Style {
-	if action.Disabled {
+func workspaceStageBadge(stage model.WorkspaceStage) string {
+	switch stage {
+	case model.StageSetup:
+		return phaseBadgeSetup.Render(" WORKSPACE SETUP ")
+	case model.StageReady:
+		return phaseBadgeReady.Render(" WORKSPACE READY ")
+	case model.StageRunning:
+		return phaseBadgeRunning.Render(" WORKSPACE RUNNING ")
+	case model.StageAnalyzing:
+		return phaseBadgeAnalyzing.Render(" ANALYZING ")
+	case model.StageFixing:
+		return phaseBadgeAnalyzing.Render(" FIXING ")
+	case model.StageDone:
+		return phaseBadgeCompleted.Render(" DONE ")
+	default:
+		return phaseBadgeStopped.Render(" IDLE ")
+	}
+}
+
+func renderActionRow(tv model.TrainWorkspaceState) string {
+	if len(tv.GlobalActions.Items) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(tv.GlobalActions.Items))
+	for i, action := range tv.GlobalActions.Items {
+		style := actionStyleFor(action, tv.Focus == model.TrainPanelActions && i == tv.GlobalActions.SelectedIndex)
+		parts = append(parts, style.Render(action.Label))
+	}
+
+	return " " + strings.Join(parts, " ")
+}
+
+func actionStyleFor(action model.TrainAction, focused bool) lipgloss.Style {
+	if !action.Enabled {
 		return actionDisabledStyle
 	}
-
-	isDanger := action.Action == model.ActionStop
-	if focused {
-		if isDanger {
+	if action.ID == "stop" || action.ID == "apply_fix" {
+		if focused {
 			return actionDangerFocusedStyle
 		}
-		return actionFocusedStyle
-	}
-
-	if isDanger {
 		return actionDangerStyle
 	}
+	if focused {
+		return actionFocusedStyle
+	}
 	return actionNormalStyle
+}
+
+func wrapText(text string, width int) []string {
+	if width <= 0 || len(text) <= width {
+		return []string{text}
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{text}
+	}
+	lines := []string{}
+	current := words[0]
+	for _, word := range words[1:] {
+		if len(current)+1+len(word) > width {
+			lines = append(lines, current)
+			current = word
+			continue
+		}
+		current += " " + word
+	}
+	lines = append(lines, current)
+	return lines
+}
+
+func trimPanelHeight(content string, height int) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		// Show the bottom so the latest checks/items stay visible.
+		lines = lines[len(lines)-height:]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func truncateRunText(s string, maxLen int) string {
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-1] + "…"
+}
+
+func clampPanelWidth(content string, width int) string {
+	style := lipgloss.NewStyle().Width(width).MaxWidth(width)
+	lines := strings.Split(content, "\n")
+	for i := range lines {
+		lines[i] = style.Render(lines[i])
+	}
+	return strings.Join(lines, "\n")
 }

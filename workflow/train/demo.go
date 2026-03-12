@@ -3,8 +3,26 @@ package train
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+
+	itrain "github.com/vigo999/ms-cli/internal/train"
 )
+
+func withDefaultRunID(ev Event) Event {
+	if ev.RunID != "" {
+		return ev
+	}
+	switch ev.Lane {
+	case "gpu":
+		ev.RunID = "torch_npu"
+	case "npu":
+		ev.RunID = "mindspore_npu"
+	default:
+		ev.RunID = "primary"
+	}
+	return ev
+}
 
 // emit sends an event via the sink, respecting delays and context cancellation.
 func emit(ctx context.Context, sink func(Event), ev Event) bool {
@@ -19,9 +37,102 @@ func emit(ctx context.Context, sink func(Event), ev Event) bool {
 	return true
 }
 
-// RunSetup plays the demo setup phase: preflight checks for both GPU and NPU hosts.
+// DemoBackend provides demo/scenario playback for Phase 1.
+// It implements the Backend interface.
+type DemoBackend struct{}
+
+// Setup runs the demo setup phase using probe-based sequencing.
+// The actual setup is driven by RunSetupSequence which calls probes;
+// this method is only called if the controller bypasses the probe pipeline.
+func (d *DemoBackend) Setup(ctx context.Context, req itrain.Request, sink func(Event)) error {
+	return RunSetupSequence(ctx, req, d, sink)
+}
+
+// Run plays back the demo training scenario: log lines + metrics + completion.
+func (d *DemoBackend) Run(ctx context.Context, session *Session, sink func(Event)) error {
+	return d.runTraining(ctx, session.Model, session.Method, sink, session.FailAtStep)
+}
+
+// runTraining plays demo training: loading, log lines, metrics, completion.
+// If failAtStep > 0, training crashes at that step with a DSA operator error.
+func (d *DemoBackend) runTraining(ctx context.Context, model, method string, sink func(Event), failAtStep ...int) error {
+	failStep := 0
+	if len(failAtStep) > 0 {
+		failStep = failAtStep[0]
+	}
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
+
+	runID := fmt.Sprintf("train-%s", time.Now().Format("0102-150405"))
+
+	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Loading base model %s-7b...", runID, model), DelayMs: 600}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] LoRA config: rank=16, alpha=32, dropout=0.05", runID), DelayMs: 300}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Loading dataset: alpaca_gpt4_zh (52,002 samples)", runID), DelayMs: 400}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Graph compilation... OK", runID), DelayMs: 800}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Begin training loop (300 steps)...", runID), DelayMs: 300}) {
+		return ctx.Err()
+	}
+
+	type snap struct {
+		step       int
+		loss       float64
+		lr         float64
+		throughput float64
+	}
+	steps := []snap{
+		{10, 2.891, 2.0e-4, 487.2},
+		{25, 2.374, 2.0e-4, 512.8},
+		{50, 1.956, 1.8e-4, 518.3},
+		{75, 1.638, 1.5e-4, 516.7},
+		{100, 1.401, 1.2e-4, 519.1},
+		{150, 1.142, 8.0e-5, 517.4},
+		{200, 0.964, 5.0e-5, 518.9},
+		{250, 0.882, 3.0e-5, 519.2},
+		{300, 0.831, 2.0e-5, 518.5},
+	}
+
+	totalSteps := 300
+	for _, s := range steps {
+		// Failure injection: crash at the specified step.
+		if failStep > 0 && s.step >= failStep {
+			crashMsg := fmt.Sprintf("[%s] FATAL: operator init failed at step %d — DSA operator (torch.ops.npu.dsa) not implemented in torch 2.7 for Ascend backend", runID, s.step)
+			e(Event{Kind: EventLogLine, Message: crashMsg, DelayMs: 200})
+			return fmt.Errorf("operator init failed: DSA operator not implemented in torch 2.7")
+		}
+		logMsg := fmt.Sprintf("[%s] step %3d/%d | loss %.4f | lr %.1e | %.0f tok/s",
+			runID, s.step, totalSteps, s.loss, s.lr, s.throughput)
+		if !e(Event{Kind: EventLogLine, Message: logMsg, DelayMs: 350}) {
+			return ctx.Err()
+		}
+		if !e(Event{Kind: EventMetricUpdate, Step: s.step, TotalSteps: totalSteps, Loss: s.loss, LR: s.lr, Throughput: s.throughput, DelayMs: 50}) {
+			return ctx.Err()
+		}
+	}
+
+	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Training complete. Saving model...", runID), DelayMs: 600}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventTrainCompleted, Message: "Training completed. Final loss: 0.831", DelayMs: 300}) {
+		return ctx.Err()
+	}
+
+	return nil
+}
+
+// ── Legacy Phase 2 functions (dual-lane Torch-NPU vs MindSpore-NPU demo) ────────
+// These are preserved for the advanced demo scenario and are called
+// directly from internal/app/train.go for Phase 2 flows.
+
+// RunSetup plays the legacy demo setup phase for both Torch-NPU and MindSpore-NPU hosts.
 func RunSetup(ctx context.Context, model, method string, sink func(Event)) error {
-	e := func(ev Event) bool { return emit(ctx, sink, ev) }
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
 
 	if !e(Event{Kind: EventMessage, Message: fmt.Sprintf("Preparing %s %s compare training. Running preflight checks...", model, method), DelayMs: 400}) {
 		return ctx.Err()
@@ -104,7 +215,7 @@ func RunSetup(ctx context.Context, model, method string, sink func(Event)) error
 	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "NPU devices: 8x Ascend 910B (64 GB HBM each)", DelayMs: 300}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventCheckPassed, Check: "runtime_env", Message: "GPU: PyTorch/CUDA, NPU: MindSpore/CANN", DelayMs: 400}) {
+	if !e(Event{Kind: EventCheckPassed, Check: "runtime_env", Message: "Torch/NPU: PyTorch+Ascend, MindSpore/NPU: MindSpore/CANN", DelayMs: 400}) {
 		return ctx.Err()
 	}
 
@@ -119,16 +230,16 @@ func RunSetup(ctx context.Context, model, method string, sink func(Event)) error
 
 // RunConcurrentTraining starts both lanes. NPU crashes at launch, GPU completes.
 func RunConcurrentTraining(ctx context.Context, model, method string, sink func(Event)) error {
-	e := func(ev Event) bool { return emit(ctx, sink, ev) }
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
 
 	gpuRunID := fmt.Sprintf("gpu-%s", time.Now().Format("0102-150405"))
 	npuRunID := fmt.Sprintf("npu-%s", time.Now().Format("0102-150405"))
 
 	// Start both lanes
-	if !e(Event{Kind: EventTrainStarted, Lane: "gpu", Message: fmt.Sprintf("GPU baseline launched. Run: %s", gpuRunID), RunLabel: "run1", DelayMs: 300}) {
+	if !e(Event{Kind: EventTrainStarted, Lane: "gpu", Message: fmt.Sprintf("Torch/NPU baseline launched. Run: %s", gpuRunID), RunLabel: "run1", DelayMs: 300}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventTrainStarted, Lane: "npu", Message: fmt.Sprintf("NPU candidate launched. Run: %s", npuRunID), RunLabel: "run1", DelayMs: 200}) {
+	if !e(Event{Kind: EventTrainStarted, Lane: "npu", Message: fmt.Sprintf("MindSpore/NPU candidate launched. Run: %s", npuRunID), RunLabel: "run1", DelayMs: 200}) {
 		return ctx.Err()
 	}
 
@@ -161,7 +272,7 @@ func RunConcurrentTraining(ctx context.Context, model, method string, sink func(
 	}
 
 	if !e(Event{
-		Kind:        EventLaunchFailed,
+		Kind:        EventTrainFailed,
 		Lane:        "npu",
 		Message:     "NPU candidate failed to launch. CANN kernel 'FlashAttentionScore' not found.",
 		IssueType:   "runtime",
@@ -216,7 +327,7 @@ func RunConcurrentTraining(ctx context.Context, model, method string, sink func(
 	if !e(Event{Kind: EventLogLine, Lane: "gpu", Message: fmt.Sprintf("[%s] Training complete. Saving model...", gpuRunID), DelayMs: 600}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventTrainCompleted, Lane: "gpu", Message: "GPU baseline completed. Final loss: 0.831", RunLabel: "run1", DelayMs: 300}) {
+	if !e(Event{Kind: EventTrainCompleted, Lane: "gpu", Message: "Torch/NPU baseline completed. Final loss: 0.831", RunLabel: "run1", DelayMs: 300}) {
 		return ctx.Err()
 	}
 
@@ -227,7 +338,7 @@ func RunConcurrentTraining(ctx context.Context, model, method string, sink func(
 
 // RunNPUAnalysis diagnoses the runtime launch failure.
 func RunNPUAnalysis(ctx context.Context, model, method string, sink func(Event)) error {
-	e := func(ev Event) bool { return emit(ctx, sink, ev) }
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
 
 	if !e(Event{Kind: EventAnalysisStarted, Message: "Analyzing NPU runtime failure...", DelayMs: 500}) {
 		return ctx.Err()
@@ -243,6 +354,20 @@ func RunNPUAnalysis(ctx context.Context, model, method string, sink func(Event))
 		return ctx.Err()
 	}
 	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[analysis] Fallback available: disable FlashAttention, use standard SDPA path", DelayMs: 400}) {
+		return ctx.Err()
+	}
+
+	if !e(Event{
+		Kind:         EventActionSuggested,
+		Message:      "Suggested action: switch to SDPA fallback and relaunch.",
+		IssueType:    "runtime",
+		ActionID:     "runtime-fallback",
+		ActionKind:   "change_env",
+		ActionLabel:  "Switch to SDPA fallback",
+		ActionSource: "failure-agent",
+		FixSummary:   "Disable FlashAttention, use standard SDPA path",
+		DelayMs:      250,
+	}) {
 		return ctx.Err()
 	}
 
@@ -273,7 +398,7 @@ func RunNPUAnalysis(ctx context.Context, model, method string, sink func(Event))
 
 // RunNPUFixAndResume applies the runtime fix, runs NPU successfully, then evals.
 func RunNPUFixAndResume(ctx context.Context, model, method string, sink func(Event)) error {
-	e := func(ev Event) bool { return emit(ctx, sink, ev) }
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
 
 	diffText := `--- a/configs/qwen3_lora.yaml
 +++ b/configs/qwen3_lora.yaml
@@ -303,7 +428,7 @@ func RunNPUFixAndResume(ctx context.Context, model, method string, sink func(Eve
 	// ── NPU successful training ──
 	runID := fmt.Sprintf("npu-%s", time.Now().Format("0102-150405"))
 
-	if !e(Event{Kind: EventTrainStarted, Lane: "npu", Message: fmt.Sprintf("NPU candidate relaunched with SDPA path. Run: %s", runID), RunLabel: "run1", DelayMs: 300}) {
+	if !e(Event{Kind: EventTrainStarted, Lane: "npu", Message: fmt.Sprintf("MindSpore/NPU candidate relaunched with SDPA path. Run: %s", runID), RunLabel: "run1", DelayMs: 300}) {
 		return ctx.Err()
 	}
 
@@ -353,7 +478,7 @@ func RunNPUFixAndResume(ctx context.Context, model, method string, sink func(Eve
 	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: fmt.Sprintf("[%s] Training complete. Saving adapter weights...", runID), DelayMs: 600}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventTrainCompleted, Lane: "npu", Message: "NPU candidate completed. Final loss: 0.847", RunLabel: "run1", DelayMs: 300}) {
+	if !e(Event{Kind: EventTrainCompleted, Lane: "npu", Message: "MindSpore/NPU candidate completed. Final loss: 0.847", RunLabel: "run1", DelayMs: 300}) {
 		return ctx.Err()
 	}
 
@@ -361,13 +486,13 @@ func RunNPUFixAndResume(ctx context.Context, model, method string, sink func(Eve
 	if !e(Event{Kind: EventEvalStarted, Message: "Evaluating both models on MMLU benchmark...", DelayMs: 800}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventLogLine, Lane: "gpu", Message: "[eval] Running MMLU (14,042 samples) on GPU model...", DelayMs: 600}) {
+	if !e(Event{Kind: EventLogLine, Lane: "gpu", Message: "[eval] Running MMLU (14,042 samples) on Torch/NPU model...", DelayMs: 600}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventLogLine, Lane: "gpu", Message: "[eval] Torch/GPU eval_acc: 71.4%", DelayMs: 800}) {
+	if !e(Event{Kind: EventLogLine, Lane: "gpu", Message: "[eval] Torch/NPU eval_acc: 71.4%", DelayMs: 800}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[eval] Running MMLU (14,042 samples) on NPU model...", DelayMs: 600}) {
+	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[eval] Running MMLU (14,042 samples) on MindSpore/NPU model...", DelayMs: 600}) {
 		return ctx.Err()
 	}
 	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[eval] MindSpore/NPU eval_acc: 54.8%", DelayMs: 600}) {
@@ -391,7 +516,7 @@ func RunNPUFixAndResume(ctx context.Context, model, method string, sink func(Eve
 
 	if !e(Event{
 		Kind:         EventDriftDetected,
-		Message:      "NPU accuracy is 16.6 pts lower than GPU baseline.",
+		Message:      "MindSpore/NPU accuracy is 16.6 pts lower than Torch/NPU baseline.",
 		BaselineAcc:  71.4,
 		CandidateAcc: 54.8,
 		Drift:        -16.6,
@@ -407,7 +532,7 @@ func RunNPUFixAndResume(ctx context.Context, model, method string, sink func(Eve
 
 // RunDriftAnalysis diagnoses the attention mask / dtype mismatch.
 func RunDriftAnalysis(ctx context.Context, model, method string, sink func(Event)) error {
-	e := func(ev Event) bool { return emit(ctx, sink, ev) }
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
 
 	if !e(Event{Kind: EventAnalysisStarted, Message: "Analyzing accuracy drift on Ascend eval path...", DelayMs: 500}) {
 		return ctx.Err()
@@ -416,16 +541,30 @@ func RunDriftAnalysis(ctx context.Context, model, method string, sink func(Event
 	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[analysis] Inspecting attention op implementations on Ascend 910B...", DelayMs: 800}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[analysis] Comparing eval-path dtype behavior: Torch (GPU) vs MindSpore (NPU)...", DelayMs: 700}) {
+	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[analysis] Comparing eval-path dtype behavior: Torch (NPU) vs MindSpore (NPU)...", DelayMs: 700}) {
 		return ctx.Err()
 	}
 	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[analysis] Found: attention mask cast to float16 before SDPA op on Ascend", DelayMs: 600}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[analysis] GPU path uses bool mask -> correct masking semantics", DelayMs: 400}) {
+	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[analysis] Torch/NPU path uses bool mask -> correct masking semantics", DelayMs: 400}) {
 		return ctx.Err()
 	}
 	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[analysis] NPU path casts mask to float16 -> precision loss in softmax", DelayMs: 400}) {
+		return ctx.Err()
+	}
+
+	if !e(Event{
+		Kind:         EventActionSuggested,
+		Message:      "Suggested action: patch mask dtype and softmax precision before rerun.",
+		IssueType:    "accuracy",
+		ActionID:     "accuracy-mask-fix",
+		ActionKind:   "apply_patch",
+		ActionLabel:  "Patch attention mask + fp32 softmax",
+		ActionSource: "acc-agent",
+		FixSummary:   "Cast mask to bool, use fp32 softmax accumulation",
+		DelayMs:      250,
+	}) {
 		return ctx.Err()
 	}
 
@@ -451,7 +590,7 @@ func RunDriftAnalysis(ctx context.Context, model, method string, sink func(Event
 		Message:     "Root cause identified. Accuracy fix prepared.",
 		IssueType:   "accuracy",
 		IssueTitle:  "Attention mask dtype mismatch on Ascend eval path",
-		IssueDetail: "Attention mask is cast to float16 before SDPA op on Ascend. GPU path uses bool mask. The float16 cast causes precision loss in softmax.",
+		IssueDetail: "Attention mask is cast to float16 before SDPA op on Ascend. Torch/NPU path uses bool mask. The float16 cast causes precision loss in softmax.",
 		Confidence:  "high",
 		FixSummary:  "Cast mask to bool, use fp32 softmax accumulation",
 		DiffText:    diffText,
@@ -465,7 +604,7 @@ func RunDriftAnalysis(ctx context.Context, model, method string, sink func(Event
 
 // RunDriftFixAndRerun applies the accuracy fix, reruns NPU only, and verifies.
 func RunDriftFixAndRerun(ctx context.Context, model, method string, sink func(Event)) error {
-	e := func(ev Event) bool { return emit(ctx, sink, ev) }
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
 
 	diffText := `--- a/models/qwen3/attention.py
 +++ b/models/qwen3/attention.py
@@ -556,7 +695,7 @@ func RunDriftFixAndRerun(ctx context.Context, model, method string, sink func(Ev
 	if !e(Event{Kind: EventEvalStarted, Message: "[Run 2] Running final evaluation...", DelayMs: 500}) {
 		return ctx.Err()
 	}
-	if !e(Event{Kind: EventLogLine, Lane: "gpu", Message: "[eval] Torch/GPU baseline eval_acc: 71.4% (cached)", DelayMs: 400}) {
+	if !e(Event{Kind: EventLogLine, Lane: "gpu", Message: "[eval] Torch/NPU baseline eval_acc: 71.4% (cached)", DelayMs: 400}) {
 		return ctx.Err()
 	}
 	if !e(Event{Kind: EventLogLine, Lane: "npu", Message: "[eval] Running MMLU on NPU model (run 2)...", DelayMs: 600}) {
@@ -592,5 +731,95 @@ func RunDriftFixAndRerun(ctx context.Context, model, method string, sink func(Ev
 		return ctx.Err()
 	}
 
+	return nil
+}
+
+// RunPerformanceAnalysis is a stub demo flow for performance recovery.
+func RunPerformanceAnalysis(ctx context.Context, model, method string, sink func(Event)) error {
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
+
+	if !e(Event{Kind: EventAnalysisStarted, Message: "Analyzing throughput bottleneck on target...", IssueType: "performance", DelayMs: 400}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventLogLine, Message: "[analysis] Observed dataloader workers underutilized on remote host", DelayMs: 500}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventLogLine, Message: "[analysis] Gradient checkpointing is enabled on a small memory-safe batch", DelayMs: 400}) {
+		return ctx.Err()
+	}
+	if !e(Event{
+		Kind:         EventActionSuggested,
+		Message:      "Suggested action: increase dataloader workers and disable checkpointing for this target.",
+		IssueType:    "performance",
+		ActionID:     "perf-workers-tuning",
+		ActionKind:   "change_config",
+		ActionLabel:  "Tune dataloader + checkpointing",
+		ActionSource: "perf-agent",
+		FixSummary:   "Increase loader workers, disable unnecessary checkpointing",
+		DelayMs:      250,
+	}) {
+		return ctx.Err()
+	}
+	if !e(Event{
+		Kind:         EventAnalysisReady,
+		Message:      "Performance bottleneck identified. Throughput tuning is ready.",
+		IssueType:    "performance",
+		IssueTitle:   "Input pipeline bottleneck",
+		IssueDetail:  "The target is spending excessive time waiting on data loading and recomputation.",
+		FixSummary:   "Increase loader workers, disable unnecessary checkpointing",
+		ActionID:     "perf-workers-tuning",
+		ActionKind:   "change_config",
+		ActionLabel:  "Apply throughput tuning",
+		ActionSource: "perf-agent",
+		DelayMs:      300,
+	}) {
+		return ctx.Err()
+	}
+	return nil
+}
+
+// RunPerformanceFixAndRerun is a stub demo flow for performance tuning.
+func RunPerformanceFixAndRerun(ctx context.Context, model, method string, sink func(Event)) error {
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
+
+	if !e(Event{Kind: EventFixApplied, Message: "Performance tuning applied. Restarting run...", IssueType: "performance", FixSummary: "Increase dataloader workers, disable checkpointing", ActionID: "perf-workers-tuning", ActionKind: "change_config", ActionLabel: "Apply throughput tuning", ActionSource: "perf-agent", DelayMs: 300}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventRerunStarted, Message: "Rerunning after performance tuning...", RunLabel: "perf-rerun", DelayMs: 300}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventMetricUpdate, Step: 40, TotalSteps: 300, Loss: 2.102, LR: 1.9e-4, Throughput: 690, RunLabel: "perf-rerun", DelayMs: 200}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventMetricUpdate, Step: 120, TotalSteps: 300, Loss: 1.312, LR: 1.1e-4, Throughput: 712, RunLabel: "perf-rerun", DelayMs: 200}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventTrainCompleted, Message: "Performance rerun completed. Throughput improved to ~710 tok/s.", RunLabel: "perf-rerun", DelayMs: 300}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventVerificationPassed, Message: "Performance verified. Accuracy remains stable while throughput improved.", IssueType: "performance", DelayMs: 300}) {
+		return ctx.Err()
+	}
+	return nil
+}
+
+// RunTrickIteration is a stub demo flow for applying a new training trick.
+func RunTrickIteration(ctx context.Context, model, method, trick string, sink func(Event)) error {
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
+	if trick == "" {
+		trick = "mhc"
+	}
+	if !e(Event{Kind: EventFixApplied, Message: fmt.Sprintf("Applying new trick: %s", trick), ActionID: "trick-" + trick, ActionKind: "apply_patch", ActionLabel: "Apply trick " + strings.ToUpper(trick), ActionSource: "trick-flow", FixSummary: "Patch train config with new trick", DelayMs: 300}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventRerunStarted, Message: fmt.Sprintf("Rerunning with trick %s enabled...", trick), RunLabel: "trick-rerun", DelayMs: 300}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[trick] %s enabled in train config", trick), DelayMs: 300}) {
+		return ctx.Err()
+	}
+	if !e(Event{Kind: EventDriftDetected, Message: fmt.Sprintf("After enabling %s, validation accuracy regressed. Accuracy analysis recommended.", trick), IssueType: "accuracy", DelayMs: 300}) {
+		return ctx.Err()
+	}
 	return nil
 }

@@ -1,117 +1,142 @@
-# App and Agent Relationship
+# ms-cli Architecture
 
-This note focuses on the relationship between `internal/app/` and `agent/`.
+This document summarizes the current repository structure and runtime boundaries in this checkout. It is the short contributor-facing architecture reference.
 
-## Dependency View
+## Top-Level Shape
 
-```mermaid
-flowchart TD
-    CLI[cmd/ms-cli]
-    APP[internal/app]
-    UI[ui]
-
-    ORCH[agent/orchestrator]
-    PLAN[agent/planner]
-    LOOP[agent/loop]
-    CTX[agent/context]
-    MEM[agent/memory]
-    SESS[agent/session]
-
-    ADAPTER[internal/app/engineAdapter]
-
-    CLI --> APP
-    APP --> UI
-    APP --> ORCH
-    APP --> LOOP
-    APP --> CTX
-
-    ORCH --> PLAN
-
-    ADAPTER -. lives in .-> APP
-    ORCH --> ADAPTER
-    ADAPTER --> LOOP
-
-    LOOP --> CTX
-
-    MEM -. implemented, not on main runtime path .-> APP
-    SESS -. implemented, not on main runtime path .-> APP
+```text
+ms-cli/
+  cmd/ms-cli/              process entrypoint
+  internal/app/            composition root, startup, commands, UI bridging
+  internal/project/        roadmap and weekly status helpers
+  internal/train/          train request and target types
+  agent/
+    context/               token budget and compaction
+    loop/                  concrete ReAct-style execution engine
+    memory/                memory store, retrieval, and policy
+    orchestrator/          planner-driven dispatch between agent and workflow
+    planner/               plan generation and execution-mode selection
+    session/               session state and persistence
+  workflow/
+    executor/              workflow executor implementations and stubs
+    train/                 train lane controller, setup, run, demo backend
+  integrations/
+    domain/                external domain schema and client
+    llm/                   provider registry and OpenAI-compatible client
+    skills/                skill repository and invocation integration
+  permission/              permission policy, types, store
+  runtime/
+    shell/                 stateful shell command runner
+    probes/                local and target readiness probes
+  tools/
+    fs/                    read, grep, glob, edit, write tools
+    shell/                 shell tool wrapper
+  ui/                      Bubble Tea app, shared model, panels, slash commands
+  trace/                   execution trace writing
+  report/                  summary generation
+  configs/                 config loading, state, shared config types
+  demo/scenarios/          workflow demo data
+  test/mocks/              test doubles
+  docs/                    architecture, roadmap, and update docs
 ```
 
-## Runtime Flow
+## Primary Runtime Flows
 
-```mermaid
-sequenceDiagram
-    participant UI as ui/app.go
-    participant APP as internal/app/run.go
-    participant ORCH as agent/orchestrator
-    participant ADAPTER as internal/app/adapter.go
-    participant LOOP as agent/loop
+### Standard task execution
 
-    UI->>APP: user input string
-    APP->>APP: processInput()
-    APP->>ORCH: Run(RunRequest)
-    ORCH->>ADAPTER: Engine.Run(req)
-    ADAPTER->>LOOP: RunWithContext(loop.Task)
-    LOOP-->>ADAPTER: []loop.Event
-    ADAPTER-->>ORCH: []RunEvent
-    ORCH-->>APP: []RunEvent
-    APP->>APP: convertRunEvent()
-    APP-->>UI: model.Event via EventCh
+```text
+cmd/ms-cli
+  -> internal/app.Run(...)
+  -> internal/app.Wire(...)
+  -> ui.New(...)
+  -> agent/orchestrator.Run(...)
+  -> agent/planner.Plan(...)         if an LLM provider is configured
+  -> agent executor or workflow executor
+
+agent executor path:
+  internal/app/adapter.go
+    -> agent/loop.Engine
+    -> tools.Registry
+    -> tools/fs or tools/shell
+    -> runtime/shell.Runner
 ```
 
-## Current Boundary
+Current behavior:
 
-- `internal/app` is the composition root.
-- `internal/app` knows both `agent/orchestrator` and `agent/loop`.
-- `agent/orchestrator` no longer imports `agent/loop`.
-- `internal/app/adapter.go` bridges `orchestrator.RunRequest` to `loop.Task`.
-- `agent/loop` remains the concrete execution engine.
+- `cmd/ms-cli/main.go` only delegates to `internal/app.Run(...)`.
+- `internal/app` is the composition root and owns wiring, provider setup, tool setup, and UI event conversion.
+- `agent/orchestrator` owns orchestration-level request and event types and chooses between agent mode and workflow mode.
+- `agent/planner` is optional. When no provider is configured, the orchestrator falls back directly to agent mode.
+- `workflow/executor` is split between a real stub (`NewStub`) and a demo executor path used by `--demo`.
 
-## Responsibility Split
+### Train mode
 
-- `internal/app`
-  - wires dependencies
-  - owns adapters
-  - starts the TUI
-  - still converts runtime events into UI events
+```text
+ui input
+  -> internal/app /train command
+  -> workflow/train.Controller
+  -> workflow/train setup/run sequences
+  -> runtime/probes/local and runtime/probes/target
+  -> internal/app train-event conversion
+  -> ui/model events
+```
 
-- `agent/orchestrator`
-  - owns orchestration-level request and event types
-  - chooses standard mode vs plan mode
-  - delegates execution to an engine interface
+Current boundary:
 
-- `agent/loop`
-  - runs the concrete ReAct loop
-  - talks to LLM, tools, permission, and trace
-  - owns loop-specific execution details
+- `workflow/train` owns train-specific sequencing and the demo backend.
+- `runtime/probes/*` only perform checks and return probe results.
+- `internal/app/train.go` is the bridge from workflow train events into UI-facing events and state.
+- `internal/train` carries train request and target types shared by app and workflow layers.
 
-## Important Note
+## Package Responsibilities
 
-The current flow still has two translation boundaries:
+- `internal/app/`
+  Loads config, wires dependencies, starts the TUI, handles slash commands, and converts backend events into `ui/model.Event`.
+- `agent/orchestrator/`
+  Dispatches a request to either the ReAct engine or a workflow executor based on planner output.
+- `agent/planner/`
+  Builds and validates structured plans, including execution mode (`agent` vs `workflow`).
+- `agent/loop/`
+  Runs the concrete LLM/tool loop and owns execution details such as tool calling, permission checks, tracing, and context updates.
+- `workflow/train/`
+  Encapsulates the train lane setup/run/retry/analyze flows and their backend abstraction.
+- `tools/`
+  Exposes LLM-callable tool surfaces. It is the boundary the agent loop uses rather than reaching into lower-level runtime code directly.
+- `runtime/shell/`
+  Executes shell commands with workspace, timeout, and command safety checks.
+- `permission/`
+  Centralizes permission decisions and persistence for potentially sensitive actions.
+- `ui/`
+  Consumes events and renders the Bubble Tea interface. It should not be imported by lower layers.
 
-1. `RunRequest -> loop.Task` in `internal/app/adapter.go`
-2. `RunEvent -> model.Event` in `internal/app/run.go`
+## Dependency Boundaries
 
-So the app-to-agent boundary is cleaner than before, but event unification and streaming are still separate follow-up concerns.
+Keep dependencies flowing downward. The current code follows these rules:
 
-## Main Files Table
+```text
+cmd/ms-cli -> internal/app
+internal/app -> agent, workflow, ui, configs, integrations, tools, permission, trace
+agent -> integrations, permission, configs, trace
+workflow -> internal/train, runtime/probes, configs
+tools -> runtime, integrations, configs
+runtime -> configs
+ui -> configs
+report -> trace, configs
+```
 
-This table focuses on the main execution chain only: `internal/app`, `agent/orchestrator`, `agent/planner`, and `agent/loop`.
+Important constraints:
 
-| File | Role | Main functions / types |
-|---|---|---|
-| [`internal/app/wire.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/internal/app/wire.go) | Composition root. Builds engine, adapter, orchestrator, tools, provider, and app state. | `Application` (#L32), `BootstrapConfig` (#L50), `Wire(...)` (#L59), `SetProvider(...)` (#L174), `SaveState()` (#L239) |
-| [`internal/app/run.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/internal/app/run.go) | Runtime entry for TUI loop and task dispatch from UI input. | `Run(...)` (#L19), `run()` (#L46), `runReal()` (#L57), `inputLoop(...)` (#L69), `processInput(...)` (#L75), `runTask(...)` (#L89), `convertRunEvent(...)` (#L128), `runDemo()` (#L173) |
-| [`internal/app/adapter.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/internal/app/adapter.go) | Adapter between orchestrator-owned request/event types and loop-owned task/event types. | `engineAdapter` (#L12), `newEngineAdapter(...)` (#L16), `Execute(...)` (#L22) |
-| [`internal/app/commands.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/internal/app/commands.go) | Slash command handling that still lives in app layer. | `handleCommand(...)` (#L15), `cmdRoadmap(...)` (#L52), `cmdWeekly(...)` (#L84), `cmdModel(...)` (#L110), `switchModel(...)` (#L166), `cmdPermission(...)` (#L255), `cmdHelp()` (#L364) |
-| [`agent/orchestrator/types.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/orchestrator/types.go) | Orchestration-level request and event contract. | `RunRequest` (#L6), `RunEvent` (#L12), `NewRunEvent(...)` (#L24) |
-| [`agent/orchestrator/orchestrator.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/orchestrator/orchestrator.go) | Thin dispatch layer: planner decides mode, orchestrator chooses executor. | `AgentExecutor` (#L13), `WorkflowExecutor` (#L18), `Config` (#L23), `Orchestrator` (#L29), `New(...)` (#L38), `SetCallback(...)` (#L49), `Run(...)` (#L59), `dispatch(...)` (#L75), `runWorkflow(...)` (#L85), `runStepsViaAgent(...)` (#L113) |
-| [`agent/orchestrator/modes.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/orchestrator/modes.go) | Plan lifecycle callback contract. | `PlanCallback` (#L6), `NoOpCallback` (#L23) |
-| [`agent/planner/plan.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/planner/plan.go) | Structured planner output contract. | `ExecutionMode` (#L4), `Plan` (#L15) |
-| [`agent/planner/planner.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/planner/planner.go) | Calls the LLM, parses output, and returns structured plans. | `Config` (#L13), `DefaultConfig()` (#L19), `Planner` (#L27), `New(...)` (#L33), `Plan(...)` (#L43), `Refine(...)` (#L77) |
-| [`agent/planner/parser.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/planner/parser.go) | Extracts `Plan` from LLM output with JSON and legacy fallbacks. | `parsePlan(...)` (#L12), `parsePlanJSON(...)` (#L43), `parseStepArray(...)` (#L62), `parseLines(...)` (#L79), `extractJSONObject(...)` (#L112), `extractJSONArray(...)` (#L133) |
-| [`agent/planner/prompt.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/planner/prompt.go) | Prompt templates for plan generation and refinement. | `buildPlanPrompt(...)` (#L8), `buildRefinePrompt(...)` (#L46) |
-| [`agent/planner/step.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/planner/step.go) | Step model for workflow-style plans. | `Step` (#L5) |
-| [`agent/planner/validator.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/planner/validator.go) | Step validation against tool set and structure rules. | `ValidationError`, `ValidateSteps(...)` |
-| [`agent/loop/types.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/loop/types.go) | Loop-internal task and event transport types. | `Task` (#L10), `Event` (#L17), `NewEvent(...)` (#L31) |
-| [`agent/loop/engine.go`](/Users/weizheng/work/tmp/ms-agent-project/ms-cli/agent/loop/engine.go) | Concrete ReAct execution engine: LLM, tool calls, permissions, tracing. | `EngineConfig` (#L18), `Engine` (#L27), `NewEngine(...)` (#L37), `SetContextManager(...)` (#L62), `SetPermissionService(...)` (#L78), `SetTraceWriter(...)` (#L83), `ToolNames()` (#L88), `Run(...)` (#L98), `RunWithContext(...)` (#L103), `executor.run(...)` (#L144), `callLLM(...)` (#L183), `handleResponse(...)` (#L218), `executeToolCall(...)` (#L240) |
+- `cmd/ms-cli/` should stay thin.
+- `internal/app/` is the wiring layer, not a reusable core package.
+- `agent/` must not depend on `ui/` or `runtime/` directly.
+- `workflow/train/` must not import `ui/model`; conversion belongs in `internal/app/train.go`.
+- `tools/` may call `runtime/`, but `runtime/` must not call `tools/`.
+- `configs/` is shared configuration, not a home for application logic.
+
+## Related Docs
+
+- `README.md` is the user-facing quick start and command overview.
+- `docs/arch.md` is the concise contributor-facing architecture map.
+- `docs/ms-cli-arch.md` and `docs/architecture.md` are older architecture references and should be kept aligned with the code before treating them as authoritative.
+
+When docs and code disagree, follow the code and update the docs.

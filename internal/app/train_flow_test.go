@@ -9,18 +9,11 @@ import (
 	"github.com/vigo999/ms-cli/ui/model"
 )
 
-// TestTrainFullFlow exercises the complete 10-step train state machine:
-//  1. Setup completes, phase → ready
-//  2. Start training, NPU crashes, GPU completes → launch_failed
-//  3. Analyze NPU available and works → analyzing → fix_ready
-//  4. Apply Runtime Fix available and works → running (NPU relaunch)
-//  5. NPU completes, eval runs, drift detected → drift_detected
-//  6. Analyze Drift available and works → analyzing → fix_ready
-//  7. Apply Accuracy Fix available and works → rerunning
-//  8. Rerun completes, verification passes → verified
-//  9. Phase gates block invalid commands at each step
-//  10. View Diff is available in verified state
-func TestTrainFullFlow(t *testing.T) {
+// TestTrainPhase1Flow exercises the Phase 1 train lane:
+//  1. /train qwen3 lora → setup (probe-based) → ready
+//  2. start → running → logs + metrics → completed
+//  3. Phase gates block invalid commands
+func TestTrainPhase1Flow(t *testing.T) {
 	app := newTestApp()
 
 	// ── Step 1: /train qwen3 lora → setup → ready ──
@@ -29,6 +22,117 @@ func TestTrainFullFlow(t *testing.T) {
 	assertPhase(t, app, "setup")
 	if !app.isTrainMode() {
 		t.Fatal("expected trainMode=true after cmdTrain")
+	}
+
+	// Drain events until we see TrainReady (setup completion)
+	drainUntil(t, app, model.TrainReady, 45*time.Second)
+	assertPhase(t, app, "ready")
+
+	// Gate check: analyze should be rejected in ready phase
+	app.handleTrainInput("analyze")
+	ev := drainUntil(t, app, model.AgentReply, 2*time.Second)
+	if ev.Type != model.AgentReply {
+		t.Fatalf("expected rejection message, got %s", ev.Type)
+	}
+
+	// ── Step 2: start → running → completed ──
+	app.handleTrainInput("start")
+	assertPhase(t, app, "running")
+
+	// Drain until training completes
+	drainUntil(t, app, model.TrainDone, 30*time.Second)
+	assertPhase(t, app, "completed")
+
+	// Clean exit
+	app.handleTrainInput("exit")
+	if app.isTrainMode() {
+		t.Fatal("expected trainMode=false after exit")
+	}
+}
+
+func TestCmdTrainAppendsRunTasks(t *testing.T) {
+	app := newTestApp()
+
+	app.cmdTrain([]string{"qwen3", "lora", "dataset1"})
+	app.cmdTrain([]string{"qwen3", "lora", "dataset2"})
+
+	app.trainMu.RLock()
+	defer app.trainMu.RUnlock()
+
+	if !app.trainMode {
+		t.Fatal("expected trainMode=true after appending run tasks")
+	}
+	if got := len(app.trainReqs); got != 2 {
+		t.Fatalf("expected 2 train requests in workspace, got %d", got)
+	}
+	if _, ok := app.trainReqs["primary"]; !ok {
+		t.Fatal("expected primary run request to remain in workspace")
+	}
+	if _, ok := app.trainReqs["run-2"]; !ok {
+		t.Fatal("expected appended run request to be stored as run-2")
+	}
+	if app.trainCurrentRun != "run-2" {
+		t.Fatalf("expected current run to move to run-2, got %q", app.trainCurrentRun)
+	}
+}
+
+func TestTrainBootstrapFlowReady(t *testing.T) {
+	app := newTestApp()
+
+	app.cmdTrain([]string{})
+
+	assertPhase(t, app, "setup")
+	if !app.isTrainMode() {
+		t.Fatal("expected trainMode=true after bootstrap /train")
+	}
+
+	drainUntil(t, app, model.TrainActionSuggested, 20*time.Second)
+	assertNoEvent(t, app, model.TrainReady, 500*time.Millisecond)
+
+	for i := 0; i < 4; i++ {
+		app.handleTrainInput("apply fix")
+		drainUntil(t, app, model.TrainActionApplied, 5*time.Second)
+		assertPhase(t, app, "setup")
+
+		if i < 3 {
+			drainUntil(t, app, model.TrainActionSuggested, 20*time.Second)
+			assertPhase(t, app, "setup")
+			continue
+		}
+		drainUntil(t, app, model.TrainPlanReady, 30*time.Second)
+		drainUntil(t, app, model.TrainReady, 30*time.Second)
+	}
+	assertPhase(t, app, "ready")
+}
+
+// TestTrainFullFlow exercises the complete Phase 2 train state machine
+// using the legacy dual-lane flow:
+//  1. Setup completes, phase → ready
+//  2. Start training, NPU crashes, GPU completes → failed
+//  3. Analyze NPU available and works → analyzing → ready
+//  4. Apply Runtime Fix available and works → running (NPU relaunch)
+//  5. NPU completes, eval runs, drift detected → drift_detected
+//  6. Analyze Drift available and works → analyzing → ready
+//  7. Apply Accuracy Fix available and works → running
+//  8. Rerun completes, verification passes → completed
+//  9. Phase gates block invalid commands at each step
+//  10. View Diff is available in completed state
+func TestTrainFullFlow(t *testing.T) {
+	app := newTestApp()
+
+	// Set up train mode manually for Phase 2 legacy flow (no controller).
+	req := itrain.Request{Model: "qwen3", Method: "lora"}
+	ctx, runID := app.beginTrainMode(req)
+	app.EventCh <- model.Event{
+		Type:  model.TrainModeOpen,
+		Train: &model.TrainEventData{Model: "qwen3", Method: "lora"},
+	}
+	// Run legacy setup
+	go app.runLegacySetup(ctx, runID, req)
+
+	assertPhase(t, app, "setup")
+	if !app.isTrainMode() {
+		t.Fatal("expected trainMode=true after beginTrainMode")
 	}
 
 	// Drain events until we see TrainReady (setup completion)
@@ -42,7 +146,7 @@ func TestTrainFullFlow(t *testing.T) {
 		t.Fatalf("expected rejection message, got %s", ev.Type)
 	}
 
-	// ── Step 2: start → running → NPU crashes → GPU completes → launch_failed ──
+	// ── Step 2: start → running → NPU crashes → GPU completes → failed ──
 	app.handleTrainInput("start")
 	assertPhase(t, app, "running")
 
@@ -51,11 +155,11 @@ func TestTrainFullFlow(t *testing.T) {
 	ev = drainUntil(t, app, model.AgentReply, 2*time.Second)
 	assertContains(t, ev.Message, "Cannot")
 
-	// Drain until GPU completes and phase transitions to launch_failed
+	// Drain until GPU completes and phase transitions to failed
 	drainUntil(t, app, model.TrainDone, 30*time.Second) // GPU done
-	assertPhase(t, app, "launch_failed")
+	assertPhase(t, app, "failed")
 
-	// Gate check: start should be rejected in launch_failed
+	// Gate check: start should be rejected in failed
 	app.handleTrainInput("start")
 	ev = drainUntil(t, app, model.AgentReply, 2*time.Second)
 	assertContains(t, ev.Message, "Cannot")
@@ -65,21 +169,21 @@ func TestTrainFullFlow(t *testing.T) {
 		t.Fatalf("expected trainIssueType=runtime, got %q", issueType)
 	}
 
-	// ── Step 3: analyze → analyzing → fix_ready ──
+	// ── Step 3: analyze → analyzing → ready ──
 	app.handleTrainInput("analyze")
 	assertPhase(t, app, "analyzing")
 
 	drainUntil(t, app, model.TrainAnalysisReady, 15*time.Second)
-	assertPhase(t, app, "fix_ready")
+	assertPhase(t, app, "ready")
 
-	// Gate check: analyze should be rejected in fix_ready
+	// Gate check: analyze should be rejected in ready
 	app.handleTrainInput("analyze")
 	ev = drainUntil(t, app, model.AgentReply, 2*time.Second)
 	assertContains(t, ev.Message, "Cannot")
 
-	// ── Step 4: apply fix → NPU relaunches (running) ──
+	// ── Step 4: apply fix → NPU relaunches (fixing) ──
 	app.handleTrainInput("apply fix")
-	assertPhase(t, app, "applying")
+	assertPhase(t, app, "fixing")
 
 	// NPU relaunches, trains, completes, evals, and drift is detected
 	drainUntil(t, app, model.TrainDriftDetected, 60*time.Second)
@@ -90,45 +194,34 @@ func TestTrainFullFlow(t *testing.T) {
 		t.Fatalf("expected trainIssueType=accuracy, got %q", issueType)
 	}
 
-	// ── Step 6: analyze drift → analyzing → fix_ready ──
+	// ── Step 6: analyze drift → analyzing → ready ──
 	app.handleTrainInput("analyze drift")
 	assertPhase(t, app, "analyzing")
 
 	drainUntil(t, app, model.TrainAnalysisReady, 15*time.Second)
-	assertPhase(t, app, "fix_ready")
+	assertPhase(t, app, "ready")
 
-	// ── Step 7: apply accuracy fix → rerunning ──
+	// ── Step 7: apply accuracy fix → fixing ──
 	app.handleTrainInput("apply fix")
-	assertPhase(t, app, "applying")
+	assertPhase(t, app, "fixing")
 
-	// Should see rerunning phase
+	// Should see running phase (rerun)
 	drainUntil(t, app, model.TrainRerunStarted, 15*time.Second)
-	assertPhase(t, app, "rerunning")
+	assertPhase(t, app, "running")
 
-	// ── Step 8: rerun completes, verification passes → verified ──
+	// ── Step 8: rerun completes, verification passes → completed ──
 	drainUntil(t, app, model.TrainVerified, 60*time.Second)
-	assertPhase(t, app, "verified")
+	assertPhase(t, app, "completed")
 
-	// ── Step 9: gate checks in verified state ──
-	app.handleTrainInput("start")
-	ev = drainUntil(t, app, model.AgentReply, 2*time.Second)
-	assertContains(t, ev.Message, "Cannot")
-
+	// ── Step 9: gate checks in completed state ──
 	app.handleTrainInput("apply fix")
 	ev = drainUntil(t, app, model.AgentReply, 2*time.Second)
 	assertContains(t, ev.Message, "Cannot")
 
-	// ── Step 10: view diff works in verified state ──
+	// ── Step 10: view diff works in completed state ──
 	app.handleTrainInput("view diff")
 	ev = drainUntil(t, app, model.AgentReply, 2*time.Second)
 	assertContains(t, ev.Message, "Diff")
-
-	// Retry NPU is allowed in verified state
-	// (don't actually run it — just verify it doesn't reject)
-	// We check the phase gate would pass by checking trainPhase directly.
-	if app.getTrainPhase() != "verified" {
-		t.Fatalf("expected verified phase before retry check")
-	}
 
 	// Clean exit
 	app.handleTrainInput("exit")
@@ -154,35 +247,31 @@ func TestTrainPhaseGatesComprehensive(t *testing.T) {
 		{"setup", "start", false},
 		{"ready", "start", true},
 		{"running", "start", false},
-		{"launch_failed", "start", false},
-		{"fix_ready", "start", false},
-		{"verified", "start", false},
+		{"failed", "start", false},
+		{"completed", "start", false},
 
-		// analyze in launch_failed or drift_detected
+		// analyze in failed or drift_detected
 		{"setup", "analyze", false},
 		{"ready", "analyze", false},
 		{"running", "analyze", false},
-		{"launch_failed", "analyze", true},
+		{"failed", "analyze", true},
 		{"drift_detected", "analyze", true},
-		{"fix_ready", "analyze", false},
-		{"verified", "analyze", false},
+		{"completed", "analyze", false},
 
-		// apply fix only in fix_ready
+		// apply fix only in ready
 		{"setup", "apply fix", false},
-		{"ready", "apply fix", false},
+		{"ready", "apply fix", true},
 		{"running", "apply fix", false},
-		{"launch_failed", "apply fix", false},
-		{"fix_ready", "apply fix", true},
-		{"verified", "apply fix", false},
+		{"failed", "apply fix", false},
+		{"completed", "apply fix", false},
 
-		// retry in launch_failed or verified
+		// retry only in failed
 		{"setup", "retry", false},
 		{"ready", "retry", false},
 		{"running", "retry", false},
-		{"launch_failed", "retry", true},
+		{"failed", "retry", true},
 		{"drift_detected", "retry", false},
-		{"fix_ready", "retry", false},
-		{"verified", "retry", true},
+		{"completed", "retry", false},
 	}
 
 	for _, tt := range tests {
@@ -258,6 +347,21 @@ func drainUntil(t *testing.T, app *Application, target model.EventType, timeout 
 		case <-deadline:
 			t.Fatalf("timed out waiting for event %s (trainPhase=%s)", target, app.getTrainPhase())
 			return model.Event{}
+		}
+	}
+}
+
+func assertNoEvent(t *testing.T, app *Application, target model.EventType, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case ev := <-app.EventCh:
+			if ev.Type == target {
+				t.Fatalf("unexpected event %s while checking for absence", target)
+			}
+		case <-deadline:
+			return
 		}
 	}
 }

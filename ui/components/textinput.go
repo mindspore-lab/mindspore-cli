@@ -5,7 +5,15 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/vigo999/ms-cli/ui/slash"
+)
+
+var (
+	sugCmdStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	sugDescStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	sugSelCmdStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	sugSelDescStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
 )
 
 // TextInput wraps the bubbles text input for the chat prompt.
@@ -153,17 +161,15 @@ func (t TextInput) View() string {
 		}
 
 		if i == t.selectedIdx {
-			// Selected item with highlight
-			sb.WriteString("  ▶ ")
-			sb.WriteString(sug)
-			sb.WriteString(" - ")
-			sb.WriteString(cmd.Description)
-		} else {
-			// Unselected item
 			sb.WriteString("    ")
-			sb.WriteString(sug)
-			sb.WriteString(" - ")
-			sb.WriteString(cmd.Description)
+			sb.WriteString(sugSelCmdStyle.Render(sug))
+			sb.WriteString("  ")
+			sb.WriteString(sugSelDescStyle.Render(cmd.Description))
+		} else {
+			sb.WriteString("    ")
+			sb.WriteString(sugCmdStyle.Render(sug))
+			sb.WriteString("  ")
+			sb.WriteString(sugDescStyle.Render(cmd.Description))
 		}
 
 		if i < len(t.suggestions)-1 && i < 7 {

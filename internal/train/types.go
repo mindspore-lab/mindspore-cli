@@ -11,9 +11,7 @@ const (
 	PhaseEvaluating    Phase = "evaluating"
 	PhaseDriftDetected Phase = "drift_detected"
 	PhaseAnalyzing     Phase = "analyzing"
-	PhaseFixReady      Phase = "fix_ready"
-	PhaseRerunning     Phase = "rerunning"
-	PhaseVerified      Phase = "verified"
+	PhaseFixing        Phase = "fixing"
 	PhaseStopped       Phase = "stopped"
 	PhaseFailed        Phase = "failed"
 	PhaseCompleted     Phase = "completed"
@@ -31,14 +29,16 @@ const (
 
 // Request captures what the user asked for with /train.
 type Request struct {
+	RunID  string
 	Model  string
 	Method string // e.g. "lora", "full", "qlora"
+	Target TrainTarget
 }
 
 // CheckItem is one entry in the setup checklist.
 type CheckItem struct {
-	Name   string      // e.g. "local_repo", "train_script", "ssh"
-	Label  string      // human-readable label
+	Name   string // e.g. "local_repo", "train_script", "ssh"
+	Label  string // human-readable label
 	Status CheckStatus
 	Detail string // extra info shown after check completes
 }

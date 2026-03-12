@@ -7,35 +7,46 @@ package train
 type EventKind string
 
 const (
-	EventMessage        EventKind = "Message"        // agent-like chat message
-	EventCheckStarted   EventKind = "CheckStarted"   // a setup check begins
-	EventCheckPassed    EventKind = "CheckPassed"    // a setup check passed
-	EventCheckFailed    EventKind = "CheckFailed"    // a setup check failed
-	EventHostConnecting EventKind = "HostConnecting" // SSH connecting
-	EventHostConnected  EventKind = "HostConnected"  // SSH connected
-	EventHostFailed     EventKind = "HostFailed"     // SSH failed
-	EventReadyToStart   EventKind = "ReadyToStart"   // all checks passed
-	EventTrainStarted   EventKind = "TrainStarted"   // training kicked off
-	EventLogLine        EventKind = "LogLine"        // one log line from remote
-	EventMetricUpdate   EventKind = "MetricUpdate"   // step/loss/throughput snapshot
-	EventTrainCompleted EventKind = "TrainCompleted" // training finished
-	EventTrainFailed    EventKind = "TrainFailed"    // training crashed (generic)
-	EventLaunchFailed   EventKind = "LaunchFailed"   // training failed at launch (analyzable runtime issue)
+	// Train lane lifecycle events
+	EventTrainModeOpened   EventKind = "TrainModeOpened"
+	EventTrainSetupStarted EventKind = "TrainSetupStarted"
+	EventCheckPassed       EventKind = "CheckPassed"
+	EventCheckFailed       EventKind = "CheckFailed"
+	EventConnectionStatus  EventKind = "ConnectionStatus"
+	EventPlanReady         EventKind = "PlanReady"
+	EventReadyToStart      EventKind = "ReadyToStart"
+	EventTrainStarted      EventKind = "TrainStarted"
+	EventIssueDetected     EventKind = "IssueDetected"
+	EventLogLine           EventKind = "LogLine"
+	EventMetricUpdate      EventKind = "MetricUpdate"
+	EventTrainStopped      EventKind = "TrainStopped"
+	EventTrainCompleted    EventKind = "TrainCompleted"
+	EventTrainFailed       EventKind = "TrainFailed"
+
+	// Setup check lifecycle
+	EventMessage        EventKind = "Message"
+	EventCheckStarted   EventKind = "CheckStarted"
+	EventHostConnecting EventKind = "HostConnecting"
+	EventHostConnected  EventKind = "HostConnected"
+	EventHostFailed     EventKind = "HostFailed"
 
 	// Phase 2: evaluation, drift, analysis, fix, rerun
-	EventEvalStarted        EventKind = "EvalStarted"        // evaluation begins
-	EventEvalCompleted      EventKind = "EvalCompleted"      // evaluation finished
-	EventDriftDetected      EventKind = "DriftDetected"      // accuracy drift found
-	EventAnalysisStarted    EventKind = "AnalysisStarted"    // root cause analysis begins
-	EventAnalysisReady      EventKind = "AnalysisReady"      // diagnosis available
-	EventFixApplied         EventKind = "FixApplied"         // patch applied
-	EventRerunStarted       EventKind = "RerunStarted"       // second training run begins
-	EventVerificationPassed EventKind = "VerificationPassed" // rerun improved result
+	EventEvalStarted        EventKind = "EvalStarted"
+	EventEvalCompleted      EventKind = "EvalCompleted"
+	EventDriftDetected      EventKind = "DriftDetected"
+	EventAnalysisStarted    EventKind = "AnalysisStarted"
+	EventAnalysisReady      EventKind = "AnalysisReady"
+	EventActionSuggested    EventKind = "ActionSuggested"
+	EventFixApplied         EventKind = "FixApplied"
+	EventActionApplied      EventKind = "ActionApplied"
+	EventRerunStarted       EventKind = "RerunStarted"
+	EventVerificationPassed EventKind = "VerificationPassed"
 )
 
 // Event is a single output from the training workflow.
 type Event struct {
 	Kind       EventKind
+	RunID      string
 	Message    string
 	Check      string // which check item
 	Host       string // host name
@@ -55,10 +66,40 @@ type Event struct {
 	RunLabel     string  // "run1" or "run2"
 
 	// Issue fields
-	IssueType   string // "runtime", "accuracy"
-	IssueTitle  string // diagnosis issue headline
-	IssueDetail string // diagnosis explanation
-	FixSummary  string // short fix description
-	DiffText    string // code/config diff
-	Confidence  string // diagnosis confidence level
+	IssueType    string // "runtime", "accuracy"
+	IssueID      string
+	IssueTitle   string // diagnosis issue headline
+	IssueDetail  string // diagnosis explanation
+	FixSummary   string // short fix description
+	DiffText     string // code/config diff
+	Confidence   string // diagnosis confidence level
+	ActionID     string
+	ActionKind   string
+	ActionLabel  string
+	ActionSource string
+	PlanID       string
+	RepoPath     string
+	RepoSource   string
+	ScriptPath   string
+	BaseModelRef string
+	ConfigPath   string
+	EnvKind      string
+	Workdir      string
+
+	// Probe-derived fields (Phase 1)
+	Scope    string         // "local" or "target"
+	Critical bool           // whether this check is a readiness blocker
+	Details  map[string]any // extra probe data
+}
+
+// Session holds state for a training lane session.
+type Session struct {
+	ID     string
+	Model  string
+	Method string
+	Phase  string // setup, ready, running, completed, failed, stopped
+
+	// FailAtStep causes the demo backend to crash training at this step.
+	// 0 means no failure injection.
+	FailAtStep int
 }
