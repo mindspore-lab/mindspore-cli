@@ -960,6 +960,10 @@ func (a App) handleTrainAction() (tea.Model, tea.Cmd) {
 				{ID: "sparse-attn", Label: "Sparse Attention", Desc: "block-sparse attention pattern"},
 				{ID: "lora-plus", Label: "LoRA+", Desc: "differential learning rate for A/B"},
 				{ID: "galore", Label: "GaLore", Desc: "gradient low-rank projection"},
+				{ID: "ddpm-noise", Label: "DDPM Noise Schedule", Desc: "denoising diffusion noise scheduling"},
+				{ID: "dpo", Label: "DPO", Desc: "direct preference optimization alignment"},
+				{ID: "rope-scaling", Label: "RoPE Scaling", Desc: "rotary position embedding extrapolation"},
+				{ID: "moe-routing", Label: "MoE Routing", Desc: "mixture-of-experts dynamic routing"},
 			},
 		}
 		return a, nil
@@ -972,7 +976,11 @@ func (a App) handleTrainAction() (tea.Model, tea.Cmd) {
 				{ID: "fused-adam", Label: "Fused Adam", Desc: "single-kernel adam optimizer"},
 				{ID: "gradient-ckpt", Label: "Gradient Checkpointing", Desc: "trade compute for memory"},
 				{ID: "bf16-mixed", Label: "BF16 Mixed Precision", Desc: "bfloat16 forward + fp32 grads"},
-				{ID: "torch-compile", Label: "Torch Compile", Desc: "graph-mode JIT compilation"},
+				{ID: "graph-mod", Label: "Graph Mode", Desc: "static graph compilation for NPU"},
+				{ID: "comm-overlap", Label: "Communication Overlap", Desc: "overlap allreduce with backward pass"},
+				{ID: "zero-offload", Label: "ZeRO Offload", Desc: "offload optimizer states to CPU"},
+				{ID: "sequence-parallel", Label: "Sequence Parallel", Desc: "split sequence across devices"},
+				{ID: "selective-recompute", Label: "Selective Recompute", Desc: "recompute only attention activations"},
 			},
 		}
 		return a, nil
@@ -1500,11 +1508,12 @@ func (a *App) agentStatus() string {
 }
 
 func (a *App) updateViewport() {
+	// Check if user is at (or near) bottom before updating content.
+	atBottom := a.viewport.AtBottom() || a.viewport.TotalLines() <= a.viewport.Model.Height
 	content := panels.RenderMessages(a.state, a.thinking.View(), a.trainView.Active)
 	a.viewport = a.viewport.SetContent(content)
-	// In train mode, always scroll to bottom so new agent messages are visible
-	// even after layout changes (panel collapse/expand) shift the scroll position.
-	if a.trainView.Active {
+	// Only auto-scroll to bottom if user hasn't scrolled up.
+	if atBottom {
 		a.viewport.Model.GotoBottom()
 	}
 }

@@ -408,46 +408,300 @@ func RunSingleLaneAlgoFeature(ctx context.Context, model, method, feature string
 		feature = "mhc"
 	}
 
-	if !e(Event{Kind: EventMessage, ActionSource: "algo-agent", Message: fmt.Sprintf("evaluating %s (multi-head contrastive) for %s %s...", feature, model, method), DelayMs: 800}) {
+	featureInfo := map[string]struct{ name, desc string }{
+		"mhc":         {"MHC", "inject contrastive loss on attention heads to improve generalization."},
+		"flash-attn":  {"Flash Attention", "replace standard attention with IO-aware fused kernel for faster forward pass."},
+		"sparse-attn": {"Sparse Attention", "apply block-sparse attention pattern to reduce quadratic complexity."},
+		"lora-plus":   {"LoRA+", "use differential learning rates for LoRA A/B matrices to improve convergence."},
+		"galore":      {"GaLore", "apply gradient low-rank projection to reduce optimizer memory footprint."},
+		"ddpm-noise":  {"DDPM Noise Schedule", "apply denoising diffusion noise scheduling for improved sample quality."},
+		"dpo":         {"DPO", "add direct preference optimization loss for human alignment."},
+		"rope-scaling": {"RoPE Scaling", "extend context length via rotary position embedding interpolation."},
+		"moe-routing": {"MoE Routing", "enable mixture-of-experts with top-k dynamic routing."},
+	}
+	info := featureInfo[feature]
+	if info.name == "" {
+		info.name = feature
+		info.desc = "applying algorithm optimization."
+	}
+
+	if !e(Event{Kind: EventMessage, ActionSource: "algo-agent", Message: fmt.Sprintf("evaluating %s for %s %s...", info.name, model, method), DelayMs: 800}) {
 		return ctx.Err()
 	}
 
-	if !e(Event{Kind: EventMessage, ActionSource: "algo-agent", Message: fmt.Sprintf("%s enabled. inject contrastive loss on attention heads to improve generalization.", feature), DelayMs: 800}) {
+	if !e(Event{Kind: EventMessage, ActionSource: "algo-agent", Message: fmt.Sprintf("%s selected. %s", info.name, info.desc), DelayMs: 800}) {
 		return ctx.Err()
 	}
 
-	// Show code changes being applied
 	if !e(Event{Kind: EventMessage, ActionSource: "algo-agent", Message: "patching training config and model forward pass...", DelayMs: 600}) {
 		return ctx.Err()
 	}
 
-	diffLines := []struct {
+	type diffEntry struct {
 		msg     string
 		delayMs int
-	}{
-		{"--- a/configs/qwen3_lora.yaml", 300},
-		{"+++ b/configs/qwen3_lora.yaml", 200},
-		{"@@ -18,6 +18,9 @@", 200},
-		{" loss:", 150},
-		{"-  type: \"cross_entropy\"", 200},
-		{"+  type: \"mhc_loss\"", 200},
-		{"+  mhc_heads: 8", 150},
-		{"+  contrastive_weight: 0.15", 150},
-		{"+  temperature: 0.07", 150},
-		{"", 400},
-		{"--- a/models/qwen3_lora_forward.py", 300},
-		{"+++ b/models/qwen3_lora_forward.py", 200},
-		{"@@ -42,4 +42,12 @@", 200},
-		{" def forward(self, input_ids, attention_mask):", 150},
-		{"     hidden = self.base_model(input_ids, attention_mask)", 150},
-		{"+    # MHC: multi-head contrastive branch", 200},
-		{"+    head_outputs = self.mhc_project(hidden)  # [B, S, num_heads, D]", 200},
-		{"+    contrastive_loss = mhc_contrastive(", 150},
-		{"+        head_outputs, temperature=0.07", 150},
-		{"+    )", 100},
-		{"+    loss = ce_loss + 0.15 * contrastive_loss", 200},
-		{"", 300},
-		{"2 files changed, 9 insertions(+), 1 deletion(-)", 500},
+	}
+	var diffLines []diffEntry
+
+	switch feature {
+	case "mhc":
+		diffLines = []diffEntry{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -18,6 +18,9 @@", 200},
+			{" loss:", 150},
+			{"-  type: \"cross_entropy\"", 200},
+			{"+  type: \"mhc_loss\"", 200},
+			{"+  mhc_heads: 8", 150},
+			{"+  contrastive_weight: 0.15", 150},
+			{"+  temperature: 0.07", 150},
+			{"", 400},
+			{"--- a/models/qwen3_lora_forward.py", 300},
+			{"+++ b/models/qwen3_lora_forward.py", 200},
+			{"@@ -42,4 +42,12 @@", 200},
+			{" def forward(self, input_ids, attention_mask):", 150},
+			{"     hidden = self.base_model(input_ids, attention_mask)", 150},
+			{"+    # MHC: multi-head contrastive branch", 200},
+			{"+    head_outputs = self.mhc_project(hidden)  # [B, S, num_heads, D]", 200},
+			{"+    contrastive_loss = mhc_contrastive(", 150},
+			{"+        head_outputs, temperature=0.07", 150},
+			{"+    )", 100},
+			{"+    loss = ce_loss + 0.15 * contrastive_loss", 200},
+			{"", 300},
+			{"2 files changed, 9 insertions(+), 1 deletion(-)", 500},
+		}
+	case "flash-attn":
+		diffLines = []diffEntry{
+			{"--- a/models/qwen3_lora_forward.py", 300},
+			{"+++ b/models/qwen3_lora_forward.py", 200},
+			{"@@ -1,4 +1,5 @@", 200},
+			{" import torch", 150},
+			{"+from flash_attn import flash_attn_func", 200},
+			{"", 300},
+			{"@@ -28,7 +29,10 @@", 200},
+			{" class Qwen3LoRAModel(nn.Module):", 150},
+			{"     def _attention(self, q, k, v, mask):", 150},
+			{"-        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)", 200},
+			{"-        scores = scores.masked_fill(mask == 0, -1e9)", 150},
+			{"-        attn = torch.softmax(scores, dim=-1)", 150},
+			{"-        return torch.matmul(attn, v)", 150},
+			{"+        # Flash Attention v2: fused IO-aware kernel", 200},
+			{"+        return flash_attn_func(", 200},
+			{"+            q, k, v,", 150},
+			{"+            causal=True,", 150},
+			{"+            softmax_scale=1.0 / math.sqrt(self.head_dim),", 150},
+			{"+        )", 100},
+			{"", 300},
+			{"1 file changed, 6 insertions(+), 4 deletions(-)", 500},
+		}
+	case "sparse-attn":
+		diffLines = []diffEntry{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -12,3 +12,6 @@", 200},
+			{" attention:", 150},
+			{"-  type: \"full\"", 200},
+			{"+  type: \"block_sparse\"", 200},
+			{"+  block_size: 64", 150},
+			{"+  num_global_tokens: 16", 150},
+			{"+  sparsity_ratio: 0.75", 150},
+			{"", 400},
+			{"--- a/models/qwen3_lora_forward.py", 300},
+			{"+++ b/models/qwen3_lora_forward.py", 200},
+			{"@@ -30,5 +30,12 @@", 200},
+			{"     def _attention(self, q, k, v, mask):", 150},
+			{"+        # Block-sparse attention: only attend within local blocks", 200},
+			{"+        sparse_mask = build_block_sparse_mask(", 200},
+			{"+            seq_len=q.size(-2),", 150},
+			{"+            block_size=64,", 150},
+			{"+            global_tokens=16,", 150},
+			{"+        )", 100},
+			{"+        scores = torch.matmul(q, k.transpose(-2, -1)) * sparse_mask", 200},
+			{"", 300},
+			{"2 files changed, 9 insertions(+), 1 deletion(-)", 500},
+		}
+	case "lora-plus":
+		diffLines = []diffEntry{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -25,4 +25,7 @@", 200},
+			{" lora:", 150},
+			{"   rank: 16", 150},
+			{"   alpha: 32", 150},
+			{"-  lr: 2e-4", 200},
+			{"+  # LoRA+: differential LR for A/B matrices", 200},
+			{"+  lr_A: 2e-4", 150},
+			{"+  lr_B: 2e-5       # 10x smaller for B matrix", 150},
+			{"+  lr_scheduler: \"cosine_with_warmup\"", 150},
+			{"", 400},
+			{"--- a/models/lora_optimizer.py", 300},
+			{"+++ b/models/lora_optimizer.py", 200},
+			{"@@ -15,4 +15,11 @@", 200},
+			{" def build_optimizer(model, config):", 150},
+			{"-    return AdamW(model.parameters(), lr=config.lr)", 200},
+			{"+    # LoRA+ param groups with differential learning rates", 200},
+			{"+    param_groups = [", 200},
+			{"+        {\"params\": lora_A_params(model), \"lr\": config.lr_A},", 150},
+			{"+        {\"params\": lora_B_params(model), \"lr\": config.lr_B},", 150},
+			{"+        {\"params\": non_lora_params(model), \"lr\": config.lr_A * 0.1},", 150},
+			{"+    ]", 100},
+			{"+    return AdamW(param_groups)", 150},
+			{"", 300},
+			{"2 files changed, 10 insertions(+), 2 deletions(-)", 500},
+		}
+	case "galore":
+		diffLines = []diffEntry{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -22,3 +22,6 @@", 200},
+			{" optimizer:", 150},
+			{"   type: \"adam\"", 150},
+			{"+  galore_enabled: True", 200},
+			{"+  galore_rank: 128", 150},
+			{"+  galore_update_proj_gap: 200  # re-project every 200 steps", 150},
+			{"", 400},
+			{"--- a/models/galore_wrapper.py", 300},
+			{"+++ b/models/galore_wrapper.py", 200},
+			{"@@ -0,0 +1,18 @@", 200},
+			{"+import torch", 150},
+			{"+from galore_torch import GaLoreAdamW", 200},
+			{"+", 100},
+			{"+def build_galore_optimizer(model, config):", 200},
+			{"+    target_modules = [\"attn.q_proj\", \"attn.k_proj\", \"attn.v_proj\", \"mlp.gate\"]", 200},
+			{"+    param_groups = []", 150},
+			{"+    for name, param in model.named_parameters():", 150},
+			{"+        if any(t in name for t in target_modules):", 150},
+			{"+            param_groups.append({", 150},
+			{"+                \"params\": [param],", 150},
+			{"+                \"rank\": config.galore_rank,", 150},
+			{"+                \"update_proj_gap\": config.galore_update_proj_gap,", 150},
+			{"+            })", 100},
+			{"+    return GaLoreAdamW(param_groups, lr=config.lr)", 200},
+			{"", 300},
+			{"2 files changed, 21 insertions(+)", 500},
+		}
+	case "ddpm-noise":
+		diffLines = []diffEntry{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -35,2 +35,6 @@", 200},
+			{" training:", 150},
+			{"+  noise_schedule: \"cosine\"", 200},
+			{"+  timesteps: 1000", 150},
+			{"+  beta_start: 0.0001", 150},
+			{"+  beta_end: 0.02", 150},
+			{"", 400},
+			{"--- a/models/noise_scheduler.py", 300},
+			{"+++ b/models/noise_scheduler.py", 200},
+			{"@@ -0,0 +1,16 @@", 200},
+			{"+import torch", 150},
+			{"+import math", 150},
+			{"+", 100},
+			{"+class DDPMScheduler:", 200},
+			{"+    def __init__(self, timesteps=1000, beta_start=1e-4, beta_end=0.02, schedule=\"cosine\"):", 200},
+			{"+        self.timesteps = timesteps", 150},
+			{"+        if schedule == \"cosine\":", 150},
+			{"+            steps = torch.arange(timesteps + 1, dtype=torch.float64) / timesteps", 150},
+			{"+            alpha_bar = torch.cos((steps + 0.008) / 1.008 * math.pi / 2) ** 2", 200},
+			{"+            betas = torch.clamp(1 - alpha_bar[1:] / alpha_bar[:-1], max=0.999)", 150},
+			{"+        else:", 100},
+			{"+            betas = torch.linspace(beta_start, beta_end, timesteps)", 150},
+			{"+        self.betas = betas.float()", 150},
+			{"+        self.alphas_cumprod = torch.cumprod(1.0 - self.betas, dim=0)", 200},
+			{"", 300},
+			{"2 files changed, 20 insertions(+)", 500},
+		}
+	case "dpo":
+		diffLines = []diffEntry{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -18,4 +18,7 @@", 200},
+			{" loss:", 150},
+			{"-  type: \"cross_entropy\"", 200},
+			{"+  type: \"dpo_loss\"", 200},
+			{"+  dpo_beta: 0.1", 150},
+			{"+  ref_model: \"qwen3-base-frozen\"", 150},
+			{"+  label_smoothing: 0.0", 150},
+			{"", 400},
+			{"--- a/models/dpo_trainer.py", 300},
+			{"+++ b/models/dpo_trainer.py", 200},
+			{"@@ -0,0 +1,18 @@", 200},
+			{"+import torch", 150},
+			{"+import torch.nn.functional as F", 150},
+			{"+", 100},
+			{"+def dpo_loss(policy_logps_chosen, policy_logps_rejected,", 200},
+			{"+             ref_logps_chosen, ref_logps_rejected, beta=0.1):", 200},
+			{"+    \"\"\"Direct Preference Optimization loss.\"\"\"", 150},
+			{"+    pi_ratio = policy_logps_chosen - policy_logps_rejected", 150},
+			{"+    ref_ratio = ref_logps_chosen - ref_logps_rejected", 150},
+			{"+    logits = beta * (pi_ratio - ref_ratio)", 200},
+			{"+    return -F.logsigmoid(logits).mean()", 200},
+			{"", 300},
+			{"2 files changed, 14 insertions(+), 1 deletion(-)", 500},
+		}
+	case "rope-scaling":
+		diffLines = []diffEntry{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -10,2 +10,6 @@", 200},
+			{" model:", 150},
+			{"+  position_encoding:", 200},
+			{"+    type: \"rope\"", 150},
+			{"+    rope_scaling:", 150},
+			{"+      type: \"dynamic_ntk\"", 150},
+			{"+      factor: 4.0  # extend context 4x", 150},
+			{"", 400},
+			{"--- a/models/rope_extend.py", 300},
+			{"+++ b/models/rope_extend.py", 200},
+			{"@@ -0,0 +1,16 @@", 200},
+			{"+import torch", 150},
+			{"+import math", 150},
+			{"+", 100},
+			{"+def apply_rope_scaling(freqs, seq_len, factor=4.0, base=10000):", 200},
+			{"+    \"\"\"Dynamic NTK-aware RoPE scaling for context extension.\"\"\"", 200},
+			{"+    if seq_len > freqs.shape[0]:", 150},
+			{"+        base_scaled = base * (factor * seq_len / freqs.shape[0]", 150},
+			{"+                              - (factor - 1)) ** (freqs.shape[-1] / (freqs.shape[-1] - 2))", 200},
+			{"+        inv_freq = 1.0 / (base_scaled ** (torch.arange(0, freqs.shape[-1], 2).float() / freqs.shape[-1]))", 200},
+			{"+        t = torch.arange(seq_len, device=freqs.device).float()", 150},
+			{"+        freqs = torch.outer(t, inv_freq)", 150},
+			{"+    return torch.cat((freqs, freqs), dim=-1)", 150},
+			{"", 300},
+			{"2 files changed, 17 insertions(+)", 500},
+		}
+	case "moe-routing":
+		diffLines = []diffEntry{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -14,2 +14,7 @@", 200},
+			{" model:", 150},
+			{"+  moe:", 200},
+			{"+    enabled: True", 150},
+			{"+    num_experts: 8", 150},
+			{"+    top_k: 2", 150},
+			{"+    capacity_factor: 1.25", 150},
+			{"+    load_balance_loss_weight: 0.01", 150},
+			{"", 400},
+			{"--- a/models/moe_layer.py", 300},
+			{"+++ b/models/moe_layer.py", 200},
+			{"@@ -0,0 +1,20 @@", 200},
+			{"+import torch", 150},
+			{"+import torch.nn as nn", 150},
+			{"+", 100},
+			{"+class TopKRouter(nn.Module):", 200},
+			{"+    def __init__(self, hidden_dim, num_experts, top_k=2):", 200},
+			{"+        super().__init__()", 150},
+			{"+        self.gate = nn.Linear(hidden_dim, num_experts, bias=False)", 150},
+			{"+        self.top_k = top_k", 150},
+			{"+", 100},
+			{"+    def forward(self, x):", 200},
+			{"+        logits = self.gate(x)", 150},
+			{"+        scores, indices = torch.topk(logits, self.top_k, dim=-1)", 150},
+			{"+        weights = torch.softmax(scores, dim=-1)", 150},
+			{"+        return weights, indices", 150},
+			{"", 300},
+			{"2 files changed, 26 insertions(+)", 500},
+		}
 	}
 
 	for _, d := range diffLines {
@@ -460,7 +714,7 @@ func RunSingleLaneAlgoFeature(ctx context.Context, model, method, feature string
 		Kind:         EventFixApplied,
 		IssueType:    "algo-feature",
 		ActionSource: "algo-agent",
-		FixSummary:   fmt.Sprintf("MHC algo-feature applied to %s %s", model, method),
+		FixSummary:   fmt.Sprintf("%s applied to %s %s", info.name, model, method),
 		Message:      "config patched. please rerun experiment.",
 		DelayMs:      1000,
 	}) {
@@ -483,7 +737,11 @@ func RunSingleLanePerfFeature(ctx context.Context, model, method, feature string
 		"fused-adam":     "Fused Adam",
 		"gradient-ckpt":  "Gradient Checkpointing",
 		"bf16-mixed":     "BF16 Mixed Precision",
-		"torch-compile":  "Torch Compile",
+		"graph-mod":          "Graph Mode",
+		"comm-overlap":       "Communication Overlap",
+		"zero-offload":       "ZeRO Offload",
+		"sequence-parallel":  "Sequence Parallel",
+		"selective-recompute": "Selective Recompute",
 	}
 	displayName := featureNames[feature]
 	if displayName == "" {
@@ -580,20 +838,169 @@ func RunSingleLanePerfFeature(ctx context.Context, model, method, feature string
 			{"", 300},
 			{"1 file changed, 3 insertions(+), 1 deletion(-)", 500},
 		}
-	default: // torch-compile
+	case "graph-mod":
 		diffLines = []struct {
 			msg     string
 			delayMs int
 		}{
 			{"--- a/configs/qwen3_lora.yaml", 300},
 			{"+++ b/configs/qwen3_lora.yaml", 200},
-			{"@@ -2,2 +2,5 @@", 200},
+			{"@@ -2,2 +2,6 @@", 200},
 			{" runtime:", 150},
-			{"+  torch_compile: True", 200},
-			{"+  compile_backend: \"inductor\"", 150},
-			{"+  compile_mode: \"reduce-overhead\"", 150},
+			{"+  mode: \"graph\"", 200},
+			{"+  graph_compiler: \"ge\"  # Graph Engine for Ascend NPU", 150},
+			{"+  compile_level: \"O2\"", 150},
+			{"+  static_shape: True", 150},
+			{"", 400},
+			{"--- a/models/graph_mode_wrapper.py", 300},
+			{"+++ b/models/graph_mode_wrapper.py", 200},
+			{"@@ -0,0 +1,12 @@", 200},
+			{"+import mindspore as ms", 150},
+			{"+from mindspore import context", 150},
+			{"+", 100},
+			{"+def enable_graph_mode(compile_level=\"O2\"):", 200},
+			{"+    context.set_context(mode=ms.GRAPH_MODE)", 200},
+			{"+    context.set_context(jit_level=compile_level)", 150},
+			{"+    context.set_context(device_target=\"Ascend\")", 150},
+			{"+    context.set_context(enable_graph_kernel=True)", 150},
 			{"", 300},
-			{"1 file changed, 3 insertions(+)", 500},
+			{"2 files changed, 12 insertions(+)", 500},
+		}
+	case "comm-overlap":
+		diffLines = []struct {
+			msg     string
+			delayMs int
+		}{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -38,2 +38,6 @@", 200},
+			{" distributed:", 150},
+			{"+  comm_overlap: True", 200},
+			{"+  overlap_grad_reduce: True", 150},
+			{"+  bucket_size_mb: 25", 150},
+			{"+  allreduce_fusion_threshold: 2048", 150},
+			{"", 400},
+			{"--- a/models/distributed_wrapper.py", 300},
+			{"+++ b/models/distributed_wrapper.py", 200},
+			{"@@ -0,0 +1,14 @@", 200},
+			{"+import torch", 150},
+			{"+import torch.distributed as dist", 150},
+			{"+", 100},
+			{"+class OverlapAllReduceHook:", 200},
+			{"+    \"\"\"Overlap allreduce with backward computation.\"\"\"", 200},
+			{"+    def __init__(self, bucket_size_mb=25):", 150},
+			{"+        self.bucket_bytes = bucket_size_mb * 1024 * 1024", 150},
+			{"+", 100},
+			{"+    def register(self, model):", 200},
+			{"+        for param in model.parameters():", 150},
+			{"+            if param.requires_grad:", 150},
+			{"+                param.register_post_accumulate_grad_hook(", 150},
+			{"+                    lambda p: dist.all_reduce(p.grad, async_op=True))", 150},
+			{"", 300},
+			{"2 files changed, 18 insertions(+)", 500},
+		}
+	case "zero-offload":
+		diffLines = []struct {
+			msg     string
+			delayMs int
+		}{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -22,4 +22,8 @@", 200},
+			{" optimizer:", 150},
+			{"   type: \"adam\"", 150},
+			{"+  zero_stage: 2", 200},
+			{"+  offload_device: \"cpu\"", 150},
+			{"+  offload_pin_memory: True", 150},
+			{"+  overlap_comm: True", 150},
+			{"", 400},
+			{"--- a/models/zero_config.py", 300},
+			{"+++ b/models/zero_config.py", 200},
+			{"@@ -0,0 +1,14 @@", 200},
+			{"+from deepspeed.runtime.zero import ZeroConfig", 150},
+			{"+", 100},
+			{"+def build_zero_offload_config(stage=2):", 200},
+			{"+    return {", 200},
+			{"+        \"zero_optimization\": {", 150},
+			{"+            \"stage\": stage,", 150},
+			{"+            \"offload_optimizer\": {", 150},
+			{"+                \"device\": \"cpu\",", 150},
+			{"+                \"pin_memory\": True,", 150},
+			{"+            },", 100},
+			{"+            \"overlap_comm\": True,", 150},
+			{"+            \"contiguous_gradients\": True,", 150},
+			{"+        }", 100},
+			{"+    }", 100},
+			{"", 300},
+			{"2 files changed, 18 insertions(+)", 500},
+		}
+	case "sequence-parallel":
+		diffLines = []struct {
+			msg     string
+			delayMs int
+		}{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -38,3 +38,7 @@", 200},
+			{" parallelism:", 150},
+			{"   tensor_parallel: 4", 150},
+			{"+  sequence_parallel: True", 200},
+			{"+  sp_size: 4  # split sequence across TP group", 150},
+			{"+  sp_comm_overlap: True", 150},
+			{"+  scatter_gather_tensors: True", 150},
+			{"", 400},
+			{"--- a/models/sequence_parallel.py", 300},
+			{"+++ b/models/sequence_parallel.py", 200},
+			{"@@ -0,0 +1,16 @@", 200},
+			{"+import torch", 150},
+			{"+import torch.distributed as dist", 150},
+			{"+", 100},
+			{"+def scatter_along_seq(x, sp_group):", 200},
+			{"+    \"\"\"Scatter input along sequence dim across SP group.\"\"\"", 200},
+			{"+    world_size = dist.get_world_size(sp_group)", 150},
+			{"+    seq_len = x.shape[1]", 150},
+			{"+    assert seq_len % world_size == 0", 150},
+			{"+    chunk_size = seq_len // world_size", 150},
+			{"+    rank = dist.get_rank(sp_group)", 150},
+			{"+    return x[:, rank * chunk_size : (rank + 1) * chunk_size, :]", 200},
+			{"+", 100},
+			{"+def gather_along_seq(x, sp_group):", 200},
+			{"+    world_size = dist.get_world_size(sp_group)", 150},
+			{"+    gathered = [torch.empty_like(x) for _ in range(world_size)]", 150},
+			{"+    dist.all_gather(gathered, x, group=sp_group)", 150},
+			{"+    return torch.cat(gathered, dim=1)", 150},
+			{"", 300},
+			{"2 files changed, 21 insertions(+)", 500},
+		}
+	case "selective-recompute":
+		diffLines = []struct {
+			msg     string
+			delayMs int
+		}{
+			{"--- a/configs/qwen3_lora.yaml", 300},
+			{"+++ b/configs/qwen3_lora.yaml", 200},
+			{"@@ -30,2 +30,5 @@", 200},
+			{" memory:", 150},
+			{"+  selective_recompute: True", 200},
+			{"+  recompute_modules: [\"attention\"]  # only recompute attention layers", 150},
+			{"+  recompute_granularity: \"selective\"", 150},
+			{"", 400},
+			{"--- a/models/recompute_wrapper.py", 300},
+			{"+++ b/models/recompute_wrapper.py", 200},
+			{"@@ -0,0 +1,16 @@", 200},
+			{"+import torch", 150},
+			{"+from torch.utils.checkpoint import checkpoint", 150},
+			{"+", 100},
+			{"+def apply_selective_recompute(model, modules=(\"attention\",)):", 200},
+			{"+    \"\"\"Apply activation checkpointing only to attention layers.\"\"\"", 200},
+			{"+    for name, module in model.named_modules():", 150},
+			{"+        if any(m in name for m in modules):", 150},
+			{"+            original_forward = module.forward", 150},
+			{"+            def _recompute_forward(*args, _fn=original_forward, **kwargs):", 200},
+			{"+                return checkpoint(_fn, *args, use_reentrant=False, **kwargs)", 200},
+			{"+            module.forward = _recompute_forward", 150},
+			{"", 300},
+			{"2 files changed, 14 insertions(+)", 500},
 		}
 	}
 
