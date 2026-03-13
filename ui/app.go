@@ -18,6 +18,8 @@ const (
 	hintBarHeight  = 2
 	inputHeight    = 1
 	verticalPad    = 2
+	bootDuration   = 2 * time.Second
+	bootTickRate   = 80 * time.Millisecond
 )
 
 var (
@@ -31,6 +33,9 @@ const (
 	trainFocusInput trainFocusTarget = iota
 	trainFocusActions
 )
+
+type bootDoneMsg struct{}
+type bootTickMsg struct{}
 
 // App is the TUI root model.
 type App struct {
@@ -47,17 +52,21 @@ type App struct {
 	// Train mode
 	trainView  model.TrainViewState
 	trainFocus trainFocusTarget
+
+	bootActive    bool
+	bootHighlight int
 }
 
 // New creates a new App driven by the given event channel.
 // userCh may be nil (demo mode) — user input won't be forwarded.
 func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
 	return App{
-		state:    model.NewState(version, workDir, repoURL, modelName, ctxMax),
-		input:    components.NewTextInput(),
-		thinking: components.NewThinkingSpinner(),
-		eventCh:  ch,
-		userCh:   userCh,
+		state:      model.NewState(version, workDir, repoURL, modelName, ctxMax),
+		input:      components.NewTextInput(),
+		thinking:   components.NewThinkingSpinner(),
+		eventCh:    ch,
+		userCh:     userCh,
+		bootActive: true,
 	}
 }
 
@@ -72,6 +81,12 @@ func (a App) waitForEvent() tea.Msg {
 func (a App) Init() tea.Cmd {
 	return tea.Batch(
 		a.thinking.Tick(),
+		tea.Tick(bootTickRate, func(time.Time) tea.Msg {
+			return bootTickMsg{}
+		}),
+		tea.Tick(bootDuration, func(time.Time) tea.Msg {
+			return bootDoneMsg{}
+		}),
 		a.waitForEvent,
 	)
 }
@@ -95,6 +110,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.KeyMsg:
+		if a.bootActive {
+			return a, nil
+		}
 		return a.handleKey(msg)
 
 	case tea.MouseMsg:
@@ -109,6 +127,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.viewport = a.viewport.SetSize(a.chatWidth()-4, a.chatHeight())
+		return a, nil
+
+	case bootTickMsg:
+		if !a.bootActive {
+			return a, nil
+		}
+		a.bootHighlight++
+		return a, tea.Tick(bootTickRate, func(time.Time) tea.Msg {
+			return bootTickMsg{}
+		})
+
+	case bootDoneMsg:
+		a.bootActive = false
+		a.updateViewport()
 		return a, nil
 
 	case model.Event:
@@ -734,6 +766,10 @@ func (a App) chatLine() string {
 }
 
 func (a App) View() string {
+	if a.bootActive {
+		return panels.RenderBootScreen(a.width, a.height, a.bootHighlight)
+	}
+
 	topBar := panels.RenderTopBar(a.state, a.width)
 
 	if a.trainView.Active {
