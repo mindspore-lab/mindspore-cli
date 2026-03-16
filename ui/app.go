@@ -49,10 +49,10 @@ func agentMsg(source, msg string, done bool) string {
 }
 
 var (
-	diffAddStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("114")) // green
-	diffRemoveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
-	diffHunkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))  // blue
-	diffFileStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	diffAddStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("114")) // green
+	diffRemoveStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
+	diffHunkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))  // blue
+	diffFileStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 	diffContextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // dim
 	diffSummaryStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
 )
@@ -1587,7 +1587,11 @@ func (a App) renderTrainLayout(topBar string) string {
 		var body string
 		if panel == model.TrainPanelAgent {
 			// Agent panel uses the viewport content for display.
-			body = panels.RenderAgentBox(a.viewport.View(), w, a.trainBodyHeight(), true, a.viewport.TotalLines(), a.viewport.YOffset())
+			agentSpinner := ""
+			if status := a.agentStatus(); status != "" {
+				agentSpinner = a.thinking.FrameView() + " " + status
+			}
+			body = panels.RenderAgentBox(a.viewport.View(), w, a.trainBodyHeight(), true, a.viewport.TotalLines(), a.viewport.YOffset(), agentSpinner)
 		} else {
 			body = panels.RenderTrainWorkspacePanel(panel, a.trainView, w, a.trainBodyHeight())
 		}
