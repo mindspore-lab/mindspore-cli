@@ -41,8 +41,12 @@ func (c *Controller) Open(_ context.Context, req itrain.Request) *Session {
 		Phase:  "setup",
 	}
 	// Read demo failure injection config.
-	if failStep, ok := req.Target.Config["demo_fail_at_step"].(int); ok && failStep > 0 {
+	// -1 = disabled, >= 0 = fail at specific step (0 = fail immediately)
+	if failStep, ok := req.Target.Config["demo_fail_at_step"].(int); ok {
 		s.FailAtStep = failStep
+	} else {
+		// Default to -1 (disabled) if not set.
+		s.FailAtStep = -1
 	}
 	if fixed, ok := req.Target.Config["demo_drift_fixed"].(bool); ok && fixed {
 		s.DriftFixed = true

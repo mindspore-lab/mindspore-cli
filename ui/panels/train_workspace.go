@@ -470,6 +470,10 @@ func panelBody(id model.TrainPanelID, tv model.TrainWorkspaceState, width, heigh
 		return renderMetricsPanel(tv, width, height)
 	case model.TrainPanelLogs:
 		return renderLogsPanel(tv, width, height)
+	case model.TrainPanelAgent:
+		// Agent panel body is rendered separately via RenderAgentBox with viewport content.
+		// When maximized, we show a placeholder indicating content is displayed via viewport.
+		return ""
 	default:
 		return ""
 	}

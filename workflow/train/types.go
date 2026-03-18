@@ -101,7 +101,7 @@ type Session struct {
 	Phase  string // setup, ready, running, completed, failed, stopped
 
 	// FailAtStep causes the demo backend to crash training at this step.
-	// 0 means no failure injection.
+	// -1 means no failure injection.
 	FailAtStep int
 
 	// DriftFixed indicates the accuracy fix has been applied,

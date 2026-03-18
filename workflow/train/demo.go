@@ -70,7 +70,7 @@ func (d *DemoBackend) Run(ctx context.Context, session *Session, sink func(Event
 }
 
 // runTraining plays demo training: loading, log lines, metrics, completion.
-// If failStep > 0, training crashes at that step with a DSA operator error.
+// If failStep >= 0, training crashes at that step with a DSA operator error.
 // If perfFixed is true, throughput is ~10% higher (fused adam kernel).
 // If trickApplied is true, loss converges faster (MHC contrastive loss).
 func (d *DemoBackend) runTraining(ctx context.Context, model, method string, sink func(Event), failStep int, perfFixed, trickApplied bool) error {
@@ -168,8 +168,8 @@ func (d *DemoBackend) runTraining(ctx context.Context, model, method string, sin
 	totalSteps := 300
 	for _, s := range steps {
 		// Failure injection: crash at the specified step.
-		if failStep > 0 && s.step >= failStep {
-			crashMsg := fmt.Sprintf("[%s] FATAL: operator init failed at step %d — DSA operator (torch.ops.npu.dsa) not implemented in torch 2.7 for Ascend backend", runID, s.step)
+		if failStep >= 0 && s.step >= failStep {
+			crashMsg := fmt.Sprintf("[%s] FATAL: operator init failed at step %d — DSA operator (torch.ops.npu.dsa) not implemented in torch 2.7 for Ascend backend", runID, failStep)
 			e(Event{Kind: EventLogLine, Message: crashMsg, DelayMs: 200})
 			return fmt.Errorf("operator init failed: DSA operator not implemented in torch 2.7")
 		}

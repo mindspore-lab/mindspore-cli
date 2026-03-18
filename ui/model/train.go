@@ -367,9 +367,9 @@ type TrainWorkspaceState struct {
 	SetupContext SetupContext
 	TrainPlan    *TrainPlan
 	RunConfig    *RunConfig
-	ActiveRunID string
-	Compare     *CompareViewState
-	Hosts       []TrainHostView
+	ActiveRunID  string
+	Compare      *CompareViewState
+	Hosts        []TrainHostView
 
 	Panels map[TrainPanelID]*PanelDisplayState
 	Focus  TrainPanelID
@@ -426,6 +426,11 @@ func NewTrainWorkspaceState() *TrainWorkspaceState {
 			TrainPanelLogs: {
 				Focused:   false,
 				Collapsed: true,
+				Maximized: false,
+			},
+			TrainPanelAgent: {
+				Focused:   false,
+				Collapsed: false,
 				Maximized: false,
 			},
 			TrainPanelCompare: {
@@ -786,12 +791,18 @@ func (s *TrainWorkspaceState) RefreshActions() {
 		s.GlobalActions.Items = []TrainAction{
 			{ID: "stop", Label: "stop", Enabled: true, Primary: true},
 		}
+	case TrainPhaseStopped:
+		s.GlobalActions.Items = []TrainAction{
+			{ID: "rerun", Label: "rerun", Enabled: true, Primary: true},
+			{ID: "close", Label: "exit", Enabled: true},
+		}
 	case TrainPhaseCompleted:
 		items := []TrainAction{
 			{ID: "rerun", Label: "rerun", Enabled: true, Primary: true},
 			{ID: "analyze_perf", Label: "analyze perf", Enabled: true},
 			{ID: "add_algo_feature", Label: "algo-feature", Enabled: true},
 			{ID: "add_perf_feature", Label: "perf-feature", Enabled: true},
+			{ID: "close", Label: "exit", Enabled: true},
 		}
 		s.GlobalActions.Items = items
 	default:

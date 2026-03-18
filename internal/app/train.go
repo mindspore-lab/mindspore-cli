@@ -21,26 +21,26 @@ type trainSnapshot struct {
 // Used for demo: the user can type natural phrases instead of exact commands.
 var trainTextAliases = map[string]string{
 	// start / rerun
-	"run it":              "start",
-	"run the training":    "start",
-	"rerun":               "start",
-	"rerun training":      "start",
-	"rerun experiment":    "start",
-	"go":                  "start",
-	"launch":              "start",
-	"start it":            "start",
-	"start it up":         "start",
-	"run again":           "start",
-	"run it again":        "start",
-	"begin":               "start",
-	"begin training":      "start",
-	"let's go":            "start",
-	"let's run it":        "start",
-	"kick it off":         "start",
-	"proceed":             "start",
-	"execute":             "start",
-	"run experiment":      "start",
-	"start the run":       "start",
+	"run it":           "start",
+	"run the training": "start",
+	"rerun":            "start",
+	"rerun training":   "start",
+	"rerun experiment": "start",
+	"go":               "start",
+	"launch":           "start",
+	"start it":         "start",
+	"start it up":      "start",
+	"run again":        "start",
+	"run it again":     "start",
+	"begin":            "start",
+	"begin training":   "start",
+	"let's go":         "start",
+	"let's run it":     "start",
+	"kick it off":      "start",
+	"proceed":          "start",
+	"execute":          "start",
+	"run experiment":   "start",
+	"start the run":    "start",
 	// analyze / diagnose
 	"analysis":            "analyze",
 	"what went wrong":     "analyze",
@@ -61,39 +61,39 @@ var trainTextAliases = map[string]string{
 	"explain the failure": "analyze",
 	"figure it out":       "analyze",
 	// diagnose (explicit)
-	"diagnose it":         "diagnose",
-	"find the issue":      "diagnose",
-	"root cause":          "diagnose",
-	"diagnose the issue":  "diagnose",
+	"diagnose it":        "diagnose",
+	"find the issue":     "diagnose",
+	"root cause":         "diagnose",
+	"diagnose the issue": "diagnose",
 	// retry
-	"try again":           "retry",
-	"one more time":       "retry",
-	"retry it":            "retry",
+	"try again":     "retry",
+	"one more time": "retry",
+	"retry it":      "retry",
 	// apply fix (confirmation words like "yes"/"ok"/"do it" are
 	// handled in the UI layer — they fire the current focused button)
-	"fix it":              "apply fix",
-	"apply the fix":       "apply fix",
-	"patch it":            "apply fix",
-	"apply":               "apply fix",
-	"apply patch":         "apply fix",
-	"apply the change":    "apply fix",
-	"make the change":     "apply fix",
+	"fix it":           "apply fix",
+	"apply the fix":    "apply fix",
+	"patch it":         "apply fix",
+	"apply":            "apply fix",
+	"apply patch":      "apply fix",
+	"apply the change": "apply fix",
+	"make the change":  "apply fix",
 	// analyze perf
-	"check performance":   "analyze perf",
-	"profile it":          "analyze perf",
-	"why is it slow":      "analyze perf",
-	"check perf":          "analyze perf",
-	"perf analysis":       "analyze perf",
-	"optimize":            "analyze perf",
-	"optimize it":         "analyze perf",
-	"make it faster":      "analyze perf",
-	"speed it up":         "analyze perf",
-	"check throughput":    "analyze perf",
-	"check speed":         "analyze perf",
-	"profile":             "analyze perf",
-	"tune performance":    "analyze perf",
-	"bottleneck":          "analyze perf",
-	"why slow":            "analyze perf",
+	"check performance": "analyze perf",
+	"profile it":        "analyze perf",
+	"why is it slow":    "analyze perf",
+	"check perf":        "analyze perf",
+	"perf analysis":     "analyze perf",
+	"optimize":          "analyze perf",
+	"optimize it":       "analyze perf",
+	"make it faster":    "analyze perf",
+	"speed it up":       "analyze perf",
+	"check throughput":  "analyze perf",
+	"check speed":       "analyze perf",
+	"profile":           "analyze perf",
+	"tune performance":  "analyze perf",
+	"bottleneck":        "analyze perf",
+	"why slow":          "analyze perf",
 	// algo-feature
 	"add mhc":             "add algo-feature mhc",
 	"try mhc":             "add algo-feature mhc",
@@ -123,12 +123,12 @@ var trainTextAliases = map[string]string{
 	"boost perf":          "add perf-feature fa2",
 	"optimize perf":       "add perf-feature fa2",
 	// stop
-	"cancel":              "stop",
-	"abort":               "stop",
-	"stop it":             "stop",
-	"halt":                "stop",
-	"kill it":             "stop",
-	"stop training":       "stop",
+	"cancel":        "stop",
+	"abort":         "stop",
+	"stop it":       "stop",
+	"halt":          "stop",
+	"kill it":       "stop",
+	"stop training": "stop",
 }
 
 type bootstrapRunState struct {
@@ -159,11 +159,11 @@ func (a *Application) cmdTrain(args []string) {
 			Backend:  train.BackendSSHHost,
 			Name:     "torch-npu-910b-0",
 			Config: map[string]any{
-				"address":            "8.9.72.194:22",
-				"env_manager":        "docker",
-				"demo_ssh_flaky":     true,
-				"demo_libs_missing":  true,
-				"demo_fail_at_step":  50,
+				"address":           "8.9.72.194:22",
+				"env_manager":       "docker",
+				"demo_ssh_flaky":    true,
+				"demo_libs_missing": true,
+				"demo_fail_at_step": 0,
 			},
 		},
 	}
@@ -325,11 +325,11 @@ func (a *Application) runApplyFix(ctx context.Context, runID uint64, req train.R
 		return
 	}
 
-	// Fix succeeded — clear failure injection so rerun won't fail again.
+	// Fix succeeded — disable failure injection so rerun won't fail again.
 	a.trainMu.Lock()
 	if a.trainReq != nil {
 		if a.trainReq.Target.Config != nil {
-			delete(a.trainReq.Target.Config, "demo_fail_at_step")
+			a.trainReq.Target.Config["demo_fail_at_step"] = -1
 		}
 		if issueType == "accuracy" || issueType == "performance" {
 			if a.trainReq.Target.Config == nil {
@@ -344,7 +344,7 @@ func (a *Application) runApplyFix(ctx context.Context, runID uint64, req train.R
 	}
 	if r, ok := a.trainReqs[a.trainCurrentRun]; ok {
 		if r.Target.Config != nil {
-			delete(r.Target.Config, "demo_fail_at_step")
+			r.Target.Config["demo_fail_at_step"] = -1
 		}
 		if issueType == "accuracy" || issueType == "performance" {
 			if r.Target.Config == nil {
@@ -387,7 +387,7 @@ func (a *Application) handleTrainInput(input string) {
 	// Gate all other commands on the current phase.
 	switch {
 	case lower == "start" || lower == "start training":
-		if snapshot.phase != "ready" && snapshot.phase != "completed" {
+		if snapshot.phase != "ready" && snapshot.phase != "completed" && snapshot.phase != "stopped" {
 			a.rejectCommand("start", "setup must complete first")
 			return
 		}
@@ -412,6 +412,14 @@ func (a *Application) handleTrainInput(input string) {
 			a.rejectCommand("analyze performance", "performance analysis needs a finished or active run")
 			return
 		}
+		// Check if perf fix already applied
+		if a.isPerfFixed() {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: "Performance optimization already applied. Training is using fused_adam kernel.",
+			}
+			return
+		}
 		a.setTrainIssueType("performance")
 		a.analyzeTraining()
 
@@ -432,6 +440,14 @@ func (a *Application) handleTrainInput(input string) {
 	case strings.HasPrefix(lower, "add algo-feature"):
 		if snapshot.phase != "ready" && snapshot.phase != "completed" {
 			a.rejectCommand("add algo-feature", "workspace must be stable before algo-feature iteration")
+			return
+		}
+		// Check if algo-feature already applied
+		if a.isAlgoFeatureApplied() {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: "MHC algo-feature already applied. Training is using multi-head contrastive loss.",
+			}
 			return
 		}
 		a.addAlgoFeature(strings.TrimSpace(strings.TrimPrefix(lower, "add algo-feature")))
@@ -479,8 +495,9 @@ func (a *Application) startTraining() {
 func (a *Application) stopTraining() {
 	a.stopTrainTask("stopped")
 	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: "training stopped.",
+		Type:    model.TrainStopped,
+		Message: "Training stopped.",
+		Train:   &model.TrainEventData{Status: "stopped"},
 	}
 }
 
@@ -1291,4 +1308,38 @@ func (a *Application) bootstrapApplied(runID string) map[string]bool {
 		out[actionID] = done
 	}
 	return out
+}
+
+// isPerfFixed checks if the performance fix (fused_adam) has already been applied.
+func (a *Application) isPerfFixed() bool {
+	a.trainMu.RLock()
+	defer a.trainMu.RUnlock()
+	if a.trainReq != nil && a.trainReq.Target.Config != nil {
+		if fixed, ok := a.trainReq.Target.Config["demo_perf_fixed"].(bool); ok && fixed {
+			return true
+		}
+	}
+	if r, ok := a.trainReqs[a.trainCurrentRun]; ok && r.Target.Config != nil {
+		if fixed, ok := r.Target.Config["demo_perf_fixed"].(bool); ok && fixed {
+			return true
+		}
+	}
+	return false
+}
+
+// isAlgoFeatureApplied checks if the algo-feature (MHC) has already been applied.
+func (a *Application) isAlgoFeatureApplied() bool {
+	a.trainMu.RLock()
+	defer a.trainMu.RUnlock()
+	if a.trainReq != nil && a.trainReq.Target.Config != nil {
+		if applied, ok := a.trainReq.Target.Config["demo_trick_applied"].(bool); ok && applied {
+			return true
+		}
+	}
+	if r, ok := a.trainReqs[a.trainCurrentRun]; ok && r.Target.Config != nil {
+		if applied, ok := r.Target.Config["demo_trick_applied"].(bool); ok && applied {
+			return true
+		}
+	}
+	return false
 }
