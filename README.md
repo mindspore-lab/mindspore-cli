@@ -105,7 +105,7 @@ Project reports:
 
 ## Repository Structure
 
-See [`docs/ms-cli-arch.md`](docs/ms-cli-arch.md) for the current architecture and package map.
+See [`docs/arch.md`](docs/arch.md) for the current architecture and package map.
 
 ```text
 ms-cli/
@@ -146,7 +146,7 @@ ms-cli/
 ├── test/mocks/                 # test doubles
 ├── docs/
 │   ├── roadmap/ROADMAP.md
-│   ├── ms-cli-arch.md
+│   ├── arch.md
 │   └── updates/
 ├── examples/
 ├── go.mod

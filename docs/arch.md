@@ -1,29 +1,43 @@
 # ms-cli Architecture
 
-This document summarizes the current repository structure and runtime boundaries in this checkout. It is the short contributor-facing architecture reference.
+This document describes the target architecture after the refactor
+(see `docs/ms-cli-refactor.md`). It is the single contributor-facing
+architecture reference.
+
+## Three-Repo Model
+
+```text
+ms-cli (this repo)          runtime — TUI, agent loop, tool registry
+ms-skills            instructions — SKILL.md + skill.yaml per skill
+ms-factory (incubating/)    knowledge — operator/failure/trick/model cards
+```
+
+- `ms-cli` loads skills from `ms-skills` and cards from `ms-factory`.
+- Skills are portable across CLIs (Claude Code, OpenCode, Gemini CLI, Codex).
+- Factory cards grow from real experiment data and incident reports.
 
 ## Top-Level Shape
 
 ```text
 ms-cli/
   cmd/ms-cli/              process entrypoint
-  internal/app/            composition root, startup, commands, UI bridging
-  internal/project/        roadmap and weekly status helpers
-  internal/train/          train request and target types
+  internal/
+    app/                   composition root, startup, commands, UI bridging
+    factory/               local factory card store and resolver
+    project/               roadmap and weekly status helpers
+    train/                 train request and target types
   agent/
     context/               token budget and compaction
-    loop/                  concrete ReAct-style execution engine
+    loop/                  ReAct-style execution engine (the core runtime)
     memory/                memory store, retrieval, and policy
-    orchestrator/          planner-driven dispatch between agent and workflow
-    planner/               plan generation and execution-mode selection
     session/               session state and persistence
   workflow/
-    executor/              workflow executor implementations and stubs
     train/                 train lane controller, setup, run, demo backend
   integrations/
     domain/                external domain schema and client
+    factory/               remote factory fetch and sync
     llm/                   provider registry and OpenAI-compatible client
-    skills/                skill repository and invocation integration
+    skills/                skill listing, loading, and metadata
   permission/              permission policy, types, store
   runtime/
     shell/                 stateful shell command runner
@@ -35,39 +49,56 @@ ms-cli/
   trace/                   execution trace writing
   report/                  summary generation
   configs/                 config loading, state, shared config types
-  demo/scenarios/          workflow demo data
+  incubating/factory/      factory schemas, cards, packs (future separate repo)
   test/mocks/              test doubles
-  docs/                    architecture, roadmap, and update docs
+  docs/                    architecture, plans, and backlog
 ```
 
-## Primary Runtime Flows
-
-### Standard task execution
+## Primary Runtime Flow
 
 ```text
 cmd/ms-cli
   -> internal/app.Run(...)
   -> internal/app.Wire(...)
   -> ui.New(...)
-  -> agent/orchestrator.Run(...)
-  -> agent/planner.Plan(...)         if an LLM provider is configured
-  -> agent executor or workflow executor
 
-agent executor path:
-  internal/app/adapter.go
-    -> agent/loop.Engine
-    -> tools.Registry
-    -> tools/fs or tools/shell
-    -> runtime/shell.Runner
+user input
+  -> internal/app.processInput(...)
+  -> slash command (/train, /diagnose, /factory status, ...)
+     or free text -> runTask(...)
+
+runTask:
+  -> compose effective system prompt:
+       EngineConfig.SystemPrompt
+       + skill summaries (from integrations/skills)
+       + active skill SKILL.md (if command-scoped)
+  -> agent/loop.Engine.RunWithContext(task)
+  -> tools.Registry
+  -> tools/fs or tools/shell
+  -> runtime/shell.Runner
+  -> loop.Event stream -> model.Event -> ui
 ```
 
-Current behavior:
+No orchestrator, no planner, no adapter layer. The app calls the engine
+directly. The LLM plans inline within the agent loop.
 
-- `cmd/ms-cli/main.go` only delegates to `internal/app.Run(...)`.
-- `internal/app` is the composition root and owns wiring, provider setup, tool setup, and UI event conversion.
-- `agent/orchestrator` owns orchestration-level request and event types and chooses between agent mode and workflow mode.
-- `agent/planner` is optional. When no provider is configured, the orchestrator falls back directly to agent mode.
-- `workflow/executor` is split between a real stub (`NewStub`) and a demo executor path used by `--demo`.
+### Skill activation
+
+Skills are command-scoped. No sticky state.
+
+```text
+/diagnose my training crashed
+  -> app loads failure-agent SKILL.md from integrations/skills
+  -> sets task.SkillContext (one task only)
+  -> engine composes effective system prompt: base + active skill
+  -> engine runs
+  -> next task has no skill context (base prompt only)
+```
+
+Free text uses the base system prompt which includes skill summaries
+(name + one-line description). The LLM has awareness of available
+capabilities but this is not deterministic routing — for reliable
+skill activation, use explicit commands.
 
 ### Train mode
 
@@ -81,37 +112,52 @@ ui input
   -> ui/model events
 ```
 
-Current boundary:
-
-- `workflow/train` owns train-specific sequencing and the demo backend.
-- `runtime/probes/*` only perform checks and return probe results.
-- `internal/app/train.go` is the bridge from workflow train events into UI-facing events and state.
-- `internal/train` carries train request and target types shared by app and workflow layers.
+`/train` is preserved during transition. It uses its own controller
+and demo backend, independent of the agent loop. Eventually `/train`
+features migrate to agent-skills.
 
 ## Package Responsibilities
 
-- `internal/app/`
-  Loads config, wires dependencies, starts the TUI, handles slash commands, and converts backend events into `ui/model.Event`.
-- `agent/orchestrator/`
-  Dispatches a request to either the ReAct engine or a workflow executor based on planner output.
-- `agent/planner/`
-  Builds and validates structured plans, including execution mode (`agent` vs `workflow`).
-- `agent/loop/`
-  Runs the concrete LLM/tool loop and owns execution details such as tool calling, permission checks, tracing, and context updates.
-- `workflow/train/`
-  Encapsulates the train lane setup/run/retry/analyze flows and their backend abstraction.
-- `tools/`
-  Exposes LLM-callable tool surfaces. It is the boundary the agent loop uses rather than reaching into lower-level runtime code directly.
-- `runtime/shell/`
-  Executes shell commands with workspace, timeout, and command safety checks.
-- `permission/`
-  Centralizes permission decisions and persistence for potentially sensitive actions.
-- `ui/`
-  Consumes events and renders the Bubble Tea interface. It should not be imported by lower layers.
+- **`internal/app/`**
+  Loads config, wires dependencies, starts the TUI, handles slash commands,
+  dispatches tasks to the engine, and converts `loop.Event` to `ui/model.Event`.
+
+- **`agent/loop/`**
+  The core runtime. Runs the LLM/tool loop: tool calling, permission checks,
+  tracing, context updates. Composes effective system prompt per task
+  (base + active skill).
+
+- **`integrations/skills/`**
+  Lists available skills from the ms-skills repo (summaries only).
+  Loads one skill fully on demand (SKILL.md + skill.yaml metadata).
+
+- **`internal/factory/`**
+  Local card store. Search, get, list cards. Status from pack manifest.
+
+- **`integrations/factory/`**
+  Remote fetch and sync. Downloads packs to local store.
+
+- **`workflow/train/`**
+  Train lane controller, setup/run/retry/analyze flows, demo backend.
+  Independent of agent loop — uses its own event system.
+
+- **`tools/`**
+  LLM-callable tool surfaces (filesystem, shell). Stateless tool definitions.
+
+- **`runtime/shell/`**
+  Stateful command runner with workspace, timeout, and safety checks.
+
+- **`permission/`**
+  Permission decisions and persistence for sensitive actions.
+
+- **`ui/`**
+  Bubble Tea interface. Consumes events, renders panels. Not imported by
+  lower layers.
+
+- **`configs/`**
+  Shared configuration types and loaders.
 
 ## Dependency Boundaries
-
-Keep dependencies flowing downward. The current code follows these rules:
 
 ```text
 cmd/ms-cli -> internal/app
@@ -124,19 +170,38 @@ ui -> configs
 report -> trace, configs
 ```
 
-Important constraints:
+Constraints:
 
-- `cmd/ms-cli/` should stay thin.
+- `cmd/ms-cli/` stays thin.
 - `internal/app/` is the wiring layer, not a reusable core package.
 - `agent/` must not depend on `ui/` or `runtime/` directly.
-- `workflow/train/` must not import `ui/model`; conversion belongs in `internal/app/train.go`.
+- `workflow/train/` must not import `ui/model`; conversion belongs in
+  `internal/app/train.go`.
 - `tools/` may call `runtime/`, but `runtime/` must not call `tools/`.
 - `configs/` is shared configuration, not a home for application logic.
 
+## Removed Packages (refactor)
+
+The following packages are removed by the refactor (see `docs/ms-cli-refactor.md`):
+
+- `agent/orchestrator/` — was a dispatch layer between planner and executors.
+  After removing workflow mode, it became a passthrough. The app now calls
+  the engine directly.
+- `agent/planner/` — was an LLM-based plan generator that decided agent vs
+  workflow mode. Standard agent loops don't have a separate planner; the LLM
+  plans inline. Skill selection uses explicit commands, not an LLM pre-call.
+- `workflow/executor/` — was a workflow execution framework (demo JSON playback
+  + stub). Never developed beyond demo. Train mode uses its own controller.
+- `internal/app/adapter.go` — was a type converter between orchestrator and
+  engine event types. No longer needed with direct engine calls.
+- `demo/scenarios/` — JSON scenario files for workflow demo playback.
+
 ## Related Docs
 
-- `README.md` is the user-facing quick start and command overview.
-- `docs/arch.md` is the concise contributor-facing architecture map.
-- `docs/ms-cli-arch.md` and `docs/architecture.md` are older architecture references and should be kept aligned with the code before treating them as authoritative.
+- `docs/ms-cli-refactor.md` — refactor plan (workstream A)
+- `docs/ms-skills-update-plan.md` — skills plan (workstream B)
+- `docs/incubating-factory-plan.md` — factory plan (workstream C)
+- `docs/features-backlog.md` — deferred features
+- `docs/ai/contributor-guide.md` — contributor conventions
 
 When docs and code disagree, follow the code and update the docs.

@@ -7,7 +7,7 @@ Agent-specific files at the repo root, such as `AGENTS.md` and `CLAUDE.md`, shou
 ## Source Of Truth
 
 - Treat the current code layout as authoritative.
-- Use [`docs/ms-cli-arch.md`](/home/weizheng/work/ms-cli/docs/ms-cli-arch.md) for the broader architecture map.
+- Use [`docs/arch.md`](/home/weizheng/work/ms-cli/docs/arch.md) for the broader architecture map.
 - If this guide and the code disagree, follow the code and update the docs.
 
 ## Working Approach
