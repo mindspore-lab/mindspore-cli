@@ -1,0 +1,99 @@
+# ms-cli 配置示例文件
+#
+# 使用方法：
+# 1. 复制此文件到 .mscli/config.yaml（推荐，已被 .gitignore 忽略，不会提交到 git）
+#    cp configs/mscli.example.yaml .mscli/config.yaml
+#
+# 2. 或者复制到用户级配置目录（全局生效）
+#    cp configs/mscli.example.yaml ~/.mscli/config.yaml
+#    # 或遵循 XDG 规范
+#    mkdir -p ~/.config/mscli
+#    cp configs/mscli.example.yaml ~/.config/mscli/config.yaml
+#
+# 3. 根据你的实际情况修改配置项
+#
+# 配置加载优先级（从高到低）：
+# 1. 命令行参数 (--url, --model, --api-key)
+# 2. 环境变量 (MSCLI_* / OPENAI_*)
+# 3. 配置文件(依次搜索直至找到第一个存在的文件)：
+#    - MSCLI_CONFIG 环境变量指定的文件
+#    - ./.mscli/config.yaml（项目级）
+#    - ~/.config/mscli/config.yaml（用户级）
+#    - ~/.mscli/config.yaml（用户级备选）
+# 4. 内置默认值
+#
+# 注意：API key 建议通过环境变量设置，避免提交到版本控制
+# export MSCLI_API_KEY="your-api-key"
+
+model:
+  # OpenAI-compatible API base URL
+  # 环境变量覆盖：MSCLI_BASE_URL（优先）或 OPENAI_BASE_URL
+  url: https://api.openai.com/v1
+
+  # 模型名称
+  # 环境变量覆盖：MSCLI_MODEL（优先）或 OPENAI_MODEL
+  model: gpt-4o-mini
+
+  # API 密钥
+  # 强烈建议通过环境变量设置：MSCLI_API_KEY 或 OPENAI_API_KEY
+  # 如果在此处设置，请确保 .mscli/ 目录已被 .gitignore 忽略
+  key: ""
+
+  # 温度参数 (0-2)，控制输出的随机性
+  # 环境变量覆盖：MSCLI_TEMPERATURE
+  temperature: 0.7
+
+  # 最大生成 token 数
+  # 环境变量覆盖：MSCLI_MAX_TOKENS
+  max_tokens: 4096
+
+  # 请求超时时间（秒）
+  # 环境变量覆盖：MSCLI_TIMEOUT
+  timeout_sec: 180
+
+budget:
+  # 单次会话最大 token 数
+  max_tokens: 32768
+
+  # 单次会话最大成本（美元）
+  max_cost_usd: 10
+
+ui:
+  # 是否启用 TUI 界面
+  enabled: true
+
+  # 是否显示 token 使用条
+  show_token_bar: true
+
+permissions:
+  # 是否跳过权限请求（自动允许所有操作，谨慎使用）
+  skip_requests: false
+
+  # 默认权限级别：ask（询问）/ allow（允许）/ deny（拒绝）
+  default_level: ask
+
+  # 允许使用的工具列表（为空表示允许所有）
+  allowed_tools: []
+
+context:
+  # 上下文最大 token 数
+  max_tokens: 24000
+
+  # 预留 token 数（用于生成回复）
+  reserve_tokens: 4000
+
+  # 上下文压缩阈值（当使用量超过此比例时触发压缩）
+  compaction_threshold: 0.85
+
+memory:
+  # 是否启用记忆系统
+  enabled: true
+
+  # 最大记忆条目数
+  max_items: 200
+
+  # 最大记忆大小（字节）
+  max_bytes: 2097152
+
+  # 记忆 TTL（小时）
+  ttl_hours: 168

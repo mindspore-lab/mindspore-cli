@@ -69,21 +69,19 @@ func LoadWithEnv(path string) (*Config, error) {
 }
 
 // FindConfigFile searches for config file in standard locations.
+// Priority: MSCLI_CONFIG > ./.mscli/config.yaml > ~/.config/mscli/config.yaml > ~/.mscli/config.yaml
 func FindConfigFile() string {
 	// Check environment variable
 	if path := os.Getenv("MSCLI_CONFIG"); path != "" {
 		return path
 	}
 
-	// Check current directory
-	if _, err := os.Stat("mscli.yaml"); err == nil {
-		return "mscli.yaml"
-	}
-	if _, err := os.Stat("configs/mscli.yaml"); err == nil {
-		return "configs/mscli.yaml"
+	// Check project-level config
+	if _, err := os.Stat(".mscli/config.yaml"); err == nil {
+		return ".mscli/config.yaml"
 	}
 
-	// Check config directories
+	// Check user-level config
 	home, err := os.UserHomeDir()
 	if err == nil {
 		paths := []string{
