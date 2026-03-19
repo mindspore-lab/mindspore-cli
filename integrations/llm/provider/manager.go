@@ -72,8 +72,13 @@ func (m *Manager) Build(cfg ResolvedConfig) (llm.Provider, error) {
 }
 
 func mustRegisterDefaultProviders(m *Manager) {
-	for _, kind := range []ProviderKind{ProviderOpenAI, ProviderOpenAICompatible, ProviderAnthropic} {
-		if err := m.Register(kind, notImplementedBuilder(kind)); err != nil {
+	builders := map[ProviderKind]Builder{
+		ProviderOpenAI:           NewOpenAIProvider,
+		ProviderOpenAICompatible: NewOpenAICompatibleProvider,
+		ProviderAnthropic:        notImplementedBuilder(ProviderAnthropic),
+	}
+	for kind, builder := range builders {
+		if err := m.Register(kind, builder); err != nil {
 			panic(err)
 		}
 	}
