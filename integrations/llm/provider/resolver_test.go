@@ -473,6 +473,45 @@ func TestResolveConfig_AnthropicIgnoresOpenAIBaseURLFallbackFromApplyEnvOverride
 	}
 }
 
+func TestResolveConfigWithOptions_PreferConfigAPIKey(t *testing.T) {
+	clearResolverEnv(t)
+	t.Setenv("MSCLI_API_KEY", "env-key")
+
+	got, err := ResolveConfigWithOptions(configs.ModelConfig{
+		Model: "gpt-4o-mini",
+		Key:   "cfg-key",
+	}, ResolveOptions{
+		PreferConfigAPIKey: true,
+	})
+	if err != nil {
+		t.Fatalf("ResolveConfigWithOptions() error = %v", err)
+	}
+
+	if got.APIKey != "cfg-key" {
+		t.Fatalf("ResolveConfigWithOptions() APIKey = %q, want %q", got.APIKey, "cfg-key")
+	}
+}
+
+func TestResolveConfigWithOptions_PreferConfigBaseURL(t *testing.T) {
+	clearResolverEnv(t)
+	t.Setenv("MSCLI_BASE_URL", "https://env.example/v1")
+
+	got, err := ResolveConfigWithOptions(configs.ModelConfig{
+		Model: "gpt-4o-mini",
+		Key:   "cfg-key",
+		URL:   "https://cfg.example/v1",
+	}, ResolveOptions{
+		PreferConfigBaseURL: true,
+	})
+	if err != nil {
+		t.Fatalf("ResolveConfigWithOptions() error = %v", err)
+	}
+
+	if got.BaseURL != "https://cfg.example/v1" {
+		t.Fatalf("ResolveConfigWithOptions() BaseURL = %q, want %q", got.BaseURL, "https://cfg.example/v1")
+	}
+}
+
 func clearResolverEnv(t *testing.T) {
 	t.Helper()
 

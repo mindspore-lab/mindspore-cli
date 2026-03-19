@@ -118,23 +118,27 @@ func (a *Application) cmdModel(args []string) {
 	modelArg := args[0]
 	if strings.Contains(modelArg, ":") {
 		parts := strings.SplitN(modelArg, ":", 2)
-		providerName := strings.TrimSpace(parts[0])
-		modelName := parts[1]
-		if providerName != "" && providerName != "openai" {
+		providerName := normalizeProvider(parts[0])
+		modelName := strings.TrimSpace(parts[1])
+		if !isSupportedProvider(providerName) {
 			a.EventCh <- model.Event{
 				Type:    model.AgentReply,
-				Message: fmt.Sprintf("Unsupported provider prefix: %s (only openai-compatible is supported)", providerName),
+				Message: fmt.Sprintf("Unsupported provider prefix: %s (supported: openai, openai-compatible, anthropic)", providerName),
 			}
 			return
 		}
-		a.switchModel(modelName)
+		a.switchModel(providerName, modelName)
 		return
 	}
 
-	a.switchModel(modelArg)
+	a.switchModel("", modelArg)
 }
 
 func (a *Application) showCurrentModel() {
+	providerName := a.Config.Model.Provider
+	if providerName == "" {
+		providerName = "openai-compatible"
+	}
 	modelName := a.Config.Model.Model
 	url := a.Config.Model.URL
 	if url == "" {
@@ -144,31 +148,36 @@ func (a *Application) showCurrentModel() {
 	apiKeyStatus := "not set"
 	if a.Config.Model.Key != "" ||
 		os.Getenv("MSCLI_API_KEY") != "" ||
-		os.Getenv("OPENAI_API_KEY") != "" {
+		os.Getenv("OPENAI_API_KEY") != "" ||
+		os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" ||
+		os.Getenv("ANTHROPIC_API_KEY") != "" {
 		apiKeyStatus = "set"
 	}
 
 	msg := fmt.Sprintf(`Current Model Configuration:
 
+  Provider: %s
   URL:   %s
   Model: %s
   Key:   %s
 
 To switch model:
   /model <model-name>
-  /model openai:<model>         (backward-compatible prefix)
+  /model <provider>:<model>
 
 Examples:
   /model gpt-4o
-  /model openai:gpt-4o-mini`, url, modelName, apiKeyStatus)
+  /model openai:gpt-4o-mini
+  /model openai-compatible:gpt-4o-mini
+  /model anthropic:claude-3-5-sonnet`, providerName, url, modelName, apiKeyStatus)
 
 	a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
 }
 
-func (a *Application) switchModel(modelName string) {
+func (a *Application) switchModel(providerName, modelName string) {
 	a.EventCh <- model.Event{Type: model.AgentThinking}
 
-	err := a.SetProvider("", modelName, "")
+	err := a.SetProvider(providerName, modelName, "")
 	if err != nil {
 		a.EventCh <- model.Event{
 			Type:     model.ToolError,
@@ -382,7 +391,8 @@ func (a *Application) cmdHelp() {
 Model Commands:
   /model                  Show current configuration
   /model gpt-4o           Switch to gpt-4o
-  /model openai:gpt-4o    Backward-compatible format
+  /model openai:gpt-4o    Set provider+model
+  /model anthropic:claude-3-5-sonnet
 
 Permission Commands:
   /permission             Show current permission settings
@@ -405,12 +415,16 @@ Keybindings:
   ctrl+c     Cancel/Quit (press twice to exit)
 
 Environment Variables:
-  MSCLI_BASE_URL          OpenAI-compatible base URL
+  MSCLI_PROVIDER          Provider (openai/openai-compatible/anthropic)
+  MSCLI_BASE_URL          Base URL
   MSCLI_MODEL             Default model
   MSCLI_API_KEY           API key
   OPENAI_BASE_URL         Base URL (fallback)
   OPENAI_MODEL            Model (fallback)
-  OPENAI_API_KEY          API key (fallback)`
+  OPENAI_API_KEY          API key (fallback)
+  ANTHROPIC_BASE_URL      Base URL (anthropic)
+  ANTHROPIC_AUTH_TOKEN    API key (anthropic, preferred)
+  ANTHROPIC_API_KEY       API key (anthropic fallback)`
 
 	a.EventCh <- model.Event{Type: model.AgentReply, Message: helpText}
 }

@@ -22,17 +22,23 @@ var ErrMissingAPIKey = errors.New("missing api key")
 // ResolveConfig resolves provider, base URL, API key, and required headers
 // from explicit environment and config precedence rules.
 func ResolveConfig(cfg configs.ModelConfig) (ResolvedConfig, error) {
+	return ResolveConfigWithOptions(cfg, ResolveOptions{})
+}
+
+// ResolveConfigWithOptions resolves provider configuration using optional
+// precedence overrides for explicit runtime inputs.
+func ResolveConfigWithOptions(cfg configs.ModelConfig, opts ResolveOptions) (ResolvedConfig, error) {
 	kind, err := resolveProviderKind(cfg.Provider)
 	if err != nil {
 		return ResolvedConfig{}, err
 	}
 
-	apiKey, err := resolveAPIKey(kind, cfg.Key)
+	apiKey, err := resolveAPIKey(kind, cfg.Key, opts)
 	if err != nil {
 		return ResolvedConfig{}, err
 	}
 
-	baseURL := resolveBaseURL(kind, cfg.URL)
+	baseURL := resolveBaseURL(kind, cfg.URL, opts)
 	if baseURL == "" {
 		baseURL = defaultBaseURL(kind)
 	}
@@ -60,7 +66,13 @@ func resolveProviderKind(cfgProvider string) (ProviderKind, error) {
 	return ProviderOpenAICompatible, nil
 }
 
-func resolveAPIKey(kind ProviderKind, cfgKey string) (string, error) {
+func resolveAPIKey(kind ProviderKind, cfgKey string, opts ResolveOptions) (string, error) {
+	if opts.PreferConfigAPIKey {
+		if raw := strings.TrimSpace(cfgKey); raw != "" {
+			return raw, nil
+		}
+	}
+
 	switch kind {
 	case ProviderAnthropic:
 		if raw := trimmedEnv("ANTHROPIC_AUTH_TOKEN"); raw != "" {
@@ -85,7 +97,13 @@ func resolveAPIKey(kind ProviderKind, cfgKey string) (string, error) {
 	return "", fmt.Errorf("%w for provider %s", ErrMissingAPIKey, kind)
 }
 
-func resolveBaseURL(kind ProviderKind, cfgURL string) string {
+func resolveBaseURL(kind ProviderKind, cfgURL string, opts ResolveOptions) string {
+	if opts.PreferConfigBaseURL {
+		if raw := strings.TrimSpace(cfgURL); raw != "" {
+			return raw
+		}
+	}
+
 	switch kind {
 	case ProviderAnthropic:
 		if raw := trimmedEnv("MSCLI_BASE_URL"); raw != "" {

@@ -36,7 +36,7 @@ ms-cli/
   integrations/
     domain/                external domain schema and client
     factory/               remote factory fetch and sync
-    llm/                   provider registry and OpenAI-compatible client
+    llm/                   unified provider manager (openai/openai-compatible/anthropic)
     skills/                skill listing, loading, and metadata
   permission/              permission policy, types, store
   runtime/

@@ -13,6 +13,7 @@ import (
 // State holds user preferences that persist across sessions.
 type State struct {
 	Model        string `yaml:"model,omitempty"`
+	Provider     string `yaml:"provider,omitempty"`
 	Key          string `yaml:"key,omitempty"`
 	LegacyAPIKey string `yaml:"api_key,omitempty"` // Backward compatibility.
 }
@@ -108,6 +109,9 @@ func (m *StateManager) ApplyToConfig(cfg *Config) {
 	if m.state.Model != "" {
 		cfg.Model.Model = m.state.Model
 	}
+	if m.state.Provider != "" {
+		cfg.Model.Provider = m.state.Provider
+	}
 	if m.state.Key != "" {
 		cfg.Model.Key = m.state.Key
 	} else if m.state.LegacyAPIKey != "" {
@@ -121,5 +125,6 @@ func (m *StateManager) SaveFromConfig(cfg *Config) {
 	defer m.mu.Unlock()
 
 	m.state.Model = cfg.Model.Model
+	m.state.Provider = cfg.Model.Provider
 	m.state.Key = cfg.Model.Key
 }

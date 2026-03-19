@@ -24,3 +24,9 @@ type ResolvedConfig struct {
 	Headers        map[string]string
 	Timeout        time.Duration
 }
+
+// ResolveOptions controls provider config precedence for explicit runtime inputs.
+type ResolveOptions struct {
+	PreferConfigAPIKey  bool
+	PreferConfigBaseURL bool
+}
