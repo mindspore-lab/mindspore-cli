@@ -64,6 +64,84 @@ go run ./cmd/ms-cli
 ./ms-cli --api-key sk-xxx
 ```
 
+## LLM API Configuration
+
+`ms-cli` supports three provider modes:
+
+- `openai`: native OpenAI API protocol
+- `openai-compatible`: OpenAI-compatible protocol (default)
+- `anthropic`: Anthropic Messages API protocol
+
+Provider routing is fully configuration-driven (no runtime protocol probing).
+
+### Config file (`mscli.yaml`)
+
+```yaml
+model:
+  provider: openai-compatible
+  url: https://api.openai.com/v1
+  model: gpt-4o-mini
+  key: ""
+```
+
+### Environment variable precedence
+
+- Provider: `MSCLI_PROVIDER` > `model.provider` > default `openai-compatible`
+- API key:
+  - `openai` / `openai-compatible`: `MSCLI_API_KEY` > `OPENAI_API_KEY` > `model.key`
+  - `anthropic`: `ANTHROPIC_AUTH_TOKEN` > `ANTHROPIC_API_KEY` > `model.key`
+- Base URL:
+  - all providers: `MSCLI_BASE_URL` (highest)
+  - `openai` / `openai-compatible`: then `OPENAI_BASE_URL`
+  - `anthropic`: then `ANTHROPIC_BASE_URL`
+  - then `model.url`
+  - then provider default:
+    - OpenAI/OpenAI-compatible: `https://api.openai.com/v1`
+    - Anthropic: `https://api.anthropic.com/v1/messages`
+
+CLI flags `--api-key` and `--url` are explicit runtime overrides for the current run.
+
+### Use OpenAI API
+
+```bash
+export MSCLI_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+export OPENAI_MODEL=gpt-4o-mini
+./ms-cli
+```
+
+### Use Anthropic API
+
+```bash
+export MSCLI_PROVIDER=anthropic
+export ANTHROPIC_AUTH_TOKEN=sk-ant-...
+export MSCLI_MODEL=claude-3-5-sonnet
+./ms-cli
+```
+
+### Use OpenRouter (OpenAI-compatible third-party routing)
+
+OpenRouter uses an OpenAI-compatible interface, so set provider to `openai-compatible`:
+
+```bash
+export MSCLI_PROVIDER=openai-compatible
+export OPENAI_API_KEY=sk-or-...
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+export MSCLI_MODEL=anthropic/claude-3.5-sonnet
+./ms-cli
+```
+
+You can also set custom headers in `model.headers` in config when required by a gateway.
+
+### In-session model/provider switch
+
+Inside CLI:
+
+- `/model gpt-4o-mini` (switch model, keep current provider)
+- `/model openai:gpt-4o`
+- `/model openai-compatible:gpt-4o-mini`
+- `/model anthropic:claude-3-5-sonnet`
+
 ## Repository Structure
 
 See [`docs/arch.md`](docs/arch.md) and [`docs/ms-cli-arch.md`](docs/ms-cli-arch.md)

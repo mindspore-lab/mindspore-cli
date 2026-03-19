@@ -75,7 +75,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req *llm.CompletionReque
 		return nil, fmt.Errorf("build request body: %w", err)
 	}
 
-	resp, err := DoJSON(ctx, c.httpClient, http.MethodPost, c.baseURL+"/messages", c.headers, body)
+	resp, err := DoJSON(ctx, c.httpClient, http.MethodPost, c.baseURL+"/v1/messages", c.headers, body)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("request timeout: the operation took too long (>%v). Try reducing context size or increasing timeout", c.requestTimeout())
@@ -105,7 +105,7 @@ func (c *anthropicClient) CompleteStream(ctx context.Context, req *llm.Completio
 		return nil, fmt.Errorf("build request body: %w", err)
 	}
 
-	resp, err := DoJSON(ctx, c.httpClient, http.MethodPost, c.baseURL+"/messages", c.headers, body)
+	resp, err := DoJSON(ctx, c.httpClient, http.MethodPost, c.baseURL+"/v1/messages", c.headers, body)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("request timeout: the operation took too long (>%v). Try reducing context size or increasing timeout", c.requestTimeout())

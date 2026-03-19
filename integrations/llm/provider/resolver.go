@@ -12,7 +12,7 @@ import (
 
 const (
 	defaultOpenAIBaseURL    = "https://api.openai.com/v1"
-	defaultAnthropicBaseURL = "https://api.anthropic.com/v1"
+	defaultAnthropicBaseURL = "https://api.anthropic.com"
 	anthropicVersionHeader  = "2023-06-01"
 )
 
