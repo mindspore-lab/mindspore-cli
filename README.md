@@ -34,14 +34,6 @@ Build:
 go build -o ms-cli ./cmd/ms-cli
 ```
 
-Run demo mode:
-
-```bash
-go run ./cmd/ms-cli --demo
-# or
-./ms-cli --demo
-```
-
 Run real mode:
 
 ```bash

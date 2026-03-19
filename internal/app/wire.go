@@ -37,7 +37,6 @@ const Version = "MindSpore AI Infra Agent CLI. v0.2.0"
 type Application struct {
 	Engine       *loop.Engine
 	EventCh      chan model.Event
-	Demo         bool
 	llmReady     bool
 	WorkDir      string
 	RepoURL      string
@@ -68,7 +67,6 @@ type Application struct {
 
 // BootstrapConfig holds bootstrap configuration.
 type BootstrapConfig struct {
-	Demo  bool
 	URL   string
 	Model string
 	Key   string
@@ -99,21 +97,17 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	var provider llm.Provider
 	llmReady := true
-	if cfg.Demo {
-		llmReady = false
-	} else {
-		resolveOpts := providerpkg.ResolveOptions{
-			PreferConfigAPIKey:  strings.TrimSpace(cfg.Key) != "",
-			PreferConfigBaseURL: strings.TrimSpace(cfg.URL) != "",
-		}
-		provider, err = initProvider(config.Model, resolveOpts)
-		if err != nil {
-			if errors.Is(err, errAPIKeyNotFound) {
-				llmReady = false
-				provider = nil
-			} else {
-				return nil, fmt.Errorf("init provider: %w", err)
-			}
+	resolveOpts := providerpkg.ResolveOptions{
+		PreferConfigAPIKey:  strings.TrimSpace(cfg.Key) != "",
+		PreferConfigBaseURL: strings.TrimSpace(cfg.URL) != "",
+	}
+	provider, err = initProvider(config.Model, resolveOpts)
+	if err != nil {
+		if errors.Is(err, errAPIKeyNotFound) {
+			llmReady = false
+			provider = nil
+		} else {
+			return nil, fmt.Errorf("init provider: %w", err)
 		}
 	}
 
@@ -180,7 +174,6 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	return &Application{
 		Engine:       engine,
 		EventCh:      make(chan model.Event, 64),
-		Demo:         cfg.Demo,
 		WorkDir:      workDir,
 		RepoURL:      "github.com/vigo999/ms-cli",
 		Config:       config,
@@ -241,11 +234,6 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 	a.Engine = newEngine
 	a.provider = provider
 
-	return nil
-}
-
-// SaveState saves current configuration to persistent state.
-func (a *Application) SaveState() error {
 	return nil
 }
 

@@ -197,14 +197,6 @@ func (a *Application) switchModel(providerName, modelName string) {
 
 	a.EventCh <- model.Event{Type: model.ModelUpdate, Message: a.Config.Model.Model}
 
-	if err := a.SaveState(); err != nil {
-		a.EventCh <- model.Event{
-			Type:    model.AgentReply,
-			Message: fmt.Sprintf("Model switched to: %s. Warning: failed to save state: %v", a.Config.Model.Model, err),
-		}
-		return
-	}
-
 	a.EventCh <- model.Event{
 		Type:    model.AgentReply,
 		Message: fmt.Sprintf("Model switched to: %s", a.Config.Model.Model),
@@ -230,7 +222,7 @@ func (a *Application) cmdCompact() {
 	} else {
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
-			Message: "Context compaction is not available in demo mode.",
+			Message: "Context compaction is not available.",
 		}
 	}
 }
@@ -256,18 +248,13 @@ func (a *Application) cmdTest() {
 		url, modelName, apiKeyStatus)
 	a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
 
-	if a.Engine != nil && !a.Demo && a.llmReady {
+	if a.Engine != nil && a.llmReady {
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
 			Message: "API configuration looks correct. Send a message to test the connection.",
 		}
-	} else if !a.Demo && !a.llmReady {
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: provideAPIKeyFirstMsg}
 	} else {
-		a.EventCh <- model.Event{
-			Type:    model.AgentReply,
-			Message: "Cannot test in demo mode. Run without --demo flag to test API connectivity.",
-		}
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: provideAPIKeyFirstMsg}
 	}
 }
 

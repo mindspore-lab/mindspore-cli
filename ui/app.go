@@ -113,7 +113,7 @@ type App struct {
 }
 
 // New creates a new App driven by the given event channel.
-// userCh may be nil (demo mode) — user input won't be forwarded.
+// userCh may be nil — user input won't be forwarded.
 func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
 	return App{
 		state:      model.NewState(version, workDir, repoURL, modelName, ctxMax),

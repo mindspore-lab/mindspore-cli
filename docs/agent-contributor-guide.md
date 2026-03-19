@@ -33,7 +33,6 @@ Useful entrypoint commands:
 ```bash
 go build -o ms-cli ./cmd/ms-cli
 go run ./cmd/ms-cli
-go run ./cmd/ms-cli --demo
 ```
 
 ## Code Style
@@ -97,7 +96,6 @@ Important current details:
 - `cmd/ms-cli/main.go` only delegates to `internal/app.Run(...)`.
 - `internal/app` is the composition root and owns wiring plus event conversion.
 - `internal/app` dispatches free-text tasks directly into `agent/loop.Engine`.
-- Demo mode skips provider initialization; free-text still requires an API key.
 - `tools/` exposes LLM-callable tool surfaces; `runtime/shell/` owns stateful command execution.
 
 ## Dependency Boundaries

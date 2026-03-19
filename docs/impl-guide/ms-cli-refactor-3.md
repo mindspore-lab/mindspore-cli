@@ -70,10 +70,7 @@ No orchestrator needed — the LLM coordinates via tool calls.
 - Remove: convertRunEvent() (orchestrator.RunEvent → model.Event)
 - Add: convertLoopEvent() (loop.Event → model.Event, direct)
 - runTask() calls engine.RunWithContext() directly instead of Orchestrator.Run()
-- Unify run(): single code path for both demo and real mode
-  - demo flag only affects: (1) skip LLM init, (2) train uses DemoBackend
-  - free text in demo mode without LLM: show "provide api key" message
-    (same as current non-demo behavior when no key is set)
+- Unify run(): single code path for CLI runtime (no free-text demo mode flag)
 - Keep: processInput() routes slash commands (/train) and free text → agent
 - Keep: /train command and train demo flow (handled by A5, unchanged)
 ```
@@ -363,7 +360,6 @@ prompt for that task only (see engine.go above).
 
 Don't remove `/train` and `workflow/train/` yet. They coexist:
 - `/train` keeps working as-is — train demo flow (DemoBackend) is unaffected
-- Free-text demo mode (DemoExecutor + JSON scenario playback) is removed in A1
 - Free text goes through the new skill-aware agent path (requires LLM)
 - Gradually, as agent-skills mature, `/train` features migrate to skills
 - Eventually `/train` becomes a thin router that activates setup-agent
