@@ -21,6 +21,7 @@ type Config struct {
 type ModelConfig struct {
 	URL         string            `yaml:"url,omitempty"`
 	Key         string            `yaml:"key,omitempty"`
+	Provider    string            `yaml:"provider,omitempty"`
 	Model       string            `yaml:"model"`
 	Temperature float64           `yaml:"temperature"`
 	MaxTokens   int               `yaml:"max_tokens"`
@@ -99,6 +100,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Model: ModelConfig{
 			URL:         "https://api.openai.com/v1",
+			Provider:    "openai-compatible",
 			Model:       "gpt-4o-mini",
 			Temperature: 0.7,
 			MaxTokens:   4096,
@@ -189,6 +191,9 @@ func (c *Config) Merge(other *Config) {
 	}
 	if other.Model.Key != "" {
 		c.Model.Key = other.Model.Key
+	}
+	if other.Model.Provider != "" {
+		c.Model.Provider = other.Model.Provider
 	}
 	if other.Model.Model != "" {
 		c.Model.Model = other.Model.Model

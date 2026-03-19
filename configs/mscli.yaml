@@ -2,6 +2,9 @@ model:
   # OpenAI-compatible API base URL
   # Environment variables (higher priority): MSCLI_BASE_URL (fallback: OPENAI_BASE_URL)
   url: https://api.openai.com/v1
+  # Provider identifier for protocol routing
+  # Environment variables (higher priority): MSCLI_PROVIDER
+  provider: openai-compatible
   # Model name
   # Environment variables (higher priority): MSCLI_MODEL (fallback: OPENAI_MODEL)
   model: gpt-4o-mini

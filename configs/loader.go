@@ -122,6 +122,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := strings.TrimSpace(os.Getenv("MSCLI_BASE_URL")); v != "" {
 		cfg.Model.URL = v
 	}
+	if v := strings.TrimSpace(os.Getenv("MSCLI_PROVIDER")); v != "" {
+		cfg.Model.Provider = v
+	}
 	if v := os.Getenv("MSCLI_TEMPERATURE"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			cfg.Model.Temperature = f
