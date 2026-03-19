@@ -60,7 +60,7 @@ func resolveProviderKind(cfgProvider string) (ProviderKind, error) {
 	if raw := normalizedProviderEnv("MSCLI_PROVIDER"); raw != "" {
 		return parseProviderKind(raw)
 	}
-	if raw := normalizeProviderName(cfgProvider); raw != "" {
+	if raw := NormalizeProvider(cfgProvider); raw != "" {
 		return parseProviderKind(raw)
 	}
 	return ProviderOpenAICompatible, nil
@@ -196,7 +196,23 @@ func trimmedEnv(key string) string {
 }
 
 func normalizeProviderName(v string) string {
+	return NormalizeProvider(v)
+}
+
+// NormalizeProvider canonicalizes provider input for comparisons.
+func NormalizeProvider(v string) string {
 	return strings.ToLower(strings.TrimSpace(v))
+}
+
+// IsSupportedProvider reports whether the provider identifier is one of the
+// explicitly supported provider kinds.
+func IsSupportedProvider(v string) bool {
+	switch NormalizeProvider(v) {
+	case string(ProviderOpenAI), string(ProviderOpenAICompatible), string(ProviderAnthropic):
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeURLForComparison(v string) string {

@@ -171,8 +171,8 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 // SetProvider updates model/key and reinitializes the engine.
 func (a *Application) SetProvider(providerName, modelName, apiKey string) error {
-	normalizedProvider := normalizeProvider(providerName)
-	if normalizedProvider != "" && !isSupportedProvider(normalizedProvider) {
+	normalizedProvider := providerpkg.NormalizeProvider(providerName)
+	if normalizedProvider != "" && !providerpkg.IsSupportedProvider(normalizedProvider) {
 		return fmt.Errorf("unsupported provider: %s", providerName)
 	}
 
@@ -249,19 +249,6 @@ func initProvider(cfg configs.ModelConfig, opts providerpkg.ResolveOptions) (llm
 		return nil, fmt.Errorf("build provider: %w", err)
 	}
 	return client, nil
-}
-
-func normalizeProvider(providerName string) string {
-	return strings.ToLower(strings.TrimSpace(providerName))
-}
-
-func isSupportedProvider(providerName string) bool {
-	switch normalizeProvider(providerName) {
-	case string(providerpkg.ProviderOpenAI), string(providerpkg.ProviderOpenAICompatible), string(providerpkg.ProviderAnthropic):
-		return true
-	default:
-		return false
-	}
 }
 
 func initTools(cfg *configs.Config, workDir string) *tools.Registry {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	providerpkg "github.com/vigo999/ms-cli/integrations/llm/provider"
 	"github.com/vigo999/ms-cli/internal/project"
 	"github.com/vigo999/ms-cli/permission"
 	"github.com/vigo999/ms-cli/ui/model"
@@ -118,9 +119,9 @@ func (a *Application) cmdModel(args []string) {
 	modelArg := args[0]
 	if strings.Contains(modelArg, ":") {
 		parts := strings.SplitN(modelArg, ":", 2)
-		providerName := normalizeProvider(parts[0])
+		providerName := providerpkg.NormalizeProvider(parts[0])
 		modelName := strings.TrimSpace(parts[1])
-		if !isSupportedProvider(providerName) {
+		if !providerpkg.IsSupportedProvider(providerName) {
 			a.EventCh <- model.Event{
 				Type:    model.AgentReply,
 				Message: fmt.Sprintf("Unsupported provider prefix: %s (supported: openai, openai-compatible, anthropic)", providerName),
