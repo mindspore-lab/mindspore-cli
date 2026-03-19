@@ -76,6 +76,52 @@ Notes:
 - No URL-based guessing.
 - No probe request for protocol inference.
 
+## 3.3 URL/Header/Auth Resolution Matrix
+
+The resolver must produce a fully explicit runtime transport config:
+
+- `provider_kind`
+- `base_url`
+- `auth_header_name`
+- `auth_header_value` (masked in logs/traces)
+- `extra_headers`
+
+Provider defaults:
+
+1. `openai`:
+- default `base_url = https://api.openai.com/v1`
+- auth header: `Authorization: Bearer <key>`
+- default endpoint path: `/chat/completions`
+
+2. `openai-compatible`:
+- default `base_url = https://api.openai.com/v1`
+- auth header: `Authorization: Bearer <key>`
+- default endpoint path: `/chat/completions`
+
+3. `anthropic`:
+- default `base_url = https://api.anthropic.com/v1`
+- auth header: `x-api-key: <key>`
+- required version header: `anthropic-version: 2023-06-01`
+- default endpoint path: `/messages`
+
+Base URL precedence (applies to all providers):
+
+1. `MSCLI_BASE_URL`
+2. provider-specific env override:
+- `OPENAI_BASE_URL` for `openai` and `openai-compatible`
+- `ANTHROPIC_BASE_URL` for `anthropic`
+3. `model.url`
+4. provider default base URL
+
+Header precedence:
+
+1. provider-required auth/version headers
+2. `model.headers` (can add extra headers, but cannot remove required auth/version headers)
+
+Conflict rule:
+
+- if `model.headers` provides the same header key as required auth/version headers, resolver keeps provider-required value and emits a debug warning.
+
 ## 4. Unified Provider Module Layout
 
 All provider code is centralized under one directory:
@@ -191,6 +237,21 @@ Add provider dimensions to trace/debug (masked secrets):
 
 Model status display includes provider kind and key status.
 
+State mutation rules:
+
+1. `/model <model-name>`:
+- updates model name only
+- keeps current provider unchanged
+- persists to state (same behavior as current model switch persistence)
+
+2. `/model <provider>:<model-name>`:
+- updates both provider and model name
+- persists both changes to state
+
+3. Invalid provider prefix:
+- fail fast with explicit supported values (`openai`, `openai-compatible`, `anthropic`)
+- do not mutate state
+
 ## 8. Migration and Compatibility
 
 1. Existing configs without `model.provider` continue to work using default `openai-compatible`.
@@ -209,6 +270,17 @@ Required tests:
 4. Anthropic codec tests (request + response + stream + tool use/result)
 5. Unified error parse tests
 6. Regression tests for existing openai-compatible behavior
+7. `/model` mutation tests:
+   - unprefixed model switch keeps provider
+   - prefixed model switch updates provider+model
+   - invalid prefix does not persist state changes
+8. Resolver transport resolution tests:
+   - base URL precedence matrix
+   - required header enforcement matrix
+9. Anthropic stream assembly tests:
+   - text delta accumulation
+   - tool_use partial assembly and completion
+   - stop reason mapping and final chunk behavior
 
 Acceptance criteria:
 
@@ -228,3 +300,41 @@ Acceptance criteria:
 ## 11. Implementation Next Step
 
 After this design is finalized and reviewed, create a concrete implementation plan using the writing-plans workflow and execute in incremental, test-backed changes.
+
+## Appendix A: Anthropic Streaming Event Mapping Contract
+
+This appendix defines the implementation contract for Anthropic streaming parsing.
+
+State machine (per response stream):
+
+1. Initialize empty accumulators:
+- `text_buffer` (string)
+- `tool_calls_by_index` (ordered map)
+- `final_finish_reason` (empty)
+
+2. On text delta event:
+- append to `text_buffer`
+- emit `StreamChunk{Content: <delta_text>}` immediately
+
+3. On tool use start/delta events:
+- locate/create tool call slot by index (or stable stream id when index absent)
+- accumulate fields:
+  - `id`
+  - `name`
+  - `input_json_fragment`
+- parse/validate assembled `input` JSON only when provider signals the input block is complete
+
+4. Tool call completion condition:
+- a tool call is considered complete only after the stream signals end of the corresponding tool_use block.
+- on completion, emit chunk containing current complete tool calls snapshot.
+
+5. Finish condition:
+- map Anthropic stop reason to internal finish reason:
+  - `end_turn` -> `stop`
+  - `max_tokens` -> `length`
+  - `tool_use` -> `tool_calls`
+- when finish arrives, iterator returns final chunk with mapped finish reason and aggregated usage (if present).
+
+6. Error condition:
+- malformed partial tool JSON before tool block close is treated as stream parse error.
+- include provider/model/event context in error and stop iteration.
