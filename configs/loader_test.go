@@ -109,6 +109,38 @@ func TestLoadWithEnvProvider(t *testing.T) {
 	})
 }
 
+func TestLoadWithEnvRejectsWhitespaceOnlyModel(t *testing.T) {
+	clearEnv(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mscli.yaml")
+
+	if err := os.WriteFile(path, []byte("model:\n  model: \"   \"\n"), 0600); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+
+	_, err := LoadWithEnv(path)
+	if err == nil {
+		t.Fatal("LoadWithEnv() error = nil, want validation error for whitespace-only model")
+	}
+}
+
+func TestLoadWithEnvRejectsUnsupportedProvider(t *testing.T) {
+	clearEnv(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mscli.yaml")
+
+	if err := os.WriteFile(path, []byte("model:\n  model: gpt-4o-mini\n  provider: unsupported\n"), 0600); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+
+	_, err := LoadWithEnv(path)
+	if err == nil {
+		t.Fatal("LoadWithEnv() error = nil, want validation error for unsupported provider")
+	}
+}
+
 func clearEnv(t *testing.T) {
 	t.Helper()
 

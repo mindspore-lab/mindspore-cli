@@ -172,8 +172,16 @@ func DefaultConfig() *Config {
 func (c *Config) Validate() error {
 	c.normalize()
 
-	if c.Model.Model == "" {
+	if strings.TrimSpace(c.Model.Model) == "" {
 		return fmt.Errorf("model name is required")
+	}
+
+	if provider := strings.ToLower(strings.TrimSpace(c.Model.Provider)); provider != "" {
+		switch provider {
+		case "openai", "openai-compatible", "anthropic":
+		default:
+			return fmt.Errorf("unsupported provider %q", strings.TrimSpace(c.Model.Provider))
+		}
 	}
 
 	if c.Model.Temperature < 0 || c.Model.Temperature > 2 {
