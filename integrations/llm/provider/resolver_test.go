@@ -294,7 +294,7 @@ func TestResolveConfig_AnthropicUsesDefaultURLWithInheritedOpenAIDefault(t *test
 
 	cfg := configs.DefaultConfig()
 	cfg.Model.Provider = "anthropic"
-	cfg.Model.URL = defaultOpenAIBaseURL + "/"
+	cfg.Model.URL = "HTTPS://API.OPENAI.COM/v1/"
 
 	got, err := ResolveConfig(cfg.Model)
 	if err != nil {

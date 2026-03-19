@@ -172,10 +172,6 @@ func DefaultConfig() *Config {
 func (c *Config) Validate() error {
 	c.normalize()
 
-	if c.Model.URL == "" {
-		return fmt.Errorf("model url is required")
-	}
-
 	if c.Model.Model == "" {
 		return fmt.Errorf("model name is required")
 	}

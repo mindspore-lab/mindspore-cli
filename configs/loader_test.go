@@ -85,4 +85,43 @@ func TestLoadWithEnvProvider(t *testing.T) {
 			t.Fatalf("provider from env override = %q, want %q", got, want)
 		}
 	})
+
+	t.Run("accepts anthropic config with blank model url", func(t *testing.T) {
+		clearEnv(t)
+		t.Setenv("MSCLI_PROVIDER", "anthropic")
+		t.Setenv("ANTHROPIC_AUTH_TOKEN", "anthropic-key")
+
+		dir := t.TempDir()
+		path := filepath.Join(dir, "mscli.yaml")
+
+		if err := os.WriteFile(path, []byte("model:\n  model: gpt-4o-mini\n  provider: anthropic\n  url: \"\"\n"), 0600); err != nil {
+			t.Fatalf("write yaml: %v", err)
+		}
+
+		cfg, err := LoadWithEnv(path)
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+
+		if got, want := cfg.Model.URL, ""; got != want {
+			t.Fatalf("model url from blank yaml = %q, want %q", got, want)
+		}
+	})
+}
+
+func clearEnv(t *testing.T) {
+	t.Helper()
+
+	for _, key := range []string{
+		"MSCLI_PROVIDER",
+		"MSCLI_API_KEY",
+		"OPENAI_API_KEY",
+		"ANTHROPIC_AUTH_TOKEN",
+		"ANTHROPIC_API_KEY",
+		"MSCLI_BASE_URL",
+		"OPENAI_BASE_URL",
+		"ANTHROPIC_BASE_URL",
+	} {
+		t.Setenv(key, "")
+	}
 }

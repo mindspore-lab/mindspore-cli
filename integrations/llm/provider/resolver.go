@@ -182,7 +182,7 @@ func normalizeProviderName(v string) string {
 }
 
 func normalizeURLForComparison(v string) string {
-	return strings.TrimRight(strings.TrimSpace(v), "/")
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(v), "/"))
 }
 
 func parseProviderKind(raw string) (ProviderKind, error) {
