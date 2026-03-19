@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 	"github.com/vigo999/ms-cli/agent/loop"
 	"github.com/vigo999/ms-cli/configs"
 	"github.com/vigo999/ms-cli/integrations/llm"
-	openai "github.com/vigo999/ms-cli/integrations/llm/openai"
+	providerpkg "github.com/vigo999/ms-cli/integrations/llm/provider"
 	itrain "github.com/vigo999/ms-cli/internal/train"
 	"github.com/vigo999/ms-cli/permission"
 	rshell "github.com/vigo999/ms-cli/runtime/shell"
@@ -224,30 +223,17 @@ func (a *Application) SaveState() error {
 }
 
 func initProvider(cfg configs.ModelConfig) (llm.Provider, error) {
-	key := strings.TrimSpace(cfg.Key)
-	if key == "" {
-		key = strings.TrimSpace(os.Getenv("MSCLI_API_KEY"))
-	}
-	if key == "" {
-		key = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	}
-	if key == "" {
-		return nil, errAPIKeyNotFound
-	}
-
-	url := strings.TrimSpace(cfg.URL)
-	if url == "" {
-		url = "https://api.openai.com/v1"
-	}
-
-	client, err := openai.NewClient(openai.Config{
-		Key:     key,
-		URL:     url,
-		Model:   cfg.Model,
-		Timeout: time.Duration(cfg.TimeoutSec) * time.Second,
-	})
+	resolved, err := providerpkg.ResolveConfig(cfg)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, providerpkg.ErrMissingAPIKey) {
+			return nil, errAPIKeyNotFound
+		}
+		return nil, fmt.Errorf("resolve provider config: %w", err)
+	}
+
+	client, err := providerpkg.DefaultManager().Build(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("build provider: %w", err)
 	}
 	return client, nil
 }
