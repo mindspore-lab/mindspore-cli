@@ -360,7 +360,7 @@ func TestResolveConfig_OpenAIHeaderConflict(t *testing.T) {
 		Key: "cfg-key",
 		Headers: map[string]string{
 			"authorization": "Basic user-secret",
-			"X-Trace-ID":     "trace-123",
+			"X-Trace-ID":    "trace-123",
 		},
 	})
 	if err != nil {
@@ -390,6 +390,49 @@ func TestResolveConfig_MissingAPIKeyWrapsSentinel(t *testing.T) {
 
 	if !errors.Is(err, ErrMissingAPIKey) {
 		t.Fatalf("ResolveConfig() error = %v, want ErrMissingAPIKey", err)
+	}
+}
+
+func TestResolveConfig_AnthropicIgnoresOpenAIEnvFallbacksFromApplyEnvOverrides(t *testing.T) {
+	clearResolverEnv(t)
+	t.Setenv("MSCLI_PROVIDER", "anthropic")
+	t.Setenv("OPENAI_API_KEY", "OpenAI-Key")
+	t.Setenv("OPENAI_BASE_URL", "HTTPS://OpenAI.Example/V1")
+
+	cfg := configs.DefaultConfig()
+	configs.ApplyEnvOverrides(cfg)
+
+	got, err := ResolveConfig(cfg.Model)
+	if err == nil {
+		t.Fatal("ResolveConfig() error = nil, want missing api key error")
+	}
+	if !errors.Is(err, ErrMissingAPIKey) {
+		t.Fatalf("ResolveConfig() error = %v, want ErrMissingAPIKey", err)
+	}
+
+	_ = got
+}
+
+func TestResolveConfig_AnthropicIgnoresOpenAIBaseURLFallbackFromApplyEnvOverrides(t *testing.T) {
+	clearResolverEnv(t)
+	t.Setenv("MSCLI_PROVIDER", "anthropic")
+	t.Setenv("OPENAI_BASE_URL", "HTTPS://OpenAI.Example/V1")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "Anthropic-Key")
+
+	cfg := configs.DefaultConfig()
+	configs.ApplyEnvOverrides(cfg)
+
+	got, err := ResolveConfig(cfg.Model)
+	if err != nil {
+		t.Fatalf("ResolveConfig() error = %v", err)
+	}
+
+	if got.BaseURL != defaultAnthropicBaseURL {
+		t.Fatalf("ResolveConfig() BaseURL = %q, want %q", got.BaseURL, defaultAnthropicBaseURL)
+	}
+
+	if got.APIKey != "Anthropic-Key" {
+		t.Fatalf("ResolveConfig() APIKey = %q, want %q", got.APIKey, "Anthropic-Key")
 	}
 }
 
