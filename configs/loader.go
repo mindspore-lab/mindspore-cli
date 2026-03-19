@@ -103,8 +103,11 @@ func FindConfigFile() string {
 }
 
 // ApplyEnvOverrides applies environment variable overrides to the config.
-// Precedence: MSCLI_* > OPENAI_* > YAML > defaults.
+// Precedence: MSCLI_* > OPENAI_* > YAML > defaults, except that Anthropic
+// provider resolution skips OPENAI_API_KEY and OPENAI_BASE_URL at the source.
 func ApplyEnvOverrides(cfg *Config) {
+	effectiveProvider := effectiveModelProvider(cfg.Model.Provider)
+
 	// Model settings
 	if v := os.Getenv("OPENAI_MODEL"); v != "" {
 		cfg.Model.Model = v
@@ -112,14 +115,16 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MSCLI_MODEL"); v != "" {
 		cfg.Model.Model = v
 	}
-	if v := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); v != "" {
-		cfg.Model.Key = v
+	if effectiveProvider != "anthropic" {
+		if v := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); v != "" {
+			cfg.Model.Key = v
+		}
+		if v := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")); v != "" {
+			cfg.Model.URL = v
+		}
 	}
 	if v := strings.TrimSpace(os.Getenv("MSCLI_API_KEY")); v != "" {
 		cfg.Model.Key = v
-	}
-	if v := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")); v != "" {
-		cfg.Model.URL = v
 	}
 	if v := strings.TrimSpace(os.Getenv("MSCLI_BASE_URL")); v != "" {
 		cfg.Model.URL = v
@@ -193,6 +198,18 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MSCLI_MEMORY_PATH"); v != "" {
 		cfg.Memory.StorePath = v
 	}
+}
+
+func effectiveModelProvider(cfgProvider string) string {
+	if v := strings.TrimSpace(os.Getenv("MSCLI_PROVIDER")); v != "" {
+		return strings.ToLower(v)
+	}
+
+	if v := strings.TrimSpace(cfgProvider); v != "" {
+		return strings.ToLower(v)
+	}
+
+	return "openai-compatible"
 }
 
 // SaveToFile saves the configuration to a YAML file.

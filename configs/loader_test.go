@@ -27,6 +27,26 @@ func TestApplyEnvOverridesProvider(t *testing.T) {
 	}
 }
 
+func TestApplyEnvOverridesProviderAware(t *testing.T) {
+	t.Setenv("MSCLI_PROVIDER", "anthropic")
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	t.Setenv("OPENAI_BASE_URL", "https://openai.example/v1")
+
+	cfg := DefaultConfig()
+	cfg.Model.Key = ""
+	cfg.Model.URL = "https://api.openai.com/v1"
+
+	ApplyEnvOverrides(cfg)
+
+	if got, want := cfg.Model.Key, ""; got != want {
+		t.Fatalf("anthropic config key after env override = %q, want %q", got, want)
+	}
+
+	if got, want := cfg.Model.URL, "https://api.openai.com/v1"; got != want {
+		t.Fatalf("anthropic config url after env override = %q, want %q", got, want)
+	}
+}
+
 func TestLoadWithEnvProvider(t *testing.T) {
 	t.Run("defaults when yaml provider blank", func(t *testing.T) {
 		dir := t.TempDir()

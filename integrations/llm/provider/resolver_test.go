@@ -287,6 +287,24 @@ func TestResolveConfig_AnthropicBaseURLFallbacks(t *testing.T) {
 	})
 }
 
+func TestResolveConfig_AnthropicUsesDefaultURLWithInheritedOpenAIDefault(t *testing.T) {
+	clearResolverEnv(t)
+	t.Setenv("MSCLI_PROVIDER", "anthropic")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "Anthropic-Key")
+
+	cfg := configs.DefaultConfig()
+	cfg.Model.Provider = "anthropic"
+
+	got, err := ResolveConfig(cfg.Model)
+	if err != nil {
+		t.Fatalf("ResolveConfig() error = %v", err)
+	}
+
+	if got.BaseURL != defaultAnthropicBaseURL {
+		t.Fatalf("ResolveConfig() BaseURL = %q, want %q", got.BaseURL, defaultAnthropicBaseURL)
+	}
+}
+
 func TestResolveConfig_AnthropicKeyPreservesCase(t *testing.T) {
 	clearResolverEnv(t)
 	t.Setenv("MSCLI_PROVIDER", "anthropic")
@@ -390,6 +408,24 @@ func TestResolveConfig_MissingAPIKeyWrapsSentinel(t *testing.T) {
 
 	if !errors.Is(err, ErrMissingAPIKey) {
 		t.Fatalf("ResolveConfig() error = %v, want ErrMissingAPIKey", err)
+	}
+}
+
+func TestResolveConfig_AnthropicAcceptsExplicitKeyMatchingOpenAIEnv(t *testing.T) {
+	clearResolverEnv(t)
+	t.Setenv("MSCLI_PROVIDER", "anthropic")
+	t.Setenv("OPENAI_API_KEY", "Shared-Key")
+
+	got, err := ResolveConfig(configs.ModelConfig{
+		Provider: "anthropic",
+		Key:      "Shared-Key",
+	})
+	if err != nil {
+		t.Fatalf("ResolveConfig() error = %v", err)
+	}
+
+	if got.APIKey != "Shared-Key" {
+		t.Fatalf("ResolveConfig() APIKey = %q, want %q", got.APIKey, "Shared-Key")
 	}
 }
 

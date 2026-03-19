@@ -69,10 +69,6 @@ func resolveAPIKey(kind ProviderKind, cfgKey string) (string, error) {
 		if raw := trimmedEnv("ANTHROPIC_API_KEY"); raw != "" {
 			return raw, nil
 		}
-		if raw := anthropicFallbackValue(cfgKey, "OPENAI_API_KEY"); raw != "" {
-			return raw, nil
-		}
-		return "", fmt.Errorf("%w for provider %s", ErrMissingAPIKey, kind)
 	default:
 		if raw := trimmedEnv("MSCLI_API_KEY"); raw != "" {
 			return raw, nil
@@ -98,7 +94,7 @@ func resolveBaseURL(kind ProviderKind, cfgURL string) string {
 		if raw := trimmedEnv("ANTHROPIC_BASE_URL"); raw != "" {
 			return raw
 		}
-		if raw := anthropicFallbackValue(cfgURL, "OPENAI_BASE_URL"); raw != "" {
+		if raw := strings.TrimSpace(cfgURL); raw != "" && raw != defaultOpenAIBaseURL {
 			return raw
 		}
 		return defaultAnthropicBaseURL
@@ -179,19 +175,6 @@ func normalizedProviderEnv(key string) string {
 
 func trimmedEnv(key string) string {
 	return strings.TrimSpace(os.Getenv(key))
-}
-
-func anthropicFallbackValue(cfgValue, openAIEnvKey string) string {
-	value := strings.TrimSpace(cfgValue)
-	if value == "" {
-		return ""
-	}
-
-	if openAIEnv := strings.TrimSpace(os.Getenv(openAIEnvKey)); openAIEnv != "" && value == openAIEnv {
-		return ""
-	}
-
-	return value
 }
 
 func normalizeProviderName(v string) string {
