@@ -25,7 +25,7 @@ type ManagerConfig struct {
 // DefaultManagerConfig 返回默认配置
 func DefaultManagerConfig() ManagerConfig {
 	return ManagerConfig{
-		MaxTokens:           24000,
+		MaxTokens:           240000,
 		ReserveTokens:       4000,
 		CompactionThreshold: 0.85,
 		MaxHistoryRounds:    10,
@@ -74,7 +74,7 @@ type Stats struct {
 // NewManager creates a new context manager.
 func NewManager(cfg ManagerConfig) *Manager {
 	if cfg.MaxTokens == 0 {
-		cfg.MaxTokens = 24000
+		cfg.MaxTokens = 240000
 	}
 	if cfg.ReserveTokens == 0 {
 		cfg.ReserveTokens = 4000
