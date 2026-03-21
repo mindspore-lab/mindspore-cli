@@ -14,7 +14,11 @@ import (
 func LoadWithEnv() (*Config, error) {
 	cfg := DefaultConfig()
 
-	// Fixed config layers: defaults -> user -> project -> env.
+	// Fixed config layers: defaults -> managed -> user -> project -> env.
+	if err := mergeConfigFile(cfg, managedConfigPath()); err != nil {
+		return nil, err
+	}
+
 	if err := mergeConfigFile(cfg, userConfigPath()); err != nil {
 		return nil, err
 	}
@@ -27,6 +31,7 @@ func LoadWithEnv() (*Config, error) {
 	// ENV > project > user > default
 	ApplyEnvOverrides(cfg)
 	cfg.normalize()
+	cfg.Permissions.RuleSources = derivePermissionRuleSources(cfg, managedConfigPath(), userConfigPath(), projectPath)
 
 	// Validate
 	if err := cfg.Validate(); err != nil {
@@ -34,6 +39,124 @@ func LoadWithEnv() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func derivePermissionRuleSources(cfg *Config, managedPath, userPath, projectPath string) map[string]string {
+	result := make(map[string]string)
+	managedBuckets := readPermissionBuckets(managedPath)
+	userBuckets := readPermissionBuckets(userPath)
+	projectBuckets := readPermissionBuckets(projectPath)
+
+	assign := func(rules []string, source string) {
+		for _, rule := range rules {
+			r := strings.TrimSpace(rule)
+			if r == "" {
+				continue
+			}
+			result[r] = source
+		}
+	}
+
+	assign(managedBuckets.Allow, "managed")
+	assign(managedBuckets.Ask, "managed")
+	assign(managedBuckets.Deny, "managed")
+	assign(userBuckets.Allow, "user")
+	assign(userBuckets.Ask, "user")
+	assign(userBuckets.Deny, "user")
+	assign(projectBuckets.Allow, "project")
+	assign(projectBuckets.Ask, "project")
+	assign(projectBuckets.Deny, "project")
+
+	for _, rule := range cfg.Permissions.Allow {
+		r := strings.TrimSpace(rule)
+		if r == "" {
+			continue
+		}
+		if _, ok := result[r]; !ok {
+			result[r] = "config"
+		}
+	}
+	for _, rule := range cfg.Permissions.Ask {
+		r := strings.TrimSpace(rule)
+		if r == "" {
+			continue
+		}
+		if _, ok := result[r]; !ok {
+			result[r] = "config"
+		}
+	}
+	for _, rule := range cfg.Permissions.Deny {
+		r := strings.TrimSpace(rule)
+		if r == "" {
+			continue
+		}
+		if _, ok := result[r]; !ok {
+			result[r] = "config"
+		}
+	}
+	return result
+}
+
+func managedConfigPath() string {
+	path := strings.TrimSpace(os.Getenv("MSCLI_MANAGED_CONFIG"))
+	if path == "" {
+		return ""
+	}
+	return path
+}
+
+type permissionBuckets struct {
+	Allow []string
+	Ask   []string
+	Deny  []string
+}
+
+func readPermissionBuckets(path string) permissionBuckets {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return permissionBuckets{}
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return permissionBuckets{}
+	}
+
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return permissionBuckets{}
+	}
+	permsRaw, ok := raw["permissions"].(map[string]any)
+	if !ok {
+		return permissionBuckets{}
+	}
+	return permissionBuckets{
+		Allow: anyStringSlice(permsRaw["allow"]),
+		Ask:   anyStringSlice(permsRaw["ask"]),
+		Deny:  anyStringSlice(permsRaw["deny"]),
+	}
+}
+
+func anyStringSlice(v any) []string {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := item.(string); ok {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
 
 // ApplyEnvOverrides applies environment variable overrides to the config.
@@ -95,6 +218,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("MSCLI_PERMISSIONS_DEFAULT"); v != "" {
 		cfg.Permissions.DefaultLevel = v
+	}
+	if v := os.Getenv("MSCLI_PERMISSIONS_MODE"); v != "" {
+		cfg.Permissions.DefaultMode = v
 	}
 
 	// Context settings

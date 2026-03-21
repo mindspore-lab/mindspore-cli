@@ -3,8 +3,10 @@ package permission
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,11 +54,28 @@ type DefaultPermissionService struct {
 	policies        map[string]PermissionLevel
 	commandPolicies map[string]PermissionLevel
 	pathPatterns    []PathPermission
+	denyRules       []compiledRule
+	askRules        []compiledRule
+	allowRules      []compiledRule
+	ruleSeq         int
 	default_        PermissionLevel
+	mode            PermissionMode
 	skipAsk         bool
 	ui              PermissionUI
 	store           PermissionStore
 }
+
+const (
+	ruleSourceConfig  = "config"
+	ruleSourceProject = "project"
+	ruleSourceUser    = "user"
+	ruleSourceSession = "session"
+	ruleSourceState   = "state"
+	ruleSourceRuntime = "runtime"
+	ruleSourceManaged = "managed"
+)
+
+var ErrManagedRuleLocked = errors.New("managed rule is immutable")
 
 // PathPermission 路径权限
 type PathPermission struct {
@@ -77,26 +96,55 @@ func NewDefaultPermissionService(cfg configs.PermissionsConfig) *DefaultPermissi
 		policies:        make(map[string]PermissionLevel),
 		commandPolicies: make(map[string]PermissionLevel),
 		pathPatterns:    make([]PathPermission, 0),
+		denyRules:       make([]compiledRule, 0),
+		askRules:        make([]compiledRule, 0),
+		allowRules:      make([]compiledRule, 0),
+		ruleSeq:         0,
 		default_:        ParsePermissionLevel(cfg.DefaultLevel),
+		mode:            ParsePermissionMode(cfg.DefaultMode),
 		skipAsk:         cfg.SkipRequests,
+	}
+
+	for _, rule := range cfg.Deny {
+		_ = svc.addRuleNoLock(rule, PermissionDeny, configRuleSource(cfg, rule))
+	}
+	for _, rule := range cfg.Ask {
+		_ = svc.addRuleNoLock(rule, PermissionAsk, configRuleSource(cfg, rule))
+	}
+	for _, rule := range cfg.Allow {
+		_ = svc.addRuleNoLock(rule, PermissionAllowAlways, configRuleSource(cfg, rule))
 	}
 
 	// Load tool policies
 	for tool, level := range cfg.ToolPolicies {
-		svc.policies[tool] = ParsePermissionLevel(level)
+		svc.grantWithSource(tool, ParsePermissionLevel(level), ruleSourceConfig)
 	}
 
 	// Load allowed tools as allow_always
 	for _, tool := range cfg.AllowedTools {
-		svc.policies[tool] = PermissionAllowAlways
+		svc.grantWithSource(tool, PermissionAllowAlways, ruleSourceConfig)
 	}
 
 	// Load blocked tools as deny
 	for _, tool := range cfg.BlockedTools {
-		svc.policies[tool] = PermissionDeny
+		svc.grantWithSource(tool, PermissionDeny, ruleSourceConfig)
 	}
 
 	return svc
+}
+
+func configRuleSource(cfg configs.PermissionsConfig, rule string) string {
+	rule = strings.TrimSpace(rule)
+	if rule == "" {
+		return ruleSourceConfig
+	}
+	if cfg.RuleSources == nil {
+		return ruleSourceConfig
+	}
+	if src, ok := cfg.RuleSources[rule]; ok && strings.TrimSpace(src) != "" {
+		return strings.ToLower(strings.TrimSpace(src))
+	}
+	return ruleSourceConfig
 }
 
 // SetUI sets the permission UI.
@@ -116,14 +164,14 @@ func (s *DefaultPermissionService) SetStore(store PermissionStore) {
 	}
 	for _, d := range decisions {
 		if d.Action != "" && d.Tool == "shell" {
-			s.GrantCommand(d.Action, d.Level)
+			s.grantCommandWithSource(d.Action, d.Level, ruleSourceState)
 			continue
 		}
 		if d.Path != "" {
-			s.GrantPath(d.Path, d.Level)
+			s.grantPathWithSource(d.Path, d.Level, ruleSourceState)
 			continue
 		}
-		s.Grant(d.Tool, d.Level)
+		s.grantWithSource(d.Tool, d.Level, ruleSourceState)
 	}
 }
 
@@ -162,17 +210,20 @@ func (s *DefaultPermissionService) Request(ctx context.Context, tool, action, pa
 		// Consume "allow once" on the scope that granted it.
 		switch {
 		case tool == "shell" && action != "" && cmdLevel == PermissionAllowOnce:
-			s.GrantCommand(action, PermissionAsk)
+			s.grantCommandWithSource(action, PermissionAsk, ruleSourceRuntime)
 		case path != "" && pathLevel == PermissionAllowOnce:
-			s.GrantPath(path, PermissionAsk)
+			s.grantPathWithSource(path, PermissionAsk, ruleSourceRuntime)
 		case toolLevel == PermissionAllowOnce:
-			s.Grant(tool, PermissionAsk)
+			s.grantWithSource(tool, PermissionAsk, ruleSourceRuntime)
 		default:
-			s.Grant(tool, PermissionAsk)
+			s.grantWithSource(tool, PermissionAsk, ruleSourceRuntime)
 		}
 		return true, nil
 
 	case PermissionAsk:
+		if s.Mode() == ModeDontAsk {
+			return false, fmt.Errorf("tool %q requires permission (mode=dontAsk)", tool)
+		}
 		if s.skipAsk {
 			return true, nil
 		}
@@ -185,23 +236,60 @@ func (s *DefaultPermissionService) Request(ctx context.Context, tool, action, pa
 			}
 
 			if granted && remember {
+				shouldPersist := true
+				decisions := make([]PermissionDecision, 0, 5)
 				switch {
+				case isEditPermissionTool(tool):
+					// Claude Code style: "allow all edits during this session"
+					// applies to both edit and write tools and is not persisted.
+					s.grantWithSource("edit", PermissionAllowSession, ruleSourceSession)
+					s.grantWithSource("write", PermissionAllowSession, ruleSourceSession)
+					shouldPersist = false
 				case tool == "shell" && action != "":
-					s.GrantCommand(action, PermissionAllowSession)
+					parts := splitShellCommand(normalizeCommandInput(action))
+					if len(parts) == 0 {
+						parts = []string{normalizeCommandInput(action)}
+					}
+					if len(parts) > 5 {
+						parts = parts[:5]
+					}
+					for _, cmd := range parts {
+						if strings.TrimSpace(cmd) == "" {
+							continue
+						}
+						s.grantCommandWithSource(cmd, PermissionAllowSession, ruleSourceState)
+						decisions = append(decisions, PermissionDecision{
+							Tool:      tool,
+							Action:    cmd,
+							Path:      path,
+							Level:     PermissionAllowSession,
+							Timestamp: time.Now(),
+						})
+					}
 				case path != "":
-					s.GrantPath(path, PermissionAllowSession)
-				default:
-					s.Grant(tool, PermissionAllowSession)
-				}
-				// 持久化决策
-				if s.store != nil {
-					_ = s.store.SaveDecision(PermissionDecision{
+					s.grantPathWithSource(path, PermissionAllowSession, ruleSourceState)
+					decisions = append(decisions, PermissionDecision{
 						Tool:      tool,
 						Action:    action,
 						Path:      path,
 						Level:     PermissionAllowSession,
 						Timestamp: time.Now(),
 					})
+				default:
+					s.grantWithSource(tool, PermissionAllowSession, ruleSourceState)
+					decisions = append(decisions, PermissionDecision{
+						Tool:      tool,
+						Action:    action,
+						Path:      path,
+						Level:     PermissionAllowSession,
+						Timestamp: time.Now(),
+					})
+				}
+				// 持久化决策
+				if shouldPersist && s.store != nil {
+					for _, d := range decisions {
+						_ = s.store.SaveDecision(d)
+					}
 				}
 			}
 
@@ -219,6 +307,23 @@ func (s *DefaultPermissionService) Request(ctx context.Context, tool, action, pa
 func (s *DefaultPermissionService) Check(tool, action string) PermissionLevel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	switch s.mode {
+	case ModeBypassPermissions:
+		return PermissionAllowAlways
+	case ModePlan:
+		if tool == "write" || tool == "edit" || tool == "shell" {
+			return PermissionDeny
+		}
+	case ModeAcceptEdits:
+		if tool == "write" || tool == "edit" {
+			return PermissionAllowAlways
+		}
+	}
+
+	if level, matched := s.evaluateRules(tool, action, ""); matched {
+		return level
+	}
 
 	// Check specific tool policy
 	if level, ok := s.policies[tool]; ok {
@@ -242,22 +347,60 @@ func (s *DefaultPermissionService) Check(tool, action string) PermissionLevel {
 	return s.default_
 }
 
+// Mode returns current permission mode.
+func (s *DefaultPermissionService) Mode() PermissionMode {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mode
+}
+
+// SetMode updates current permission mode.
+func (s *DefaultPermissionService) SetMode(mode PermissionMode) error {
+	if !IsValidPermissionMode(mode) {
+		return fmt.Errorf("invalid permission mode: %s", mode)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mode = mode
+	return nil
+}
+
 // CheckCommand checks permission for a specific command.
 func (s *DefaultPermissionService) CheckCommand(command string) PermissionLevel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	command = normalizeCommandInput(command)
+	if strings.TrimSpace(command) != "" {
+		parts := splitShellCommand(command)
+		if len(parts) > 1 {
+			level := PermissionAllowAlways
+			for _, part := range parts {
+				partLevel := s.checkShellCommandSingle(part)
+				if partLevel < level {
+					level = partLevel
+				}
+			}
+			return level
+		}
+	}
+	return s.checkShellCommandSingle(command)
+}
 
-	// 解析命令名
+func (s *DefaultPermissionService) checkShellCommandSingle(command string) PermissionLevel {
+	if level, matched := s.evaluateRules("shell", command, ""); matched {
+		return level
+	}
+
+	// Parse command name
 	cmd := extractCommandName(command)
 
-	// 检查是否有该命令的特定策略
+	// Check command specific policy
 	if level, ok := s.commandPolicies[cmd]; ok {
 		return level
 	}
 
-	// 检查是否是危险命令
+	// Check dangerous commands
 	if IsDangerousCommand(command) {
 		return minPermission(s.default_, PermissionAsk)
 	}
@@ -270,7 +413,21 @@ func (s *DefaultPermissionService) CheckPath(path string) PermissionLevel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// 检查路径模式匹配
+	matched := false
+	level := PermissionAllowAlways
+	for _, tool := range []string{"read", "edit", "write"} {
+		if l, ok := s.evaluateRules(tool, "", path); ok {
+			matched = true
+			if l < level {
+				level = l
+			}
+		}
+	}
+	if matched {
+		return level
+	}
+
+	// Legacy path patterns
 	for _, pp := range s.pathPatterns {
 		if matched, _ := filepath.Match(pp.Pattern, path); matched {
 			return pp.Level
@@ -281,31 +438,64 @@ func (s *DefaultPermissionService) CheckPath(path string) PermissionLevel {
 }
 
 // Grant grants permission.
+// Compatibility API: prefer AddRule for explicit source-aware rule management.
 func (s *DefaultPermissionService) Grant(tool string, level PermissionLevel) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.grantWithSource(tool, level, ruleSourceRuntime)
+}
+
+func (s *DefaultPermissionService) grantWithSource(tool string, level PermissionLevel, source string) {
+	rule := ruleFromToolLiteral(tool)
+	if !s.canMutateRuleWithSourceNoLock(rule, source) {
+		return
+	}
 	s.policies[tool] = level
+	_ = s.addRuleNoLock(rule, level, source)
 }
 
 // GrantCommand grants permission for a specific command.
+// Compatibility API: prefer AddRule(Bash(...)) for explicit source-aware rule management.
 func (s *DefaultPermissionService) GrantCommand(command string, level PermissionLevel) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.grantCommandWithSource(command, level, ruleSourceRuntime)
+}
+
+func (s *DefaultPermissionService) grantCommandWithSource(command string, level PermissionLevel, source string) {
 	cmd := extractCommandName(command)
+	if cmd == "" {
+		return
+	}
+	rule := fmt.Sprintf("Bash(%s *)", cmd)
+	if !s.canMutateRuleWithSourceNoLock(rule, source) {
+		return
+	}
 	s.commandPolicies[cmd] = level
+	_ = s.addRuleNoLock(rule, level, source)
 }
 
 // GrantPath grants permission for a specific path pattern.
+// Compatibility API: prefer AddRule(Edit(...)) for explicit source-aware rule management.
 func (s *DefaultPermissionService) GrantPath(pattern string, level PermissionLevel) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.grantPathWithSource(pattern, level, ruleSourceRuntime)
+}
+
+func (s *DefaultPermissionService) grantPathWithSource(pattern string, level PermissionLevel, source string) {
+	rule := fmt.Sprintf("Edit(%s)", pattern)
+	if !s.canMutateRuleWithSourceNoLock(rule, source) {
+		return
+	}
 	// 查找是否已存在
 	for i, pp := range s.pathPatterns {
 		if pp.Pattern == pattern {
 			s.pathPatterns[i].Level = level
+			_ = s.addRuleNoLock(rule, level, source)
 			return
 		}
 	}
@@ -315,36 +505,58 @@ func (s *DefaultPermissionService) GrantPath(pattern string, level PermissionLev
 		Pattern: pattern,
 		Level:   level,
 	})
+	_ = s.addRuleNoLock(rule, level, source)
 }
 
 // Revoke revokes permission.
+// Compatibility API: prefer RemoveRule for explicit source-aware rule management.
 func (s *DefaultPermissionService) Revoke(tool string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	rule := ruleFromToolLiteral(tool)
+	if !s.canMutateRuleWithSourceNoLock(rule, ruleSourceRuntime) {
+		return
+	}
 	delete(s.policies, tool)
+	s.removeRuleNoLock(rule)
 }
 
 // RevokeCommand revokes permission for a specific command.
+// Compatibility API: prefer RemoveRule(Bash(...)) for explicit source-aware rule management.
 func (s *DefaultPermissionService) RevokeCommand(command string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	cmd := extractCommandName(command)
+	if cmd == "" {
+		return
+	}
+	rule := fmt.Sprintf("Bash(%s *)", cmd)
+	if !s.canMutateRuleWithSourceNoLock(rule, ruleSourceRuntime) {
+		return
+	}
 	delete(s.commandPolicies, cmd)
+	s.removeRuleNoLock(rule)
 }
 
 // RevokePath revokes permission for a specific path pattern.
+// Compatibility API: prefer RemoveRule(Edit(...)) for explicit source-aware rule management.
 func (s *DefaultPermissionService) RevokePath(pattern string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	rule := fmt.Sprintf("Edit(%s)", pattern)
+	if !s.canMutateRuleWithSourceNoLock(rule, ruleSourceRuntime) {
+		return
+	}
 	for i, pp := range s.pathPatterns {
 		if pp.Pattern == pattern {
 			s.pathPatterns = append(s.pathPatterns[:i], s.pathPatterns[i+1:]...)
-			return
+			break
 		}
 	}
+	s.removeRuleNoLock(rule)
 }
 
 // GetPolicies returns a copy of all policies.
@@ -379,6 +591,250 @@ func (s *DefaultPermissionService) GetPathPolicies() []PathPermission {
 	result := make([]PathPermission, len(s.pathPatterns))
 	copy(result, s.pathPatterns)
 	return result
+}
+
+// AddRule adds a rule in Tool/Tool(specifier) syntax.
+func (s *DefaultPermissionService) AddRule(rule string, level PermissionLevel) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.canMutateRuleNoLock(rule) {
+		return fmt.Errorf("%w: %s", ErrManagedRuleLocked, strings.TrimSpace(rule))
+	}
+	return s.addRuleNoLock(rule, level, ruleSourceProject)
+}
+
+// RemoveRule removes a rule from all buckets.
+func (s *DefaultPermissionService) RemoveRule(rule string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.canMutateRuleNoLock(rule) {
+		return false, fmt.Errorf("%w: %s", ErrManagedRuleLocked, strings.TrimSpace(rule))
+	}
+	return s.removeRuleNoLock(rule), nil
+}
+
+// RuleSource returns the source of an exact rule when present.
+func (s *DefaultPermissionService) RuleSource(rule string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	found, ok := s.findRuleNoLock(rule)
+	if !ok {
+		return "", false
+	}
+	return found.Source, true
+}
+
+// GetRuleViews returns normalized rules grouped by effective level bucket order.
+func (s *DefaultPermissionService) GetRuleViews() []RuleViewItem {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]RuleViewItem, 0, len(s.denyRules)+len(s.askRules)+len(s.allowRules))
+	for _, r := range orderedRules(s.denyRules) {
+		out = append(out, RuleViewItem{
+			Rule:   r.Rule.Raw,
+			Level:  PermissionDeny,
+			Source: r.Source,
+		})
+	}
+	for _, r := range orderedRules(s.askRules) {
+		out = append(out, RuleViewItem{
+			Rule:   r.Rule.Raw,
+			Level:  PermissionAsk,
+			Source: r.Source,
+		})
+	}
+	for _, r := range orderedRules(s.allowRules) {
+		out = append(out, RuleViewItem{
+			Rule:   r.Rule.Raw,
+			Level:  r.Level,
+			Source: r.Source,
+		})
+	}
+	return out
+}
+
+func (s *DefaultPermissionService) evaluateRules(tool, action, path string) (PermissionLevel, bool) {
+	denyRule, denyOK := bestMatchBySource(s.denyRules, tool, action, path)
+	askRule, askOK := bestMatchBySource(s.askRules, tool, action, path)
+	allowRule, allowOK := bestMatchBySource(s.allowRules, tool, action, path)
+
+	top := -1
+	if denyOK {
+		top = max(top, sourcePriority(denyRule.Source))
+	}
+	if askOK {
+		top = max(top, sourcePriority(askRule.Source))
+	}
+	if allowOK {
+		top = max(top, sourcePriority(allowRule.Source))
+	}
+	if top < 0 {
+		return PermissionAsk, false
+	}
+
+	if denyOK && sourcePriority(denyRule.Source) == top {
+		return PermissionDeny, true
+	}
+	if askOK && sourcePriority(askRule.Source) == top {
+		return PermissionAsk, true
+	}
+	if allowOK && sourcePriority(allowRule.Source) == top {
+		return allowRule.Level, true
+	}
+	return PermissionAsk, false
+}
+
+func (s *DefaultPermissionService) addRuleNoLock(rule string, level PermissionLevel, source string) error {
+	parsed, err := ParsePermissionRule(rule)
+	if err != nil {
+		return err
+	}
+	parsed.Raw = strings.TrimSpace(rule)
+	if parsed.Raw == "" {
+		parsed.Raw = rule
+	}
+	order := 0
+	if existing, ok := s.findRuleNoLock(parsed.Raw); ok {
+		if sourcePriority(existing.Source) > sourcePriority(source) {
+			return nil
+		}
+		order = existing.Order
+	}
+	s.removeRuleNoLock(parsed.Raw)
+	if order == 0 {
+		s.ruleSeq++
+		order = s.ruleSeq
+	}
+
+	cr := compiledRule{
+		Rule:   parsed,
+		Level:  level,
+		Source: source,
+		Order:  order,
+	}
+	switch level {
+	case PermissionDeny:
+		s.denyRules = append(s.denyRules, cr)
+	case PermissionAsk:
+		s.askRules = append(s.askRules, cr)
+	default:
+		s.allowRules = append(s.allowRules, cr)
+	}
+	return nil
+}
+
+func (s *DefaultPermissionService) removeRuleNoLock(rule string) bool {
+	rule = strings.TrimSpace(rule)
+	if rule == "" {
+		return false
+	}
+	removed := false
+	filter := func(in []compiledRule) []compiledRule {
+		out := in[:0]
+		for _, item := range in {
+			if strings.EqualFold(strings.TrimSpace(item.Rule.Raw), rule) {
+				removed = true
+				continue
+			}
+			out = append(out, item)
+		}
+		return out
+	}
+	s.denyRules = filter(s.denyRules)
+	s.askRules = filter(s.askRules)
+	s.allowRules = filter(s.allowRules)
+	return removed
+}
+
+func (s *DefaultPermissionService) findRuleNoLock(rule string) (compiledRule, bool) {
+	rule = strings.TrimSpace(rule)
+	if rule == "" {
+		return compiledRule{}, false
+	}
+	for _, item := range s.denyRules {
+		if strings.EqualFold(strings.TrimSpace(item.Rule.Raw), rule) {
+			return item, true
+		}
+	}
+	for _, item := range s.askRules {
+		if strings.EqualFold(strings.TrimSpace(item.Rule.Raw), rule) {
+			return item, true
+		}
+	}
+	for _, item := range s.allowRules {
+		if strings.EqualFold(strings.TrimSpace(item.Rule.Raw), rule) {
+			return item, true
+		}
+	}
+	return compiledRule{}, false
+}
+
+func (s *DefaultPermissionService) canMutateRuleNoLock(rule string) bool {
+	return s.canMutateRuleWithSourceNoLock(rule, ruleSourceProject)
+}
+
+func (s *DefaultPermissionService) canMutateRuleWithSourceNoLock(rule, source string) bool {
+	found, ok := s.findRuleNoLock(rule)
+	if !ok {
+		return true
+	}
+	return sourcePriority(source) >= sourcePriority(found.Source)
+}
+
+func sourcePriority(source string) int {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case ruleSourceManaged:
+		return 100
+	case ruleSourceSession:
+		return 90
+	case ruleSourceState:
+		return 80
+	case ruleSourceProject:
+		return 70
+	case ruleSourceUser:
+		return 60
+	case ruleSourceConfig:
+		return 50
+	case ruleSourceRuntime:
+		return 40
+	default:
+		return 10
+	}
+}
+
+func bestMatchBySource(rules []compiledRule, tool, action, path string) (compiledRule, bool) {
+	best := compiledRule{}
+	bestPri := -1
+	for _, r := range orderedRules(rules) {
+		if !matchRule(r.Rule, tool, action, path) {
+			continue
+		}
+		p := sourcePriority(r.Source)
+		if p > bestPri {
+			best = r
+			bestPri = p
+		}
+	}
+	if bestPri < 0 {
+		return compiledRule{}, false
+	}
+	return best, true
+}
+
+func orderedRules(in []compiledRule) []compiledRule {
+	if len(in) <= 1 {
+		return in
+	}
+	out := make([]compiledRule, len(in))
+	copy(out, in)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Order == out[j].Order {
+			return out[i].Rule.Raw < out[j].Rule.Raw
+		}
+		return out[i].Order < out[j].Order
+	})
+	return out
 }
 
 func maxPermission(a, b PermissionLevel) PermissionLevel {
@@ -425,6 +881,15 @@ func normalizeCommandInput(command string) string {
 	}
 
 	return command
+}
+
+func isEditPermissionTool(tool string) bool {
+	switch strings.TrimSpace(strings.ToLower(tool)) {
+	case "edit", "write":
+		return true
+	default:
+		return false
+	}
 }
 
 // NoOpPermissionService is a permission service that always allows.

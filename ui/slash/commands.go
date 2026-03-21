@@ -153,9 +153,9 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
-		Name:        "/permission",
-		Description: "Manage tool permissions",
-		Usage:       "/permission [tool] [level]",
+		Name:        "/permissions",
+		Description: "Manage permissions and mode",
+		Usage:       "/permissions [mode|add|remove|workspace|tool] ...",
 	})
 
 	r.Register(Command{

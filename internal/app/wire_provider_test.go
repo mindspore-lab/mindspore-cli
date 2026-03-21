@@ -9,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/vigo999/ms-cli/configs"
 	"github.com/vigo999/ms-cli/integrations/llm"
 	providerpkg "github.com/vigo999/ms-cli/integrations/llm/provider"
+	"github.com/vigo999/ms-cli/permission"
+	"github.com/vigo999/ms-cli/ui/model"
 )
 
 func TestInitProviderAnthropic(t *testing.T) {
@@ -133,4 +136,65 @@ func TestWireBootstrapKeyAndURLOverrideEnvDuringProviderInit(t *testing.T) {
 
 func providerResolveNoOverrides() providerpkg.ResolveOptions {
 	return providerpkg.ResolveOptions{}
+}
+
+func TestWire_ConfiguresPermissionPromptUI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	app, err := Wire(BootstrapConfig{})
+	if err != nil {
+		t.Fatalf("Wire() error = %v", err)
+	}
+
+	if app.permissionUI == nil {
+		t.Fatal("permissionUI = nil, want initialized prompt UI")
+	}
+
+	permSvc, ok := app.permService.(*permission.DefaultPermissionService)
+	if !ok {
+		t.Fatalf("permService type = %T, want *permission.DefaultPermissionService", app.permService)
+	}
+
+	done := make(chan struct {
+		granted bool
+		err     error
+	}, 1)
+	go func() {
+		granted, err := permSvc.Request(context.Background(), "write", "", "tmp.txt")
+		done <- struct {
+			granted bool
+			err     error
+		}{granted: granted, err: err}
+	}()
+
+	select {
+	case ev := <-app.EventCh:
+		if ev.Type != model.PermissionPrompt {
+			t.Fatalf("event type = %s, want %s", ev.Type, model.PermissionPrompt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for permission prompt event")
+	}
+
+	app.processInput("yes")
+
+	select {
+	case out := <-done:
+		if out.err != nil {
+			t.Fatalf("Request() err = %v", out.err)
+		}
+		if !out.granted {
+			t.Fatal("Request() granted = false, want true")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for permission request completion")
+	}
 }

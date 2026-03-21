@@ -75,6 +75,15 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
+	if a.permissionUI != nil && a.permissionUI.HandleInput(trimmed) {
+		return
+	}
+
+	if strings.HasPrefix(trimmed, "/") {
+		a.handleCommand(trimmed)
+		return
+	}
+
 	if strings.HasPrefix(trimmed, "/") {
 		a.handleCommand(trimmed)
 		return
@@ -138,7 +147,7 @@ func convertLoopEvent(ev loop.Event) *model.Event {
 
 	uiType, ok := typeMap[ev.Type]
 	if !ok {
-		if ev.Type == "TaskCompleted" {
+		if ev.Type == "TaskCompleted" || ev.Type == "TaskStarted" {
 			return nil
 		}
 		if ev.Message != "" {

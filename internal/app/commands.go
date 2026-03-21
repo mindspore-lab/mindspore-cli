@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -35,8 +36,8 @@ func (a *Application) handleCommand(input string) {
 		a.cmdClear()
 	case "/test":
 		a.cmdTest()
-	case "/permission":
-		a.cmdPermission(parts[1:])
+	case "/permissions":
+		a.cmdPermissions(parts[1:])
 	case "/yolo":
 		a.cmdYolo()
 	case "/train":
@@ -50,6 +51,13 @@ func (a *Application) handleCommand(input string) {
 	case "/help":
 		a.cmdHelp()
 	default:
+		if parts[0] == "/permission" {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: "Command `/permission` has been removed. Use `/permissions`.",
+			}
+			return
+		}
 		// Check if the command matches a skill name directly (e.g. /pdf → /skill pdf).
 		skillName := strings.TrimPrefix(parts[0], "/")
 		if a.skillLoader != nil {
@@ -260,7 +268,7 @@ func (a *Application) cmdTest() {
 	}
 }
 
-func (a *Application) cmdPermission(args []string) {
+func (a *Application) cmdPermissions(args []string) {
 	permSvc, ok := a.permService.(*permission.DefaultPermissionService)
 	if !ok {
 		a.EventCh <- model.Event{
@@ -271,39 +279,397 @@ func (a *Application) cmdPermission(args []string) {
 	}
 
 	if len(args) == 0 {
-		policies := permSvc.GetPolicies()
-		msg := "Current Permission Settings:\n\n"
-		if len(policies) == 0 {
-			msg += "  No custom permissions set.\n"
-			msg += "  Default: ask for destructive operations (write, edit, shell)\n"
-		} else {
-			for tool, level := range policies {
-				msg += fmt.Sprintf("  %s: %s\n", tool, level)
+		mode := permSvc.Mode()
+
+		data := &model.PermissionsViewData{
+			Mode:        mode.String(),
+			RuleSources: map[string]string{},
+		}
+
+		for _, rv := range permSvc.GetRuleViews() {
+			entry := strings.TrimSpace(rv.Rule)
+			if entry == "" {
+				continue
+			}
+			switch rv.Level {
+			case permission.PermissionAllowAlways, permission.PermissionAllowSession, permission.PermissionAllowOnce:
+				data.Allow = append(data.Allow, entry)
+			case permission.PermissionDeny:
+				data.Deny = append(data.Deny, entry)
+			default:
+				data.Ask = append(data.Ask, entry)
+			}
+			if strings.TrimSpace(rv.Source) != "" {
+				data.RuleSources[entry] = rv.Source
 			}
 		}
-		msg += "\nUsage:\n  /permission <tool> <level>\n"
-		msg += "\nLevels: ask, allow_once, allow_session, allow_always, deny\n"
-		msg += "Tools: read, write, edit, grep, glob, shell\n"
-		msg += "\nExamples:\n  /permission shell ask\n  /permission write allow_always"
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
+		for _, pp := range permSvc.GetPathPolicies() {
+			if strings.HasSuffix(pp.Pattern, "/*") &&
+				(pp.Level == permission.PermissionAllowAlways ||
+					pp.Level == permission.PermissionAllowSession ||
+					pp.Level == permission.PermissionAllowOnce) {
+				dir := strings.TrimSuffix(pp.Pattern, "/*")
+				if strings.TrimSpace(dir) != "" {
+					data.Workspace = append(data.Workspace, dir)
+				}
+				continue
+			}
+			entry := fmt.Sprintf("edit(%s)", pp.Pattern)
+			switch pp.Level {
+			case permission.PermissionAllowAlways, permission.PermissionAllowSession, permission.PermissionAllowOnce:
+				data.Allow = append(data.Allow, entry)
+			case permission.PermissionDeny:
+				data.Deny = append(data.Deny, entry)
+			default:
+				data.Ask = append(data.Ask, entry)
+			}
+			data.RuleSources[entry] = "runtime"
+		}
+		if wd := strings.TrimSpace(a.WorkDir); wd != "" {
+			data.Workspace = append(data.Workspace, wd)
+		}
+
+		a.EventCh <- model.Event{
+			Type:        model.PermissionsView,
+			Permissions: data,
+		}
+		return
+	}
+
+	if len(args) >= 1 && strings.EqualFold(args[0], "add") {
+		a.cmdPermissionsAdd(permSvc, args[1:])
+		return
+	}
+
+	if len(args) >= 1 && strings.EqualFold(args[0], "remove") {
+		a.cmdPermissionsRemove(permSvc, args[1:])
+		return
+	}
+
+	if len(args) >= 1 && strings.EqualFold(args[0], "workspace") {
+		a.cmdPermissionsWorkspace(permSvc, args[1:])
+		return
+	}
+
+	if strings.EqualFold(args[0], "mode") {
+		if len(args) == 1 {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Current permission mode: %s", permSvc.Mode()),
+			}
+			return
+		}
+
+		mode := permission.ParsePermissionMode(args[1])
+		if !permission.IsValidPermissionMode(mode) {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: "Invalid mode. Use: default, acceptEdits, plan, dontAsk, bypassPermissions",
+			}
+			return
+		}
+		if err := permSvc.SetMode(mode); err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to set permission mode: %v", err),
+			}
+			return
+		}
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: fmt.Sprintf("Permission mode set to: %s", mode),
+		}
 		return
 	}
 
 	if len(args) < 2 {
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
-			Message: "Usage: /permission <tool> <level>\nExample: /permission shell ask",
+			Message: "Usage: /permissions <tool> <level>\nExample: /permissions shell ask",
 		}
 		return
 	}
 
 	tool := args[0]
 	level := permission.ParsePermissionLevel(args[1])
-	permSvc.Grant(tool, level)
+	if err := permSvc.AddRule(tool, level); err != nil {
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: fmt.Sprintf("Failed to set permission for '%s': %v", tool, err),
+		}
+		return
+	}
 
 	a.EventCh <- model.Event{
 		Type:    model.AgentReply,
 		Message: fmt.Sprintf("Permission for '%s' set to: %s", tool, level),
+	}
+}
+
+func (a *Application) cmdPermissionsAdd(permSvc *permission.DefaultPermissionService, args []string) {
+	if len(args) >= 2 {
+		level := permission.ParsePermissionLevel(args[0])
+		rule := strings.TrimSpace(strings.Join(args[1:], " "))
+		if strings.Contains(rule, "(") || strings.HasPrefix(strings.ToLower(rule), "mcp__") {
+			if err := permSvc.AddRule(rule, level); err != nil {
+				a.EventCh <- model.Event{
+					Type:    model.AgentReply,
+					Message: fmt.Sprintf("Failed to add rule: %v", err),
+				}
+				return
+			}
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Added rule: %s => %s", rule, level),
+			}
+			return
+		}
+	}
+
+	if len(args) < 3 {
+		a.EventCh <- model.Event{
+			Type: model.AgentReply,
+			Message: "Usage: /permissions add <tool|command|path> <target> <level>\n" +
+				"Examples:\n" +
+				"  /permissions add tool shell ask\n" +
+				"  /permissions add command git allow_session\n" +
+				"  /permissions add path \"*.md\" deny\n" +
+				"  /permissions add allow Bash(npm test *)",
+		}
+		return
+	}
+
+	targetType := strings.ToLower(strings.TrimSpace(args[0]))
+	target := strings.TrimSpace(args[1])
+	level := permission.ParsePermissionLevel(args[2])
+
+	switch targetType {
+	case "tool":
+		if err := permSvc.AddRule(permissionRuleForLegacyTarget("tool", target), level); err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to add tool rule: %v", err),
+			}
+			return
+		}
+	case "command":
+		if err := permSvc.AddRule(permissionRuleForLegacyTarget("command", target), level); err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to add command rule: %v", err),
+			}
+			return
+		}
+	case "path":
+		if err := permSvc.AddRule(permissionRuleForLegacyTarget("path", target), level); err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to add path rule: %v", err),
+			}
+			return
+		}
+	default:
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Invalid rule type. Use: tool, command, path",
+		}
+		return
+	}
+
+	a.EventCh <- model.Event{
+		Type:    model.AgentReply,
+		Message: fmt.Sprintf("Added %s rule: %s => %s", targetType, target, level),
+	}
+}
+
+func permissionRuleForLegacyTarget(targetType, target string) string {
+	switch strings.ToLower(strings.TrimSpace(targetType)) {
+	case "tool":
+		return target
+	case "command":
+		cmd := strings.TrimSpace(target)
+		if cmd == "" {
+			return "Bash(*)"
+		}
+		return fmt.Sprintf("Bash(%s *)", cmd)
+	case "path":
+		p := strings.TrimSpace(target)
+		if filepath.IsAbs(p) {
+			p = "//" + strings.TrimPrefix(filepath.ToSlash(p), "/")
+		}
+		return fmt.Sprintf("Edit(%s)", p)
+	default:
+		return strings.TrimSpace(target)
+	}
+}
+
+func (a *Application) cmdPermissionsRemove(permSvc *permission.DefaultPermissionService, args []string) {
+	if len(args) >= 1 {
+		rule := strings.TrimSpace(strings.Join(args, " "))
+		if strings.Contains(rule, "(") || strings.HasPrefix(strings.ToLower(rule), "mcp__") {
+			ok, err := permSvc.RemoveRule(rule)
+			if err != nil {
+				a.EventCh <- model.Event{
+					Type:    model.AgentReply,
+					Message: fmt.Sprintf("Failed to remove rule: %v", err),
+				}
+				return
+			}
+			if !ok {
+				a.EventCh <- model.Event{
+					Type:    model.AgentReply,
+					Message: fmt.Sprintf("Rule not found: %s", rule),
+				}
+				return
+			}
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Removed rule: %s", rule),
+			}
+			return
+		}
+	}
+
+	if len(args) < 2 {
+		a.EventCh <- model.Event{
+			Type: model.AgentReply,
+			Message: "Usage: /permissions remove <tool|command|path> <target>\n" +
+				"Examples:\n" +
+				"  /permissions remove tool shell\n" +
+				"  /permissions remove command git\n" +
+				"  /permissions remove path \"*.md\"\n" +
+				"  /permissions remove Bash(npm test *)",
+		}
+		return
+	}
+
+	targetType := strings.ToLower(strings.TrimSpace(args[0]))
+	target := strings.TrimSpace(args[1])
+
+	switch targetType {
+	case "tool":
+		ok, err := permSvc.RemoveRule(permissionRuleForLegacyTarget("tool", target))
+		if err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to remove tool rule: %v", err),
+			}
+			return
+		}
+		if !ok {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Rule not found: %s", target),
+			}
+			return
+		}
+	case "command":
+		ok, err := permSvc.RemoveRule(permissionRuleForLegacyTarget("command", target))
+		if err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to remove command rule: %v", err),
+			}
+			return
+		}
+		if !ok {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Rule not found: %s", target),
+			}
+			return
+		}
+	case "path":
+		ok, err := permSvc.RemoveRule(permissionRuleForLegacyTarget("path", target))
+		if err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to remove path rule: %v", err),
+			}
+			return
+		}
+		if !ok {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Rule not found: %s", target),
+			}
+			return
+		}
+	default:
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Invalid rule type. Use: tool, command, path",
+		}
+		return
+	}
+
+	a.EventCh <- model.Event{
+		Type:    model.AgentReply,
+		Message: fmt.Sprintf("Removed %s rule: %s", targetType, target),
+	}
+}
+
+func (a *Application) cmdPermissionsWorkspace(permSvc *permission.DefaultPermissionService, args []string) {
+	if len(args) < 2 {
+		a.EventCh <- model.Event{
+			Type: model.AgentReply,
+			Message: "Usage: /permissions workspace <add|remove> <directory>\n" +
+				"Examples:\n" +
+				"  /permissions workspace add /path/to/project\n" +
+				"  /permissions workspace remove /path/to/project",
+		}
+		return
+	}
+
+	action := strings.ToLower(strings.TrimSpace(args[0]))
+	dir := strings.TrimSpace(args[1])
+	if dir == "" {
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Directory cannot be empty.",
+		}
+		return
+	}
+
+	pattern := strings.TrimRight(dir, "/") + "/*"
+	switch action {
+	case "add":
+		if err := permSvc.AddRule(permissionRuleForLegacyTarget("path", pattern), permission.PermissionAllowAlways); err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to add workspace directory: %v", err),
+			}
+			return
+		}
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: fmt.Sprintf("Workspace directory added: %s", dir),
+		}
+	case "remove":
+		ok, err := permSvc.RemoveRule(permissionRuleForLegacyTarget("path", pattern))
+		if err != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Failed to remove workspace directory: %v", err),
+			}
+			return
+		}
+		if !ok {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: fmt.Sprintf("Workspace directory rule not found: %s", dir),
+			}
+			return
+		}
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: fmt.Sprintf("Workspace directory removed: %s", dir),
+		}
+	default:
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Invalid workspace action. Use: add, remove",
+		}
 	}
 }
 
@@ -442,7 +808,7 @@ func (a *Application) cmdHelp() {
   /weekly status [path]   Check weekly update status (default: weekly.md)
   /model [model-name]     Show or switch model
   /test                   Test API connectivity
-  /permission [tool] [level]  Manage tool permissions
+  /permissions [tool] [level] Manage tool permissions
   /yolo                   Toggle auto-approve mode
   /mouse [on|off|toggle|status] Toggle mouse wheel scrolling
   /exit                   Exit the application
@@ -457,8 +823,15 @@ Model Commands:
   /model anthropic:claude-3-5-sonnet
 
 Permission Commands:
-  /permission             Show current permission settings
-  /permission shell ask   Set permission level for a tool
+  /permissions                  Show current permission settings
+  /permissions mode plan        Set permission mode
+  /permissions add tool shell ask
+                               Add tool/command/path rule
+  /permissions remove tool shell
+                               Remove tool/command/path rule
+  /permissions workspace add /path/to/dir
+                               Add workspace directory rule
+  /permissions shell ask        Set permission level for a tool
   /yolo                   Toggle auto-approve for all operations
 
 Permission Levels:

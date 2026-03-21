@@ -45,6 +45,7 @@ type Application struct {
 	toolRegistry *tools.Registry
 	ctxManager   *agentctx.Manager
 	permService  permission.PermissionService
+	permissionUI *PermissionPromptUI
 	traceWriter  trace.Writer
 
 	// Skills
@@ -80,6 +81,8 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		workDir = "."
 	}
 	workDir, _ = filepath.Abs(workDir)
+
+	eventCh := make(chan model.Event, 64)
 
 	config, err := configs.LoadWithEnv()
 	if err != nil {
@@ -170,11 +173,16 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	engine.SetTraceWriter(traceWriter)
 
 	permService := permission.NewDefaultPermissionService(config.Permissions)
+	permissionUI := NewPermissionPromptUI(eventCh)
+	permService.SetUI(permissionUI)
+	if store, err := permission.NewPermissionStore(permission.DefaultPermissionStoreConfig()); err == nil {
+		permService.SetStore(store)
+	}
 	engine.SetPermissionService(permService)
 
 	return &Application{
 		Engine:       engine,
-		EventCh:      make(chan model.Event, 64),
+		EventCh:      eventCh,
 		WorkDir:      workDir,
 		RepoURL:      "github.com/vigo999/ms-cli",
 		Config:       config,
@@ -182,6 +190,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		toolRegistry: toolRegistry,
 		ctxManager:   ctxManager,
 		permService:  permService,
+		permissionUI: permissionUI,
 		traceWriter:  traceWriter,
 		llmReady:     llmReady,
 		skillLoader:  skillLoader,

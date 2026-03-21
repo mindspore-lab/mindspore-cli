@@ -11,6 +11,9 @@ func TestDefaultConfigProvider(t *testing.T) {
 	if got, want := cfg.Model.Provider, "openai-compatible"; got != want {
 		t.Fatalf("default provider = %q, want %q", got, want)
 	}
+	if got, want := cfg.Permissions.DefaultMode, "default"; got != want {
+		t.Fatalf("default permission mode = %q, want %q", got, want)
+	}
 }
 
 func TestLoadWithEnv_MergesFixedLayers(t *testing.T) {
@@ -211,6 +214,159 @@ func TestLoadWithEnv_IgnoresLegacyDotMscliPaths(t *testing.T) {
 	}
 }
 
+func TestLoadWithEnv_PermissionsRuleBuckets(t *testing.T) {
+	clearEnv(t)
+
+	projectDir := t.TempDir()
+	t.Chdir(projectDir)
+
+	projectPath := filepath.Join(projectDir, ".ms-cli", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte(`permissions:
+  default_mode: default
+  default_level: ask
+  allow:
+    - "Bash(npm test *)"
+  ask:
+    - "Bash(git push *)"
+  deny:
+    - "Agent(Plan)"
+`), 0600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	cfg, err := LoadWithEnv()
+	if err != nil {
+		t.Fatalf("LoadWithEnv() error = %v", err)
+	}
+	if len(cfg.Permissions.Allow) != 1 || cfg.Permissions.Allow[0] != "Bash(npm test *)" {
+		t.Fatalf("permissions.allow = %#v, want Bash(npm test *)", cfg.Permissions.Allow)
+	}
+	if len(cfg.Permissions.Ask) != 1 || cfg.Permissions.Ask[0] != "Bash(git push *)" {
+		t.Fatalf("permissions.ask = %#v, want Bash(git push *)", cfg.Permissions.Ask)
+	}
+	if len(cfg.Permissions.Deny) != 1 || cfg.Permissions.Deny[0] != "Agent(Plan)" {
+		t.Fatalf("permissions.deny = %#v, want Agent(Plan)", cfg.Permissions.Deny)
+	}
+	if got := cfg.Permissions.RuleSources["Bash(npm test *)"]; got != "project" {
+		t.Fatalf("permissions source allow = %q, want project", got)
+	}
+	if got := cfg.Permissions.RuleSources["Bash(git push *)"]; got != "project" {
+		t.Fatalf("permissions source ask = %q, want project", got)
+	}
+	if got := cfg.Permissions.RuleSources["Agent(Plan)"]; got != "project" {
+		t.Fatalf("permissions source deny = %q, want project", got)
+	}
+}
+
+func TestLoadWithEnv_PermissionsRuleSourcesUserAndProject(t *testing.T) {
+	clearEnv(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectDir := t.TempDir()
+	t.Chdir(projectDir)
+
+	userPath := filepath.Join(home, ".ms-cli", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userPath), 0755); err != nil {
+		t.Fatalf("mkdir user config dir: %v", err)
+	}
+	if err := os.WriteFile(userPath, []byte(`permissions:
+  allow:
+    - "Read"
+  ask:
+    - "Bash(git push *)"
+`), 0600); err != nil {
+		t.Fatalf("write user config: %v", err)
+	}
+
+	projectPath := filepath.Join(projectDir, ".ms-cli", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte(`permissions:
+  deny:
+    - "Agent(Plan)"
+`), 0600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	cfg, err := LoadWithEnv()
+	if err != nil {
+		t.Fatalf("LoadWithEnv() error = %v", err)
+	}
+
+	if got := cfg.Permissions.RuleSources["Read"]; got != "user" {
+		t.Fatalf("source(Read) = %q, want user", got)
+	}
+	if got := cfg.Permissions.RuleSources["Bash(git push *)"]; got != "user" {
+		t.Fatalf("source(Bash(git push *)) = %q, want user", got)
+	}
+	if got := cfg.Permissions.RuleSources["Agent(Plan)"]; got != "project" {
+		t.Fatalf("source(Agent(Plan)) = %q, want project", got)
+	}
+}
+
+func TestLoadWithEnv_PermissionsRuleSourcesManagedLayer(t *testing.T) {
+	clearEnv(t)
+
+	projectDir := t.TempDir()
+	t.Chdir(projectDir)
+
+	managedPath := filepath.Join(t.TempDir(), "managed.yaml")
+	if err := os.WriteFile(managedPath, []byte(`permissions:
+  allow:
+    - "Read"
+  deny:
+    - "Agent(Plan)"
+`), 0600); err != nil {
+		t.Fatalf("write managed config: %v", err)
+	}
+	t.Setenv("MSCLI_MANAGED_CONFIG", managedPath)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userPath := filepath.Join(home, ".ms-cli", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userPath), 0755); err != nil {
+		t.Fatalf("mkdir user config dir: %v", err)
+	}
+	if err := os.WriteFile(userPath, []byte(`permissions:
+  allow:
+    - "Read"
+  ask:
+    - "Bash(git push *)"
+`), 0600); err != nil {
+		t.Fatalf("write user config: %v", err)
+	}
+
+	projectPath := filepath.Join(projectDir, ".ms-cli", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte(`permissions:
+  ask:
+    - "Read"
+`), 0600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	cfg, err := LoadWithEnv()
+	if err != nil {
+		t.Fatalf("LoadWithEnv() error = %v", err)
+	}
+
+	// effective value should follow merge precedence: project > user > managed.
+	if len(cfg.Permissions.Ask) == 0 || cfg.Permissions.Ask[0] != "Read" {
+		t.Fatalf("permissions.ask = %#v, want Read from project override", cfg.Permissions.Ask)
+	}
+	// source map still tracks origin layer per declared rule.
+	if got := cfg.Permissions.RuleSources["Agent(Plan)"]; got != "managed" {
+		t.Fatalf("source(Agent(Plan)) = %q, want managed", got)
+	}
+}
+
 func clearEnv(t *testing.T) {
 	t.Helper()
 
@@ -219,6 +375,7 @@ func clearEnv(t *testing.T) {
 		"MSCLI_API_KEY",
 		"MSCLI_BASE_URL",
 		"MSCLI_MODEL",
+		"MSCLI_MANAGED_CONFIG",
 		"OPENAI_API_KEY",
 		"OPENAI_MODEL",
 		"OPENAI_BASE_URL",
