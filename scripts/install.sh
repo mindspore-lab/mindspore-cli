@@ -71,21 +71,13 @@ case "$CURRENT_SHELL" in
 esac
 
 # Add to profile if not already there.
-case ":${PATH}:" in
-  *":${INSTALL_DIR}:"*)
-    echo ""
-    echo "Run: mscli"
-    ;;
-  *)
-    if [ -f "$PROFILE" ] && grep -qF "$INSTALL_DIR" "$PROFILE" 2>/dev/null; then
-      echo ""
-      echo "PATH already configured in ${PROFILE}"
-      echo "Run: source ${PROFILE} && mscli"
-    else
-      echo "$PATH_LINE" >> "$PROFILE"
-      echo ""
-      echo "Added ms-cli to PATH in ${PROFILE}"
-      echo "Run: source ${PROFILE} && mscli"
-    fi
-    ;;
-esac
+if [ -f "$PROFILE" ] && grep -qF "$INSTALL_DIR" "$PROFILE" 2>/dev/null; then
+  echo ""
+  echo "PATH already configured in ${PROFILE}"
+else
+  echo "$PATH_LINE" >> "$PROFILE"
+  echo ""
+  echo "Added ms-cli to PATH in ${PROFILE}"
+fi
+echo ""
+echo "Run: source ${PROFILE} && mscli"
