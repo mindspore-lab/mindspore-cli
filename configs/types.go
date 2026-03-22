@@ -16,6 +16,13 @@ type Config struct {
 	Memory      MemoryConfig      `yaml:"memory"`
 	Skills      SkillsConfig      `yaml:"skills"`
 	Execution   ExecutionConfig   `yaml:"execution"`
+	Issues      IssuesConfig      `yaml:"issues"`
+}
+
+// IssuesConfig holds the client-side bug/issue server connection config.
+type IssuesConfig struct {
+	ServerURL string `yaml:"server_url,omitempty"`
+	TokenPath string `yaml:"token_path,omitempty"`
 }
 
 func (c *Config) normalize() {

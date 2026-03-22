@@ -1,0 +1,18 @@
+server:
+  addr: ":8080"
+
+storage:
+  driver: sqlite
+  dsn: /opt/mscli/issues.db
+
+auth:
+  tokens:
+    - token: mscli_token_alice
+      user: alice
+      role: member
+    - token: mscli_token_bob
+      user: bob
+      role: member
+    - token: mscli_token_travis
+      user: travis
+      role: admin

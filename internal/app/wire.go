@@ -16,6 +16,7 @@ import (
 	"github.com/vigo999/ms-cli/integrations/llm"
 	providerpkg "github.com/vigo999/ms-cli/integrations/llm/provider"
 	"github.com/vigo999/ms-cli/integrations/skills"
+	"github.com/vigo999/ms-cli/internal/issues"
 	itrain "github.com/vigo999/ms-cli/internal/train"
 	"github.com/vigo999/ms-cli/internal/version"
 	"github.com/vigo999/ms-cli/permission"
@@ -50,6 +51,10 @@ type Application struct {
 
 	// Skills
 	skillLoader *skills.Loader
+
+	// Issue/bug tracking
+	issueService *issues.Service
+	issueUser    string
 
 	// Train mode state
 	trainMode       bool

@@ -43,6 +43,16 @@ func (a *Application) handleCommand(input string) {
 		a.cmdTrain(parts[1:])
 	case "/project":
 		a.cmdProjectInput(strings.TrimSpace(strings.TrimPrefix(input, "/project")))
+	case "/login":
+		a.cmdLogin(parts[1:])
+	case "/report":
+		a.cmdReport(parts[1:])
+	case "/bugs":
+		a.cmdBugs(parts[1:])
+	case "/claim":
+		a.cmdClaim(parts[1:])
+	case "/dock":
+		a.cmdDock()
 	case "/skill":
 		a.cmdSkill(parts[1:])
 	case "/help":
@@ -410,6 +420,11 @@ func (a *Application) cmdHelp() {
   /project add ...         Add a task to docs/project.yaml
   /project update ...      Update a task in docs/project.yaml
   /project rm ...          Remove a task from docs/project.yaml
+  /login <url> <token>    Log in to the bug server
+  /report <title>         Report a new bug
+  /bugs [status]          List bugs (optional status filter: open, doing)
+  /claim <id>             Claim a bug as your lead
+  /dock                   Show bug dashboard (open count, ready, recent)
   /roadmap status [path]  Check roadmap status (default: roadmap.yaml)
   /weekly status [path]   Check weekly update status (default: weekly.md)
   /model [model-name]     Show or switch model

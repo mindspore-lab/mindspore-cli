@@ -183,6 +183,36 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
+		Name:        "/login",
+		Description: "Log in to the bug server",
+		Usage:       "/login <server-url> <token>",
+	})
+
+	r.Register(Command{
+		Name:        "/report",
+		Description: "Report a new bug",
+		Usage:       "/report <bug title>",
+	})
+
+	r.Register(Command{
+		Name:        "/bugs",
+		Description: "List bugs",
+		Usage:       "/bugs [status]",
+	})
+
+	r.Register(Command{
+		Name:        "/claim",
+		Description: "Claim a bug as your lead",
+		Usage:       "/claim <id>",
+	})
+
+	r.Register(Command{
+		Name:        "/dock",
+		Description: "Show bug dashboard",
+		Usage:       "/dock",
+	})
+
+	r.Register(Command{
 		Name:        "/help",
 		Description: "Show available commands",
 		Usage:       "/help",
