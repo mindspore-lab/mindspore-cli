@@ -18,3 +18,7 @@
 # Server runtime artifacts
 ms-cli-server
 issues.db
+
+# IDE files
+.vscode/
+.cursor/
