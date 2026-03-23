@@ -22,7 +22,7 @@ func (a *Application) handleCommand(input string) {
 	switch parts[0] {
 	case "/model":
 		a.cmdModel(parts[1:])
-	case "/exit":
+	case "/exit", "/quit":
 		a.cmdExit()
 	case "/compact":
 		a.cmdCompact()
@@ -367,6 +367,7 @@ func (a *Application) cmdHelp() {
   /permission [tool] [level]  Manage tool permissions
   /yolo                   Toggle auto-approve mode
   /exit                   Exit the application
+  /quit                   Exit the application
   /compact                Compact conversation context to save tokens
   /clear                  Clear chat history
   /help                   Show this help message

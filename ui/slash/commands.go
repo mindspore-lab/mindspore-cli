@@ -123,6 +123,12 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
+		Name:        "/quit",
+		Description: "Exit the application",
+		Usage:       "/quit",
+	})
+
+	r.Register(Command{
 		Name:        "/compact",
 		Description: "Compact conversation context",
 		Usage:       "/compact",
