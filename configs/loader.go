@@ -101,7 +101,7 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 
 	// Context settings
-	if v := os.Getenv("MSCLI_CONTEXT_MAX"); v != "" {
+	if v := os.Getenv("MSCLI_CONTEXT_WINDOW"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			cfg.Context.MaxTokens = i
 		}
