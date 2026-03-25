@@ -259,7 +259,7 @@ type anthropicStreamIterator struct {
 	done           bool
 	promptTokens   int
 	completedCalls []ToolCall
-	toolBlocks     map[int]anthropicStreamToolState
+	toolBlocks     map[int]*anthropicStreamToolState
 }
 
 type anthropicStreamEvent struct {
@@ -433,9 +433,9 @@ func (it *anthropicStreamIterator) startContentBlock(payload anthropicStreamCont
 		return
 	}
 	if it.toolBlocks == nil {
-		it.toolBlocks = make(map[int]anthropicStreamToolState)
+		it.toolBlocks = make(map[int]*anthropicStreamToolState)
 	}
-	it.toolBlocks[payload.Index] = anthropicStreamToolState{
+	it.toolBlocks[payload.Index] = &anthropicStreamToolState{
 		ID:    payload.ContentBlock.ID,
 		Name:  payload.ContentBlock.Name,
 		Input: normalizeRawJSON(payload.ContentBlock.Input),
@@ -448,11 +448,10 @@ func (it *anthropicStreamIterator) applyContentBlockDelta(payload anthropicStrea
 		return &StreamChunk{Content: payload.Delta.Text}
 	case "input_json_delta":
 		state, ok := it.toolBlocks[payload.Index]
-		if !ok {
+		if !ok || state == nil {
 			return nil
 		}
 		state.Partial.WriteString(payload.Delta.PartialJSON)
-		it.toolBlocks[payload.Index] = state
 	}
 
 	return nil
@@ -460,7 +459,7 @@ func (it *anthropicStreamIterator) applyContentBlockDelta(payload anthropicStrea
 
 func (it *anthropicStreamIterator) finishContentBlock(index int) (*StreamChunk, error) {
 	state, ok := it.toolBlocks[index]
-	if !ok {
+	if !ok || state == nil {
 		return nil, nil
 	}
 	delete(it.toolBlocks, index)
