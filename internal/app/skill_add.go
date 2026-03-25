@@ -32,6 +32,7 @@ const (
 type skillAddSource struct {
 	kind     skillAddSourceKind
 	source   string
+	display  string
 	localDir string
 }
 
@@ -58,6 +59,7 @@ func (a *Application) cmdSkillAddInput(raw string) {
 		}
 		return
 	}
+	a.emitSkillAddLog(source.display)
 	sourceRoot, cleanup, err := prepareSkillAddSource(source)
 	if err != nil {
 		a.EventCh <- model.Event{
@@ -108,7 +110,6 @@ func (a *Application) cmdSkillAddInput(raw string) {
 	for _, found := range foundSkills {
 		destDir := filepath.Join(destRoot, filepath.Base(found.dir))
 		if !samePath(found.dir, destDir) {
-			a.emitSkillAddLog(filepath.Base(found.dir))
 			if err := copySkillDir(found.dir, destDir); err != nil {
 				a.EventCh <- model.Event{
 					Type:     model.ToolError,
@@ -177,18 +178,24 @@ func classifySkillAddSource(rawPath, workDir, homeDir string) (skillAddSource, e
 		return skillAddSource{}, fmt.Errorf("usage: %s", skillAddUsage)
 	}
 	if strings.Contains(strings.ToLower(path), "http") {
-		return skillAddSource{kind: skillAddSourceGitURL, source: path}, nil
+		return skillAddSource{kind: skillAddSourceGitURL, source: path, display: path}, nil
 	}
 
 	localPath, err := resolveLocalSkillRoot(path, workDir, homeDir)
 	if err == nil {
-		return skillAddSource{kind: skillAddSourceLocal, source: path, localDir: localPath}, nil
+		return skillAddSource{
+			kind:     skillAddSourceLocal,
+			source:   path,
+			display:  filepath.Base(localPath),
+			localDir: localPath,
+		}, nil
 	}
 
 	if looksLikeGitHubShorthand(path) && errors.Is(err, os.ErrNotExist) {
 		return skillAddSource{
-			kind:   skillAddSourceGitHub,
-			source: "https://github.com/" + strings.TrimSuffix(path, ".git") + ".git",
+			kind:    skillAddSourceGitHub,
+			source:  "https://github.com/" + strings.TrimSuffix(path, ".git") + ".git",
+			display: path,
 		}, nil
 	}
 

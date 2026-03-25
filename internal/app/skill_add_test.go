@@ -115,20 +115,15 @@ func TestCmdSkillAddInputRecursivelyFindsNestedSkillMarkdownFiles(t *testing.T) 
 		t.Fatalf("skillLoader.Load(beta) error = %v", err)
 	}
 
-	var addCount int
-	var ready model.Event
-	for i := 0; i < 3; i++ {
-		ev := drainUntilEventType(t, app, model.ToolSkill)
-		if ev.ToolName == "Skill add" {
-			addCount++
-		}
-		if strings.HasPrefix(ev.ToolName, "Skill ready:") {
-			ready = ev
-		}
+	adding := drainUntilEventType(t, app, model.ToolSkill)
+	if got, want := adding.ToolName, "Skill add"; got != want {
+		t.Fatalf("tool name = %q, want %q", got, want)
 	}
-	if addCount != 2 {
-		t.Fatalf("expected 2 skill-add logs, got %d", addCount)
+	if got, want := adding.Summary, "adding "+filepath.Base(sourceRoot)+" to ~/.ms-cli/skills/"; got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
 	}
+
+	ready := drainUntilEventType(t, app, model.ToolSkill)
 	if got, want := ready.ToolName, "Skill ready: 2 available"; got != want {
 		t.Fatalf("tool name = %q, want %q", got, want)
 	}
@@ -156,6 +151,9 @@ func TestClassifySkillAddSource(t *testing.T) {
 	if local.kind != skillAddSourceLocal {
 		t.Fatalf("expected local kind, got %v", local.kind)
 	}
+	if got, want := local.display, "local-skill"; got != want {
+		t.Fatalf("local display = %q, want %q", got, want)
+	}
 
 	github, err := classifySkillAddSource("openai/codex", workDir, home)
 	if err != nil {
@@ -167,6 +165,9 @@ func TestClassifySkillAddSource(t *testing.T) {
 	if got, want := github.source, "https://github.com/openai/codex.git"; got != want {
 		t.Fatalf("github source = %q, want %q", got, want)
 	}
+	if got, want := github.display, "openai/codex"; got != want {
+		t.Fatalf("github display = %q, want %q", got, want)
+	}
 
 	gitURL, err := classifySkillAddSource("https://example.com/repo.git", workDir, home)
 	if err != nil {
@@ -174,5 +175,8 @@ func TestClassifySkillAddSource(t *testing.T) {
 	}
 	if gitURL.kind != skillAddSourceGitURL {
 		t.Fatalf("expected git url kind, got %v", gitURL.kind)
+	}
+	if got, want := gitURL.display, "https://example.com/repo.git"; got != want {
+		t.Fatalf("git url display = %q, want %q", got, want)
 	}
 }
