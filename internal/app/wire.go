@@ -16,7 +16,8 @@ import (
 	"github.com/vigo999/ms-cli/integrations/llm"
 	providerpkg "github.com/vigo999/ms-cli/integrations/llm/provider"
 	"github.com/vigo999/ms-cli/integrations/skills"
-	"github.com/vigo999/ms-cli/internal/issues"
+	"github.com/vigo999/ms-cli/internal/bugs"
+	issuepkg "github.com/vigo999/ms-cli/internal/issues"
 	projectpkg "github.com/vigo999/ms-cli/internal/project"
 	itrain "github.com/vigo999/ms-cli/internal/train"
 	"github.com/vigo999/ms-cli/internal/version"
@@ -53,8 +54,9 @@ type Application struct {
 	// Skills
 	skillLoader *skills.Loader
 
-	// Issue/bug tracking
-	issueService *issues.Service
+	// Bug tracking
+	bugService   *bugs.Service
+	issueService *issuepkg.Service
 	issueUser    string
 	issueRole    string
 
@@ -200,7 +202,8 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	// Auto-login from saved credentials.
 	if cred, err := loadCredentials(); err == nil {
-		app.issueService = issues.NewService(issues.NewRemoteStore(cred.ServerURL, cred.Token))
+		app.bugService = bugs.NewService(bugs.NewRemoteStore(cred.ServerURL, cred.Token))
+		app.issueService = issuepkg.NewService(issuepkg.NewRemoteStore(cred.ServerURL, cred.Token))
 		app.projectService = projectpkg.NewService(projectpkg.NewRemoteStore(cred.ServerURL, cred.Token))
 		app.issueUser = cred.User
 		app.issueRole = cred.Role

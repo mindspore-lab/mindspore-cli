@@ -122,7 +122,7 @@ func TestTrainViewUsesSharedChatSurface(t *testing.T) {
 	if strings.Contains(view, "setup env") {
 		t.Fatalf("expected old train panel layout to be gone, got:\n%s", view)
 	}
-	if !strings.Contains(view, app.input.Model.Prompt) {
+	if !strings.Contains(view, "❯ ") {
 		t.Fatalf("expected global composer to stay visible, got:\n%s", view)
 	}
 }

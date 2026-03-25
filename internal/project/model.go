@@ -10,6 +10,7 @@ type Task struct {
 	Progress  int       `json:"progress"`
 	Owner     string    `json:"owner,omitempty"`
 	Due       string    `json:"due,omitempty"`
+	Tags      string    `json:"tags,omitempty"`
 	CreatedBy string    `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

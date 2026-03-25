@@ -1,6 +1,9 @@
 package model
 
-import "github.com/vigo999/ms-cli/internal/issues"
+import (
+	"github.com/vigo999/ms-cli/internal/bugs"
+	issuepkg "github.com/vigo999/ms-cli/internal/issues"
+)
 
 // TaskInfo represents a task in the task pool.
 type TaskInfo struct {
@@ -86,7 +89,9 @@ type Event struct {
 	TokensUsed int
 	Train      *TrainEventData // non-nil for train events only
 	BugView    *BugEventData   // non-nil for bug view events only
-	Bug        *issues.Bug     // reserved for lightweight bug payloads
+	IssueView  *IssueEventData // non-nil for issue view events only
+	Bug        *bugs.Bug       // reserved for lightweight bug payloads
+	Issue      *issuepkg.Issue // reserved for lightweight issue payloads
 }
 
 // TaskStats tracks execution statistics for the current task.

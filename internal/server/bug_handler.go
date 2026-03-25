@@ -6,11 +6,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/vigo999/ms-cli/internal/issues"
+	bugspkg "github.com/vigo999/ms-cli/internal/bugs"
 )
 
 type createBugRequest struct {
-	Title string `json:"title"`
+	Title string   `json:"title"`
+	Tags  []string `json:"tags,omitempty"`
 }
 
 func HandleCreateBug(store *Store) http.HandlerFunc {
@@ -25,7 +26,7 @@ func HandleCreateBug(store *Store) http.HandlerFunc {
 			return
 		}
 		reporter := UserFromContext(r.Context())
-		bug, err := store.CreateBug(req.Title, reporter)
+		bug, err := store.CreateBug(req.Title, reporter, req.Tags)
 		if err != nil {
 			http.Error(w, `{"error":"failed to create bug"}`, http.StatusInternalServerError)
 			return
@@ -39,16 +40,16 @@ func HandleCreateBug(store *Store) http.HandlerFunc {
 func HandleListBugs(store *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status := r.URL.Query().Get("status")
-		bugs, err := store.ListBugs(status)
+		bugList, err := store.ListBugs(status)
 		if err != nil {
 			http.Error(w, `{"error":"failed to list bugs"}`, http.StatusInternalServerError)
 			return
 		}
-		if bugs == nil {
-			bugs = []issues.Bug{}
+		if bugList == nil {
+			bugList = []bugspkg.Bug{}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(bugs)
+		json.NewEncoder(w).Encode(bugList)
 	}
 }
 

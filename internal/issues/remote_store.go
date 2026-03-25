@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+type createIssuePayload struct {
+	Title string `json:"title"`
+	Kind  Kind   `json:"kind"`
+}
+
+type updateIssueStatusPayload struct {
+	Status string `json:"status"`
+}
+
 type RemoteStore struct {
 	baseURL string
 	token   string
@@ -52,23 +61,24 @@ func (r *RemoteStore) do(method, path string, body any) ([]byte, int, error) {
 	return respBody, resp.StatusCode, nil
 }
 
-func (r *RemoteStore) CreateBug(title, reporter string) (*Bug, error) {
-	body, status, err := r.do("POST", "/bugs", map[string]string{"title": title})
+func (r *RemoteStore) CreateIssue(title string, kind Kind, reporter string) (*Issue, error) {
+	_ = reporter
+	body, status, err := r.do("POST", "/issues", createIssuePayload{Title: title, Kind: kind})
 	if err != nil {
 		return nil, err
 	}
 	if status != http.StatusCreated {
-		return nil, fmt.Errorf("create bug: server returned %d: %s", status, body)
+		return nil, fmt.Errorf("create issue: server returned %d: %s", status, body)
 	}
-	var bug Bug
-	if err := json.Unmarshal(body, &bug); err != nil {
+	var issue Issue
+	if err := json.Unmarshal(body, &issue); err != nil {
 		return nil, err
 	}
-	return &bug, nil
+	return &issue, nil
 }
 
-func (r *RemoteStore) ListBugs(filterStatus string) ([]Bug, error) {
-	path := "/bugs"
+func (r *RemoteStore) ListIssues(filterStatus string) ([]Issue, error) {
+	path := "/issues"
 	if filterStatus != "" {
 		path += "?status=" + filterStatus
 	}
@@ -77,59 +87,37 @@ func (r *RemoteStore) ListBugs(filterStatus string) ([]Bug, error) {
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("list bugs: server returned %d: %s", status, body)
+		return nil, fmt.Errorf("list issues: server returned %d: %s", status, body)
 	}
-	var bugs []Bug
-	if err := json.Unmarshal(body, &bugs); err != nil {
+	var issueList []Issue
+	if err := json.Unmarshal(body, &issueList); err != nil {
 		return nil, err
 	}
-	return bugs, nil
+	return issueList, nil
 }
 
-func (r *RemoteStore) GetBug(id int) (*Bug, error) {
-	body, status, err := r.do("GET", fmt.Sprintf("/bugs/%d", id), nil)
+func (r *RemoteStore) GetIssue(id int) (*Issue, error) {
+	body, status, err := r.do("GET", fmt.Sprintf("/issues/%d", id), nil)
 	if err != nil {
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("get bug: server returned %d: %s", status, body)
+		return nil, fmt.Errorf("get issue: server returned %d: %s", status, body)
 	}
-	var bug Bug
-	if err := json.Unmarshal(body, &bug); err != nil {
+	var issue Issue
+	if err := json.Unmarshal(body, &issue); err != nil {
 		return nil, err
 	}
-	return &bug, nil
+	return &issue, nil
 }
 
-func (r *RemoteStore) ClaimBug(id int, lead string) error {
-	body, status, err := r.do("POST", fmt.Sprintf("/bugs/%d/claim", id), nil)
-	if err != nil {
-		return err
-	}
-	if status != http.StatusOK {
-		return fmt.Errorf("claim bug: server returned %d: %s", status, body)
-	}
-	return nil
-}
-
-func (r *RemoteStore) CloseBug(id int) error {
-	body, status, err := r.do("POST", fmt.Sprintf("/bugs/%d/close", id), nil)
-	if err != nil {
-		return err
-	}
-	if status != http.StatusOK {
-		return fmt.Errorf("close bug: server returned %d: %s", status, body)
-	}
-	return nil
-}
-
-func (r *RemoteStore) AddNote(bugID int, author, content string) (*Note, error) {
-	body, status, err := r.do("POST", fmt.Sprintf("/bugs/%d/notes", bugID), map[string]string{"content": content})
+func (r *RemoteStore) AddNote(issueID int, author, content string) (*Note, error) {
+	body, status, err := r.do("POST", fmt.Sprintf("/issues/%d/notes", issueID), map[string]string{"content": content})
 	if err != nil {
 		return nil, err
 	}
 	if status != http.StatusCreated {
-		return nil, fmt.Errorf("add note: server returned %d: %s", status, body)
+		return nil, fmt.Errorf("add issue note: server returned %d: %s", status, body)
 	}
 	var note Note
 	if err := json.Unmarshal(body, &note); err != nil {
@@ -138,13 +126,28 @@ func (r *RemoteStore) AddNote(bugID int, author, content string) (*Note, error) 
 	return &note, nil
 }
 
-func (r *RemoteStore) ListActivity(bugID int) ([]Activity, error) {
-	body, status, err := r.do("GET", fmt.Sprintf("/bugs/%d/activity", bugID), nil)
+func (r *RemoteStore) ListNotes(issueID int) ([]Note, error) {
+	body, status, err := r.do("GET", fmt.Sprintf("/issues/%d/notes", issueID), nil)
 	if err != nil {
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("list activity: server returned %d: %s", status, body)
+		return nil, fmt.Errorf("list issue notes: server returned %d: %s", status, body)
+	}
+	var notes []Note
+	if err := json.Unmarshal(body, &notes); err != nil {
+		return nil, err
+	}
+	return notes, nil
+}
+
+func (r *RemoteStore) ListActivity(issueID int) ([]Activity, error) {
+	body, status, err := r.do("GET", fmt.Sprintf("/issues/%d/activity", issueID), nil)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("list issue activity: server returned %d: %s", status, body)
 	}
 	var acts []Activity
 	if err := json.Unmarshal(body, &acts); err != nil {
@@ -153,17 +156,33 @@ func (r *RemoteStore) ListActivity(bugID int) ([]Activity, error) {
 	return acts, nil
 }
 
-func (r *RemoteStore) DockSummary() (*DockData, error) {
-	body, status, err := r.do("GET", "/dock", nil)
+func (r *RemoteStore) ClaimIssue(id int, lead string) (*Issue, error) {
+	body, status, err := r.do("POST", fmt.Sprintf("/issues/%d/claim", id), nil)
 	if err != nil {
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("dock summary: server returned %d: %s", status, body)
+		return nil, fmt.Errorf("claim issue: server returned %d: %s", status, body)
 	}
-	var data DockData
-	if err := json.Unmarshal(body, &data); err != nil {
+	var issue Issue
+	if err := json.Unmarshal(body, &issue); err != nil {
 		return nil, err
 	}
-	return &data, nil
+	return &issue, nil
+}
+
+func (r *RemoteStore) UpdateStatus(id int, statusValue string, actor string) (*Issue, error) {
+	_ = actor
+	body, status, err := r.do("PATCH", fmt.Sprintf("/issues/%d/status", id), updateIssueStatusPayload{Status: statusValue})
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("update issue status: server returned %d: %s", status, body)
+	}
+	var issue Issue
+	if err := json.Unmarshal(body, &issue); err != nil {
+		return nil, err
+	}
+	return &issue, nil
 }

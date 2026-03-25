@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/ms-cli/internal/issues"
+	"github.com/vigo999/ms-cli/internal/bugs"
 )
 
 func visPad(s string, w int) string {
@@ -31,7 +31,7 @@ func visTruncate(s string, w int) string {
 	return "..."
 }
 
-func BugList(bugs []issues.Bug) string {
+func BugList(bugs []bugs.Bug) string {
 	idW, titleW, statusW, leadW, reporterW := 2, 12, 6, 4, 8
 	for _, b := range bugs {
 		if l := len(fmt.Sprintf("%d", b.ID)); l > idW {
@@ -85,7 +85,7 @@ func BugList(bugs []issues.Bug) string {
 	return strings.Join(lines, "\n")
 }
 
-func Dock(data *issues.DockData) string {
+func Dock(data *bugs.DockData) string {
 	lines := []string{
 		TitleStyle.Render("DOCK"),
 		"",

@@ -41,7 +41,21 @@ func (a *Application) handleCommand(input string) {
 	case "/login":
 		a.cmdLogin(parts[1:])
 	case "/report":
-		a.cmdReport(parts[1:])
+		a.cmdIssueReportInput(strings.TrimSpace(strings.TrimPrefix(input, "/report")))
+	case "/issues":
+		a.cmdIssues(parts[1:])
+	case "/__issue_detail":
+		a.cmdIssueDetail(parts[1:])
+	case "/__issue_note":
+		a.cmdIssueNoteInput(strings.TrimSpace(strings.TrimPrefix(input, "/__issue_note")))
+	case "/__issue_claim":
+		a.cmdIssueClaim(parts[1:])
+	case "/status":
+		a.cmdIssueStatus(parts[1:])
+	case "/diagnose":
+		a.cmdDiagnose(strings.TrimSpace(strings.TrimPrefix(input, "/diagnose")))
+	case "/fix":
+		a.cmdFix(strings.TrimSpace(strings.TrimPrefix(input, "/fix")))
 	case "/bugs":
 		a.cmdBugs(parts[1:])
 	case "/__bug_detail":
@@ -362,7 +376,11 @@ func (a *Application) cmdHelp() {
   /project update <section> <id> [--title t] [--owner o] [--progress p] [--status s]  Update a task
   /project rm <section> <id>  Remove a task
   /login <token>          Log in to the bug server
-  /report <title>         Report a new bug
+  /report [ui,train] <title>  Report a new bug with optional tags
+  /issues [status]         List issues (optional status filter: ready, doing, closed)
+  /status <ISSUE-id> <ready|doing|closed>  Update an issue status
+  /diagnose <problem text|ISSUE-id>  Diagnose a problem or issue
+  /fix <problem text|ISSUE-id>  Run fix flow for a problem or issue
   /bugs [status]          List bugs (optional status filter: open, doing)
   /claim <id>             Claim a bug as your lead
   /dock                   Show bug dashboard (open count, ready, recent)

@@ -41,6 +41,7 @@ type projectTask struct {
 	Progress int
 	Owner    string
 	Due      string
+	Tags     string
 }
 
 func (a *Application) cmdProjectInput(raw string) {
@@ -64,6 +65,12 @@ func (a *Application) cmdProject(args []string) {
 	switch action {
 	case "", "status", "show", "open", "refresh":
 		a.emitProjectSnapshot()
+	case "tasks":
+		tag := ""
+		if len(args) > 1 {
+			tag = strings.TrimSpace(args[1])
+		}
+		a.emitProjectTasksByTag(tag)
 	case "close", "exit":
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
@@ -162,6 +169,7 @@ func buildCardFromSnapshot(snap *projectpkg.Snapshot, status model.ProjectStatus
 			Progress: t.Progress,
 			Owner:    t.Owner,
 			Due:      t.Due,
+			Tags:     t.Tags,
 		}
 		switch t.Section {
 		case "milestones":
@@ -183,6 +191,76 @@ func taskToChecklist(t projectTask) string {
 	return marker + t.Title
 }
 
+func (a *Application) emitProjectTasksByTag(tag string) {
+	if !a.ensureProjectService() {
+		return
+	}
+	snap, err := a.projectService.Snapshot()
+	if err != nil {
+		a.emitProjectCommandError(err)
+		return
+	}
+	var tasks []projectTask
+	for _, t := range snap.Tasks {
+		if t.Section != "tasks" {
+			continue
+		}
+		if tag != "" && !containsTag(t.Tags, tag) {
+			continue
+		}
+		tasks = append(tasks, projectTask{
+			ID:       strconv.Itoa(t.ID),
+			Title:    t.Title,
+			Status:   t.Status,
+			Progress: t.Progress,
+			Owner:    t.Owner,
+			Due:      t.Due,
+			Tags:     t.Tags,
+		})
+	}
+	if len(tasks) == 0 {
+		msg := "no tasks found"
+		if tag != "" {
+			msg += " with tag: " + tag
+		}
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
+		return
+	}
+	header := "[ TASKS ]"
+	if tag != "" {
+		header = "[ TASKS: " + tag + " ]"
+	}
+	sectionHeader := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	lines := []string{sectionHeader.Render(header)}
+	lines = append(lines, renderTaskLines(tasks)...)
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: strings.Join(lines, "\n")}
+}
+
+func containsTag(tags, target string) bool {
+	for _, t := range strings.Split(tags, ",") {
+		if strings.EqualFold(strings.TrimSpace(t), target) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractTags parses "[tag1,tag2] title" into tags and title.
+// If no brackets, returns empty tags and the original string.
+func extractTags(s string) (tags, title string) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "[") {
+		return "", s
+	}
+	idx := strings.Index(s, "]")
+	if idx < 0 {
+		return "", s
+	}
+	tags = strings.TrimSpace(s[1:idx])
+	title = strings.TrimSpace(s[idx+1:])
+	return tags, title
+}
+
 func (a *Application) emitProjectCommandError(err error) {
 	a.EventCh <- model.Event{
 		Type:    model.AgentReply,
@@ -198,7 +276,11 @@ func (a *Application) cmdProjectAdd(args []string) error {
 		return fmt.Errorf("not logged in. Run /login <token> first")
 	}
 	section := canonicalSection(args[0])
-	title := strings.TrimSpace(args[1])
+	rawTitle := strings.TrimSpace(args[1])
+	if rawTitle == "" {
+		return fmt.Errorf("title cannot be empty")
+	}
+	inlineTags, title := extractTags(rawTitle)
 	if title == "" {
 		return fmt.Errorf("title cannot be empty")
 	}
@@ -206,11 +288,19 @@ func (a *Application) cmdProjectAdd(args []string) error {
 	if err != nil {
 		return err
 	}
+	tags := opts.Tags
+	if inlineTags != "" {
+		if tags != "" {
+			tags = inlineTags + "," + tags
+		} else {
+			tags = inlineTags
+		}
+	}
 	owner := opts.Owner
 	if owner == "" {
 		owner = a.issueUser
 	}
-	task, err := a.projectService.AddTask(section, title, owner, a.issueUser, opts.Due, opts.Progress)
+	task, err := a.projectService.AddTask(section, title, owner, a.issueUser, opts.Due, tags, opts.Progress)
 	if err != nil {
 		return err
 	}
@@ -251,7 +341,7 @@ func (a *Application) cmdProjectUpdate(args []string) error {
 	if !opts.HasUpdates() {
 		return fmt.Errorf("update requires at least one of --title, --owner, --status, --due, or --progress")
 	}
-	var titlePtr, ownerPtr, statusPtr, duePtr *string
+	var titlePtr, ownerPtr, statusPtr, duePtr, tagsPtr *string
 	if strings.TrimSpace(opts.Title) != "" {
 		titlePtr = &opts.Title
 	}
@@ -264,7 +354,10 @@ func (a *Application) cmdProjectUpdate(args []string) error {
 	if strings.TrimSpace(opts.Due) != "" {
 		duePtr = &opts.Due
 	}
-	task, err := a.projectService.UpdateTask(id, titlePtr, ownerPtr, statusPtr, duePtr, opts.Progress)
+	if strings.TrimSpace(opts.Tags) != "" {
+		tagsPtr = &opts.Tags
+	}
+	task, err := a.projectService.UpdateTask(id, titlePtr, ownerPtr, statusPtr, duePtr, tagsPtr, opts.Progress)
 	if err != nil {
 		return err
 	}
@@ -397,11 +490,12 @@ type projectTaskEdit struct {
 	Owner    string
 	Status   string
 	Due      string
+	Tags     string
 	Progress *int
 }
 
 func (e projectTaskEdit) HasUpdates() bool {
-	return strings.TrimSpace(e.Title) != "" || strings.TrimSpace(e.Owner) != "" || strings.TrimSpace(e.Status) != "" || strings.TrimSpace(e.Due) != "" || e.Progress != nil
+	return strings.TrimSpace(e.Title) != "" || strings.TrimSpace(e.Owner) != "" || strings.TrimSpace(e.Status) != "" || strings.TrimSpace(e.Due) != "" || strings.TrimSpace(e.Tags) != "" || e.Progress != nil
 }
 
 func canonicalSection(raw string) string {
@@ -498,6 +592,12 @@ func parseProjectTaskOptions(args []string, _ bool) (projectTaskEdit, error) {
 			}
 			i++
 			edit.Due = strings.TrimSpace(args[i])
+		case "--tags":
+			if i+1 >= len(args) {
+				return edit, fmt.Errorf("--tags requires a value")
+			}
+			i++
+			edit.Tags = strings.TrimSpace(args[i])
 		case "--progress":
 			if i+1 >= len(args) {
 				return edit, fmt.Errorf("--progress requires a value")
@@ -817,6 +917,13 @@ func renderTaskLines(tasks []projectTask) []string {
 		owner := fmt.Sprintf("%-*s", ownerWidth, task.Owner)
 		due := fmt.Sprintf("%-*s", dueWidth, task.Due)
 		dimPart := "   " + owner + "   " + due
+		if task.Tags != "" {
+			tagParts := strings.Split(task.Tags, ",")
+			for i, t := range tagParts {
+				tagParts[i] = "[" + strings.TrimSpace(t) + "]"
+			}
+			dimPart += "  " + strings.Join(tagParts, " ")
+		}
 
 		switch {
 		case task.Progress >= 100 || normalizeTaskStatus(task.Status) == "done":

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vigo999/ms-cli/internal/issues"
+	"github.com/vigo999/ms-cli/internal/bugs"
 	"github.com/vigo999/ms-cli/ui/model"
 )
 
@@ -22,9 +22,9 @@ func TestBugViewUsesDedicatedSurfaceAndEscReturnsToList(t *testing.T) {
 		Type: model.BugIndexOpen,
 		BugView: &model.BugEventData{
 			Filter: "open",
-			Items: []issues.Bug{
-				{ID: 1042, Title: "loss spike after dataloader refactor", Status: "open", Reporter: "travis", UpdatedAt: now},
-				{ID: 1041, Title: "npu build fails on cann 8.0.RC3", Status: "doing", Lead: "travis", Reporter: "alice", UpdatedAt: now},
+			Items: []bugs.Bug{
+				{ID: 1042, Title: "loss spike after dataloader refactor", Tags: []string{"train"}, Status: "open", Reporter: "travis", UpdatedAt: now},
+				{ID: 1041, Title: "npu build fails on cann 8.0.RC3", Tags: []string{"infra", "install"}, Status: "doing", Lead: "travis", Reporter: "alice", UpdatedAt: now},
 			},
 		},
 	})
@@ -33,6 +33,9 @@ func TestBugViewUsesDedicatedSurfaceAndEscReturnsToList(t *testing.T) {
 	view := app.View()
 	if !strings.Contains(view, "BUGS") {
 		t.Fatalf("expected bug view header, got:\n%s", view)
+	}
+	if !strings.Contains(view, "infra") {
+		t.Fatalf("expected bug tags in index view, got:\n%s", view)
 	}
 	if strings.Contains(view, "> ") {
 		t.Fatalf("expected chat composer to be hidden in bug view, got:\n%s", view)
@@ -43,12 +46,15 @@ func TestBugViewUsesDedicatedSurfaceAndEscReturnsToList(t *testing.T) {
 		Type: model.BugDetailOpen,
 		BugView: &model.BugEventData{
 			ID:        1041,
-			Bug:       &issues.Bug{ID: 1041, Title: "npu build fails on cann 8.0.RC3", Status: "doing", Lead: "travis", Reporter: "alice", UpdatedAt: now},
-			Activity:  []issues.Activity{{BugID: 1041, Actor: "travis", Text: "travis claimed bug", CreatedAt: now}},
+			Bug:       &bugs.Bug{ID: 1041, Title: "npu build fails on cann 8.0.RC3", Tags: []string{"infra", "install"}, Status: "doing", Lead: "travis", Reporter: "alice", UpdatedAt: now},
+			Activity:  []bugs.Activity{{BugID: 1041, Actor: "travis", Text: "travis claimed bug", CreatedAt: now}},
 			FromIndex: true,
 		},
 	})
 	app = next.(App)
+	if detail := app.View(); !strings.Contains(detail, "infra, install") {
+		t.Fatalf("expected bug tags in detail view, got:\n%s", detail)
+	}
 
 	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	app = next.(App)

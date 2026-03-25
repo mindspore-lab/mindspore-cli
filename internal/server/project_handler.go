@@ -24,6 +24,7 @@ type createProjectTaskRequest struct {
 	Title    string `json:"title"`
 	Owner    string `json:"owner"`
 	Due      string `json:"due"`
+	Tags     string `json:"tags"`
 	Progress *int   `json:"progress,omitempty"`
 }
 
@@ -42,7 +43,7 @@ func HandleCreateProjectTask(store *Store) http.HandlerFunc {
 			req.Section = "tasks"
 		}
 		createdBy := UserFromContext(r.Context())
-		task, err := store.CreateProjectTask(req.Section, req.Title, req.Owner, createdBy, req.Due, req.Progress)
+		task, err := store.CreateProjectTask(req.Section, req.Title, req.Owner, createdBy, req.Due, req.Tags, req.Progress)
 		if err != nil {
 			http.Error(w, `{"error":"failed to create task"}`, http.StatusInternalServerError)
 			return
@@ -58,6 +59,7 @@ type updateProjectTaskRequest struct {
 	Owner    *string `json:"owner,omitempty"`
 	Status   *string `json:"status,omitempty"`
 	Due      *string `json:"due,omitempty"`
+	Tags     *string `json:"tags,omitempty"`
 	Progress *int    `json:"progress,omitempty"`
 }
 
@@ -73,7 +75,7 @@ func HandleUpdateProjectTask(store *Store) http.HandlerFunc {
 			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 			return
 		}
-		task, err := store.UpdateProjectTask(id, req.Title, req.Owner, req.Status, req.Due, req.Progress)
+		task, err := store.UpdateProjectTask(id, req.Title, req.Owner, req.Status, req.Due, req.Tags, req.Progress)
 		if err != nil {
 			http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
 			return

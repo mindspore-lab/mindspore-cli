@@ -1,22 +1,23 @@
 package app
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
-	"github.com/vigo999/ms-cli/internal/issues"
+	"github.com/vigo999/ms-cli/internal/bugs"
 	"github.com/vigo999/ms-cli/ui/model"
 )
 
 func TestCmdBugsDefaultsToAllAndOpensBugIndexView(t *testing.T) {
 	store := &fakeIssueStore{
-		bugs: []issues.Bug{
+		bugs: []bugs.Bug{
 			{ID: 1042, Title: "loss spike after dataloader refactor", Status: "open", Reporter: "travis", UpdatedAt: time.Now()},
 		},
 	}
 	app := &Application{
-		EventCh:      make(chan model.Event, 4),
-		issueService: issues.NewService(store),
+		EventCh:    make(chan model.Event, 4),
+		bugService: bugs.NewService(store),
 	}
 
 	app.cmdBugs(nil)
@@ -38,14 +39,14 @@ func TestCmdBugsDefaultsToAllAndOpensBugIndexView(t *testing.T) {
 
 func TestCmdBugDetailOpensDetailViewEvent(t *testing.T) {
 	store := &fakeIssueStore{
-		bug: &issues.Bug{ID: 1042, Title: "loss spike after dataloader refactor", Status: "open", Reporter: "travis", UpdatedAt: time.Now()},
-		activity: []issues.Activity{
+		bug: &bugs.Bug{ID: 1042, Title: "loss spike after dataloader refactor", Tags: []string{"train"}, Status: "open", Reporter: "travis", UpdatedAt: time.Now()},
+		activity: []bugs.Activity{
 			{BugID: 1042, Actor: "travis", Text: "created bug", CreatedAt: time.Now()},
 		},
 	}
 	app := &Application{
-		EventCh:      make(chan model.Event, 4),
-		issueService: issues.NewService(store),
+		EventCh:    make(chan model.Event, 4),
+		bugService: bugs.NewService(store),
 	}
 
 	app.cmdBugDetail([]string{"1042"})
@@ -65,23 +66,57 @@ func TestCmdBugDetailOpensDetailViewEvent(t *testing.T) {
 	}
 }
 
+func TestHandleCommandReportParsesOptionalTags(t *testing.T) {
+	store := &fakeIssueStore{}
+	app := &Application{
+		EventCh:    make(chan model.Event, 4),
+		bugService: bugs.NewService(store),
+		issueUser:  "travis",
+	}
+
+	app.handleCommand("/report [ui, train,ui] prompt overlaps bug detail")
+
+	ev := <-app.EventCh
+	if ev.Type != model.AgentReply {
+		t.Fatalf("event type = %s, want %s", ev.Type, model.AgentReply)
+	}
+	if got, want := store.lastCreateTitle, "prompt overlaps bug detail"; got != want {
+		t.Fatalf("create title = %q, want %q", got, want)
+	}
+	if got, want := store.lastCreateReporter, "travis"; got != want {
+		t.Fatalf("create reporter = %q, want %q", got, want)
+	}
+	if got, want := store.lastCreateTags, []string{"ui", "train"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("create tags = %#v, want %#v", got, want)
+	}
+	if got, want := ev.Message, "created bug #1042 [ui,train]: prompt overlaps bug detail"; got != want {
+		t.Fatalf("reply = %q, want %q", got, want)
+	}
+}
+
 type fakeIssueStore struct {
-	lastListStatus string
-	bugs           []issues.Bug
-	bug            *issues.Bug
-	activity       []issues.Activity
+	lastListStatus     string
+	lastCreateTitle    string
+	lastCreateReporter string
+	lastCreateTags     []string
+	bugs               []bugs.Bug
+	bug                *bugs.Bug
+	activity           []bugs.Activity
 }
 
-func (f *fakeIssueStore) CreateBug(title, reporter string) (*issues.Bug, error) {
-	return nil, nil
+func (f *fakeIssueStore) CreateBug(title, reporter string, tags []string) (*bugs.Bug, error) {
+	f.lastCreateTitle = title
+	f.lastCreateReporter = reporter
+	f.lastCreateTags = append([]string(nil), tags...)
+	return &bugs.Bug{ID: 1042, Title: title, Tags: append([]string(nil), tags...)}, nil
 }
 
-func (f *fakeIssueStore) ListBugs(status string) ([]issues.Bug, error) {
+func (f *fakeIssueStore) ListBugs(status string) ([]bugs.Bug, error) {
 	f.lastListStatus = status
 	return f.bugs, nil
 }
 
-func (f *fakeIssueStore) GetBug(id int) (*issues.Bug, error) {
+func (f *fakeIssueStore) GetBug(id int) (*bugs.Bug, error) {
 	return f.bug, nil
 }
 
@@ -93,14 +128,14 @@ func (f *fakeIssueStore) CloseBug(id int) error {
 	return nil
 }
 
-func (f *fakeIssueStore) AddNote(bugID int, author, content string) (*issues.Note, error) {
+func (f *fakeIssueStore) AddNote(bugID int, author, content string) (*bugs.Note, error) {
 	return nil, nil
 }
 
-func (f *fakeIssueStore) ListActivity(bugID int) ([]issues.Activity, error) {
+func (f *fakeIssueStore) ListActivity(bugID int) ([]bugs.Activity, error) {
 	return f.activity, nil
 }
 
-func (f *fakeIssueStore) DockSummary() (*issues.DockData, error) {
+func (f *fakeIssueStore) DockSummary() (*bugs.DockData, error) {
 	return nil, nil
 }

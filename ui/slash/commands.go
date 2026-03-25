@@ -178,8 +178,32 @@ func (r *Registry) registerDefaults() {
 
 	r.Register(Command{
 		Name:        "/report",
-		Description: "Report a new bug",
-		Usage:       "/report <bug title>",
+		Description: "Create a new issue",
+		Usage:       "/report <failure|accuracy|performance> <title>",
+	})
+
+	r.Register(Command{
+		Name:        "/issues",
+		Description: "List issues",
+		Usage:       "/issues [status]",
+	})
+
+	r.Register(Command{
+		Name:        "/status",
+		Description: "Update issue status",
+		Usage:       "/status <ISSUE-id> <ready|doing|closed>",
+	})
+
+	r.Register(Command{
+		Name:        "/diagnose",
+		Description: "Diagnose a problem or issue",
+		Usage:       "/diagnose <problem text|ISSUE-id>",
+	})
+
+	r.Register(Command{
+		Name:        "/fix",
+		Description: "Fix a problem or issue",
+		Usage:       "/fix <problem text|ISSUE-id>",
 	})
 
 	r.Register(Command{

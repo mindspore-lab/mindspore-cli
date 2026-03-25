@@ -1,6 +1,6 @@
 package model
 
-import "github.com/vigo999/ms-cli/internal/issues"
+import "github.com/vigo999/ms-cli/internal/bugs"
 
 // Bug-specific UI event types.
 const (
@@ -17,7 +17,7 @@ const (
 )
 
 type BugIndexState struct {
-	Items  []issues.Bug
+	Items  []bugs.Bug
 	Cursor int
 	Filter string
 	Err    string
@@ -25,8 +25,8 @@ type BugIndexState struct {
 
 type BugDetailState struct {
 	ID        int
-	Bug       *issues.Bug
-	Activity  []issues.Activity
+	Bug       *bugs.Bug
+	Activity  []bugs.Activity
 	Err       string
 	FromIndex bool
 }
@@ -44,10 +44,10 @@ func (s BugViewState) Active() bool {
 // BugEventData carries bug-specific payloads on Event.
 type BugEventData struct {
 	Filter    string
-	Items     []issues.Bug
+	Items     []bugs.Bug
 	ID        int
-	Bug       *issues.Bug
-	Activity  []issues.Activity
+	Bug       *bugs.Bug
+	Activity  []bugs.Activity
 	FromIndex bool
 	Err       error
 }

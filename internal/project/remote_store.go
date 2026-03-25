@@ -67,7 +67,7 @@ func (r *RemoteStore) GetSnapshot() (*Snapshot, error) {
 	return &snap, nil
 }
 
-func (r *RemoteStore) CreateTask(section, title, owner, createdBy, due string, progress *int) (*Task, error) {
+func (r *RemoteStore) CreateTask(section, title, owner, createdBy, due, tags string, progress *int) (*Task, error) {
 	payload := map[string]any{
 		"section": section,
 		"title":   title,
@@ -77,6 +77,9 @@ func (r *RemoteStore) CreateTask(section, title, owner, createdBy, due string, p
 	}
 	if due != "" {
 		payload["due"] = due
+	}
+	if tags != "" {
+		payload["tags"] = tags
 	}
 	if progress != nil {
 		payload["progress"] = *progress
@@ -95,7 +98,7 @@ func (r *RemoteStore) CreateTask(section, title, owner, createdBy, due string, p
 	return &task, nil
 }
 
-func (r *RemoteStore) UpdateTask(id int, title, owner, status, due *string, progress *int) (*Task, error) {
+func (r *RemoteStore) UpdateTask(id int, title, owner, status, due, tags *string, progress *int) (*Task, error) {
 	payload := map[string]any{}
 	if title != nil {
 		payload["title"] = *title
@@ -108,6 +111,9 @@ func (r *RemoteStore) UpdateTask(id int, title, owner, status, due *string, prog
 	}
 	if due != nil {
 		payload["due"] = *due
+	}
+	if tags != nil {
+		payload["tags"] = *tags
 	}
 	if progress != nil {
 		payload["progress"] = *progress

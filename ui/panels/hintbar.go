@@ -161,6 +161,48 @@ func RenderBugHintBar(width int, mode model.BugMode) string {
 	return divider + "\n" + line + hintDescStyle.Render("  [bugs]")
 }
 
+func RenderIssueHintBar(width int, mode model.IssueMode) string {
+	divider := hintDividerStyle.Render(repeatChar("─", width))
+
+	issueHints := []hint{{"esc", "back"}, {"ctrl+c", "quit"}}
+	switch mode {
+	case model.IssueModeIndex:
+		issueHints = []hint{
+			{"↑/↓", "move"},
+			{"j/k", "move"},
+			{"enter", "open"},
+			{"esc", "back"},
+			{"ctrl+c", "quit"},
+		}
+	case model.IssueModeDetail:
+		issueHints = []hint{
+			{"enter", "submit"},
+			{"d", "diagnose"},
+			{"f", "fix"},
+			{"l", "lead"},
+			{"s", "status"},
+			{"esc", "back"},
+			{"ctrl+c", "quit"},
+		}
+	}
+
+	parts := make([]string, len(issueHints))
+	for i, h := range issueHints {
+		parts[i] = hintKeyStyle.Render(h.key) + " " + hintDescStyle.Render(h.desc)
+	}
+
+	sep := hintSepStyle.Render(" • ")
+	line := hintTextStyle.Render("")
+	for i, p := range parts {
+		if i > 0 {
+			line += sep
+		}
+		line += p
+	}
+
+	return divider + "\n" + line + hintDescStyle.Render("  [issues]")
+}
+
 // RenderTrainHintBar renders the hint bar for the train workspace with focus context.
 func RenderTrainHintBar(width int, focused model.TrainPanelID, opts ...bool) string {
 	maximized := len(opts) > 0 && opts[0]

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/vigo999/ms-cli/internal/issues"
+	"github.com/vigo999/ms-cli/internal/bugs"
 )
 
 func HandleListActivity(store *Store) http.HandlerFunc {
@@ -21,7 +21,7 @@ func HandleListActivity(store *Store) http.HandlerFunc {
 			return
 		}
 		if acts == nil {
-			acts = []issues.Activity{}
+			acts = []bugs.Activity{}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(acts)

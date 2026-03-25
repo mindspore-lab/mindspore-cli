@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/ms-cli/internal/issues"
+	"github.com/vigo999/ms-cli/internal/bugs"
 	"github.com/vigo999/ms-cli/ui/model"
 	"github.com/vigo999/ms-cli/ui/panels"
 
@@ -150,7 +150,7 @@ func (a *App) applyBugClaim(id int) {
 		}
 		a.bugView.Detail.Bug.UpdatedAt = now
 		if actor != "" {
-			a.bugView.Detail.Activity = append(a.bugView.Detail.Activity, issues.Activity{
+			a.bugView.Detail.Activity = append(a.bugView.Detail.Activity, bugs.Activity{
 				BugID:     id,
 				Actor:     actor,
 				Type:      "claim",
@@ -175,7 +175,7 @@ func (a *App) applyBugClose(id int) {
 		a.bugView.Detail.Bug.Status = "closed"
 		a.bugView.Detail.Bug.UpdatedAt = now
 		if actor != "" {
-			a.bugView.Detail.Activity = append(a.bugView.Detail.Activity, issues.Activity{
+			a.bugView.Detail.Activity = append(a.bugView.Detail.Activity, bugs.Activity{
 				BugID:     id,
 				Actor:     actor,
 				Type:      "close",

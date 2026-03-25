@@ -98,10 +98,7 @@ func RenderMessages(state model.State, spinnerView string, width int, compact ..
 		}
 	}
 
-	sep := "\n\n"
-	if len(compact) > 0 && compact[0] {
-		sep = "\n"
-	}
+	sep := "\n"
 	return strings.Join(parts, sep)
 }
 

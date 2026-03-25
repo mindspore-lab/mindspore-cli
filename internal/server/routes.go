@@ -19,6 +19,14 @@ func NewMux(store *Store, tokens []configs.TokenEntry) *http.ServeMux {
 	}
 
 	mux.Handle("GET /me", auth(http.HandlerFunc(HandleMe(store))))
+	mux.Handle("POST /issues", auth(http.HandlerFunc(HandleCreateIssue(store))))
+	mux.Handle("GET /issues", auth(http.HandlerFunc(HandleListIssues(store))))
+	mux.Handle("GET /issues/{id}", auth(http.HandlerFunc(HandleGetIssue(store))))
+	mux.Handle("GET /issues/{id}/notes", auth(http.HandlerFunc(HandleListIssueNotes(store))))
+	mux.Handle("POST /issues/{id}/notes", auth(http.HandlerFunc(HandleAddIssueNote(store))))
+	mux.Handle("GET /issues/{id}/activity", auth(http.HandlerFunc(HandleListIssueActivity(store))))
+	mux.Handle("POST /issues/{id}/claim", auth(http.HandlerFunc(HandleClaimIssue(store))))
+	mux.Handle("PATCH /issues/{id}/status", auth(http.HandlerFunc(HandleUpdateIssueStatus(store))))
 	mux.Handle("POST /bugs", auth(http.HandlerFunc(HandleCreateBug(store))))
 	mux.Handle("GET /bugs", auth(http.HandlerFunc(HandleListBugs(store))))
 	mux.Handle("GET /bugs/{id}", auth(http.HandlerFunc(HandleGetBug(store))))

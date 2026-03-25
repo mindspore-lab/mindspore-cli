@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/ms-cli/internal/issues"
+	"github.com/vigo999/ms-cli/internal/bugs"
 )
 
 var statusClosedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
@@ -16,7 +16,7 @@ var bugDetailLabelStyle = lipgloss.NewStyle()
 var bugDetailValueStyle = lipgloss.NewStyle()
 var bugDetailTitleStyle = lipgloss.NewStyle()
 
-func BugIndex(items []issues.Bug, cursor, width, rows int) string {
+func BugIndex(items []bugs.Bug, cursor, width, rows int) string {
 	if rows < 1 {
 		rows = 1
 	}
@@ -64,7 +64,7 @@ func BugIndex(items []issues.Bug, cursor, width, rows int) string {
 			marker = "❯ "
 		}
 		status := bugStatusLabel(b.Status)
-		title := visPad(visTruncate(strings.TrimSpace(b.Title), titleW), titleW)
+		title := visPad(visTruncate(bugTitleValue(b), titleW), titleW)
 		if i == cursor {
 			title = bugRowSelectedStyle.Render(title)
 		}
@@ -80,7 +80,7 @@ func BugIndex(items []issues.Bug, cursor, width, rows int) string {
 	return strings.Join(lines, "\n")
 }
 
-func BugDetail(st issues.Bug, activity []issues.Activity, width, rows int) string {
+func BugDetail(st bugs.Bug, activity []bugs.Activity, width, rows int) string {
 	if rows < 1 {
 		rows = 1
 	}
@@ -92,6 +92,7 @@ func BugDetail(st issues.Bug, activity []issues.Activity, width, rows int) strin
 	lines := []string{
 		TitleStyle.Render(fmt.Sprintf("BUG %d:", st.ID)),
 		bugDetailField("title:", st.Title, labelW, width, bugDetailTitleStyle),
+		bugDetailField("tags:", bugTagsValue(st.Tags), labelW, width, bugDetailValueStyle),
 		bugDetailField("status:", bugStatusLabel(st.Status), labelW, width, bugDetailValueStyle),
 		bugDetailField("lead:", bugLeadValue(st), labelW, width, bugDetailValueStyle),
 		bugDetailField("reporter:", st.Reporter, labelW, width, bugDetailValueStyle),
@@ -120,7 +121,7 @@ func BugDetail(st issues.Bug, activity []issues.Activity, width, rows int) strin
 	return strings.Join(trimBugLines(lines, rows), "\n")
 }
 
-func bugActivityText(act issues.Activity, title string) string {
+func bugActivityText(act bugs.Activity, title string) string {
 	text := strings.TrimSpace(act.Text)
 	reportLine := fmt.Sprintf("reported bug: %s", strings.TrimSpace(title))
 	if act.Type == "report" && text == reportLine {
@@ -167,7 +168,7 @@ func trimBugLines(lines []string, limit int) []string {
 
 func bugStatusStyle(status string) lipgloss.Style {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "open":
+	case "open", "ready":
 		return StatusOpenStyle
 	case "doing":
 		return StatusDoingStyle
@@ -183,11 +184,26 @@ func bugStatusLabel(status string) string {
 	return strings.ToLower(strings.TrimSpace(status))
 }
 
-func bugLeadValue(b issues.Bug) string {
+func bugLeadValue(b bugs.Bug) string {
 	if strings.TrimSpace(b.Lead) == "" {
 		return "no owner"
 	}
 	return b.Lead
+}
+
+func bugTagsValue(tags []string) string {
+	if len(tags) == 0 {
+		return "-"
+	}
+	return strings.Join(tags, ", ")
+}
+
+func bugTitleValue(b bugs.Bug) string {
+	title := strings.TrimSpace(b.Title)
+	if len(b.Tags) == 0 {
+		return title
+	}
+	return title + " [" + strings.Join(b.Tags, ",") + "]"
 }
 
 func formatBugUpdatedAt(ts time.Time) string {

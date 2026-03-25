@@ -34,7 +34,7 @@ func (m *mockProjectStore) GetSnapshot() (*project.Snapshot, error) {
 	return snap, nil
 }
 
-func (m *mockProjectStore) CreateTask(section, title, owner, createdBy, due string, progress *int) (*project.Task, error) {
+func (m *mockProjectStore) CreateTask(section, title, owner, createdBy, due, tags string, progress *int) (*project.Task, error) {
 	prog := 0
 	if progress != nil {
 		prog = *progress
@@ -54,7 +54,7 @@ func (m *mockProjectStore) CreateTask(section, title, owner, createdBy, due stri
 	return &t, nil
 }
 
-func (m *mockProjectStore) UpdateTask(id int, title, owner, status, due *string, progress *int) (*project.Task, error) {
+func (m *mockProjectStore) UpdateTask(id int, title, owner, status, due, tags *string, progress *int) (*project.Task, error) {
 	for i := range m.tasks {
 		if m.tasks[i].ID == id {
 			if title != nil {
