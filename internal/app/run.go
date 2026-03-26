@@ -39,10 +39,15 @@ func Run(args []string) error {
 // run starts the TUI.
 func (a *Application) run() error {
 	go cleanUpdateTmp()
+	err := a.runReal()
+	resumeHint := a.exitResumeHint()
 	if a.session != nil {
-		defer a.session.Close()
+		_ = a.session.Close()
 	}
-	return a.runReal()
+	if err == nil && resumeHint != "" {
+		fmt.Fprintln(os.Stdout, resumeHint)
+	}
+	return err
 }
 
 func (a *Application) runReal() error {
@@ -122,6 +127,10 @@ func (a *Application) runTask(description string) {
 	task := loop.Task{
 		ID:          generateTaskID(),
 		Description: description,
+	}
+	if err := a.activateSessionPersistence(); err != nil {
+		a.emitToolError("session", "Failed to start session persistence: %v", err)
+		return
 	}
 
 	ctx, runID := a.beginTaskRun()
@@ -227,6 +236,25 @@ func (a *Application) persistSessionSnapshot() error {
 		return nil
 	}
 	return a.session.SaveSnapshot(a.currentSystemPrompt(), a.ctxManager.GetNonSystemMessages())
+}
+
+func (a *Application) activateSessionPersistence() error {
+	if a == nil || a.session == nil {
+		return nil
+	}
+	return a.session.Activate()
+}
+
+func (a *Application) exitResumeHint() string {
+	if a == nil || a.session == nil || !a.session.HasPersistedDialogue() {
+		return ""
+	}
+
+	sessionID := strings.TrimSpace(a.session.ID())
+	if sessionID == "" {
+		return ""
+	}
+	return fmt.Sprintf("Resume this session with: ms-cli resume %s", sessionID)
 }
 
 func (a *Application) recordUnavailableTurn(userInput, assistantReply string) error {

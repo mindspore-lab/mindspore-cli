@@ -546,6 +546,9 @@ func TestCtrlCSendsInterruptTokenForActiveTask(t *testing.T) {
 	if !strings.Contains(last.Content, "Interrupt requested.") {
 		t.Fatalf("expected interrupt hint message, got %#v", last)
 	}
+	if strings.Contains(last.Content, "ms-cli resume") {
+		t.Fatalf("expected interrupt hint without resume text, got %#v", last)
+	}
 	if app.state.IsThinking {
 		t.Fatal("expected ctrl+c to clear thinking state")
 	}

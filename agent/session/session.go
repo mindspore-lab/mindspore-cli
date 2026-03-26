@@ -68,11 +68,13 @@ type Session struct {
 	snapshot     Snapshot
 	path         string
 	snapshotPath string
+	persisted    bool
 	file         *os.File
 	enc          *json.Encoder
 }
 
-// Create creates a new session under ~/.ms-cli/sessions and writes its meta record.
+// Create allocates a new session under ~/.ms-cli/sessions.
+// Persistence begins only after Activate is called.
 func Create(workDir, systemPrompt string) (*Session, error) {
 	absWorkDir, err := normalizeWorkDir(workDir)
 	if err != nil {
@@ -82,11 +84,6 @@ func Create(workDir, systemPrompt string) (*Session, error) {
 	key := workDirKey(absWorkDir)
 	now := time.Now()
 	id, path, err := nextSessionLocation(key, now)
-	if err != nil {
-		return nil, err
-	}
-
-	file, enc, err := openAppender(path, false)
 	if err != nil {
 		return nil, err
 	}
@@ -111,17 +108,6 @@ func Create(workDir, systemPrompt string) (*Session, error) {
 		},
 		path:         path,
 		snapshotPath: snapshotPath(path),
-		file:         file,
-		enc:          enc,
-	}
-
-	if err := s.writeRecordLocked(s.meta); err != nil {
-		_ = s.Close()
-		return nil, err
-	}
-	if err := s.writeSnapshotLocked(); err != nil {
-		_ = s.Close()
-		return nil, err
 	}
 	return s, nil
 }
@@ -206,6 +192,9 @@ func (s *Session) AppendUserInput(content string) error {
 	}
 	s.records = append(s.records, record)
 	s.meta.UpdatedAt = record.Timestamp
+	if !s.persisted {
+		return nil
+	}
 	return s.writeRecordLocked(record)
 }
 
@@ -228,6 +217,9 @@ func (s *Session) AppendAssistant(content string) error {
 	}
 	s.records = append(s.records, record)
 	s.meta.UpdatedAt = record.Timestamp
+	if !s.persisted {
+		return nil
+	}
 	return s.writeRecordLocked(record)
 }
 
@@ -249,6 +241,9 @@ func (s *Session) AppendToolCall(tc llm.ToolCall) error {
 	}
 	s.records = append(s.records, record)
 	s.meta.UpdatedAt = record.Timestamp
+	if !s.persisted {
+		return nil
+	}
 	return s.writeRecordLocked(record)
 }
 
@@ -270,6 +265,9 @@ func (s *Session) AppendToolResult(toolCallID, toolName, content string) error {
 	}
 	s.records = append(s.records, record)
 	s.meta.UpdatedAt = record.Timestamp
+	if !s.persisted {
+		return nil
+	}
 	return s.writeRecordLocked(record)
 }
 
@@ -292,6 +290,9 @@ func (s *Session) AppendSkillActivation(skillName string) error {
 	}
 	s.records = append(s.records, record)
 	s.meta.UpdatedAt = record.Timestamp
+	if !s.persisted {
+		return nil
+	}
 	return s.writeRecordLocked(record)
 }
 
@@ -357,6 +358,65 @@ func (s *Session) ID() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.meta.SessionID
+}
+
+// Activate materializes session files and flushes buffered state to disk.
+func (s *Session) Activate() error {
+	if s == nil {
+		return fmt.Errorf("session is nil")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.persisted {
+		return nil
+	}
+
+	file, enc, err := openAppender(s.path, false)
+	if err != nil {
+		return err
+	}
+
+	s.file = file
+	s.enc = enc
+
+	if err := s.writeRecordLocked(s.meta); err != nil {
+		s.cleanupActivationFailureLocked()
+		return err
+	}
+	for _, record := range s.records {
+		if err := s.writeRecordLocked(record); err != nil {
+			s.cleanupActivationFailureLocked()
+			return err
+		}
+	}
+	if err := s.writeSnapshotLocked(); err != nil {
+		s.cleanupActivationFailureLocked()
+		return err
+	}
+	s.persisted = true
+	return nil
+}
+
+// HasPersistedDialogue reports whether this session has persisted user/assistant dialogue.
+func (s *Session) HasPersistedDialogue() bool {
+	if s == nil {
+		return false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if !s.persisted {
+		return false
+	}
+	for _, record := range s.records {
+		if record.Type == recordTypeUser || record.Type == recordTypeAssistant {
+			return true
+		}
+	}
+	return false
 }
 
 // Meta returns a copy of the persisted meta record.
@@ -479,6 +539,7 @@ func loadFromPath(path string) (*Session, error) {
 		snapshot:     snapshot,
 		path:         path,
 		snapshotPath: snapPath,
+		persisted:    true,
 		file:         appender,
 		enc:          enc,
 	}, nil
@@ -528,11 +589,25 @@ func (s *Session) SaveSnapshot(systemPrompt string, messages []llm.Message) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.meta.SystemPrompt = systemPrompt
 	s.snapshot.SystemPrompt = systemPrompt
 	s.snapshot.UpdatedAt = time.Now()
 	s.snapshot.Messages = make([]llm.Message, len(messages))
 	copy(s.snapshot.Messages, messages)
+	if !s.persisted {
+		return nil
+	}
 	return s.writeSnapshotLocked()
+}
+
+func (s *Session) cleanupActivationFailureLocked() {
+	if s.file != nil {
+		_ = s.file.Close()
+	}
+	s.file = nil
+	s.enc = nil
+	_ = os.Remove(s.path)
+	_ = os.Remove(s.snapshotPath)
 }
 
 func (s *Session) writeSnapshotLocked() error {

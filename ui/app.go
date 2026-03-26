@@ -123,7 +123,7 @@ type App struct {
 	bootActive    bool
 	bootHighlight int
 	queuedInputs  []string
-	hintNoteIndex int  // which hint note to show (0=skills, 1=release)
+	hintNoteIndex int // which hint note to show (0=skills, 1=release)
 }
 
 // New creates a new App driven by the given event channel.
