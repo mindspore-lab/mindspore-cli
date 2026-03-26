@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 var (
@@ -43,12 +44,28 @@ var (
 
 	mdItalicStyle = lipgloss.NewStyle().Italic(true)
 
+	mdStrikeStyle = lipgloss.NewStyle().Strikethrough(true)
+
 	mdLinkStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("117")).
 			Underline(true)
 
 	mdLinkURLStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244"))
+
+	mdTableBorderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240"))
+
+	mdTableHeaderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("230")).
+				Bold(true)
+
+	mdCodeLangStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214")).
+			Background(lipgloss.Color("236")).
+			Bold(true).
+			PaddingLeft(1).
+			PaddingRight(1)
 )
 
 func renderAgentContent(content string) string {
@@ -65,12 +82,23 @@ func renderMarkdown(content string) string {
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	rendered := make([]string, 0, len(lines))
 	inCodeBlock := false
+	codeLang := ""
 
-	for _, line := range lines {
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		trimmed := strings.TrimSpace(line)
 
 		if strings.HasPrefix(trimmed, "```") {
+			if !inCodeBlock {
+				codeLang = strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
+				if codeLang != "" {
+					rendered = append(rendered, mdCodeLangStyle.Render(codeLang))
+				}
+			}
 			inCodeBlock = !inCodeBlock
+			if !inCodeBlock {
+				codeLang = ""
+			}
 			continue
 		}
 		if inCodeBlock {
@@ -81,6 +109,11 @@ func renderMarkdown(content string) string {
 			rendered = append(rendered, "")
 			continue
 		}
+		if block, next, ok := markdownTable(lines, i); ok {
+			rendered = append(rendered, block)
+			i = next - 1
+			continue
+		}
 		if heading, level, ok := markdownHeading(line); ok {
 			rendered = append(rendered, markdownHeadingStyle(level).Render(renderInlineMarkdown(heading)))
 			continue
@@ -89,12 +122,16 @@ func renderMarkdown(content string) string {
 			rendered = append(rendered, mdQuoteStyle.Render("│ "+renderInlineMarkdown(quote)))
 			continue
 		}
-		if item, ok := markdownBullet(line); ok {
-			rendered = append(rendered, agentStyle.Render("• ")+renderInlineMarkdown(item))
+		if indent, checked, item, ok := markdownTaskItem(line); ok {
+			rendered = append(rendered, renderListPrefix(indent, taskListMarker(checked))+renderInlineMarkdown(item))
 			continue
 		}
-		if index, item, ok := markdownOrderedItem(line); ok {
-			rendered = append(rendered, agentStyle.Render(index+". ")+renderInlineMarkdown(item))
+		if indent, item, ok := markdownBullet(line); ok {
+			rendered = append(rendered, renderListPrefix(indent, "• ")+renderInlineMarkdown(item))
+			continue
+		}
+		if indent, index, item, ok := markdownOrderedItem(line); ok {
+			rendered = append(rendered, renderListPrefix(indent, index+". ")+renderInlineMarkdown(item))
 			continue
 		}
 		if markdownRule(trimmed) {
@@ -105,6 +142,156 @@ func renderMarkdown(content string) string {
 	}
 
 	return strings.Join(rendered, "\n")
+}
+
+type tableAlignment int
+
+const (
+	alignLeft tableAlignment = iota
+	alignCenter
+	alignRight
+)
+
+func markdownTable(lines []string, start int) (string, int, bool) {
+	if start+1 >= len(lines) {
+		return "", start, false
+	}
+	header := strings.TrimSpace(lines[start])
+	separator := strings.TrimSpace(lines[start+1])
+	if !isMarkdownTableRow(header) || !isMarkdownTableSeparator(separator) {
+		return "", start, false
+	}
+
+	rows := [][]string{parseMarkdownTableRow(header)}
+	i := start + 2
+	for i < len(lines) {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || !isMarkdownTableRow(trimmed) {
+			break
+		}
+		rows = append(rows, parseMarkdownTableRow(trimmed))
+		i++
+	}
+	if len(rows) < 2 {
+		return "", start, false
+	}
+	return renderMarkdownTable(rows, parseMarkdownTableAlignment(separator)), i, true
+}
+
+func isMarkdownTableRow(line string) bool {
+	line = strings.TrimSpace(line)
+	return strings.Count(line, "|") >= 2
+}
+
+func isMarkdownTableSeparator(line string) bool {
+	if !isMarkdownTableRow(line) {
+		return false
+	}
+	cells := parseMarkdownTableRow(line)
+	if len(cells) == 0 {
+		return false
+	}
+	for _, cell := range cells {
+		cell = strings.TrimSpace(cell)
+		if cell == "" {
+			return false
+		}
+		for _, r := range cell {
+			if r != '-' && r != ':' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func parseMarkdownTableRow(line string) []string {
+	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, "|") {
+		line = strings.TrimPrefix(line, "|")
+	}
+	if strings.HasSuffix(line, "|") {
+		line = strings.TrimSuffix(line, "|")
+	}
+	parts := strings.Split(line, "|")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, strings.TrimSpace(part))
+	}
+	return out
+}
+
+func renderMarkdownTable(rows [][]string, aligns []tableAlignment) string {
+	colCount := 0
+	for _, row := range rows {
+		if len(row) > colCount {
+			colCount = len(row)
+		}
+	}
+	widths := make([]int, colCount)
+	for _, row := range rows {
+		for col := 0; col < colCount; col++ {
+			cell := ""
+			if col < len(row) {
+				cell = row[col]
+			}
+			if w := plainTextWidth(renderInlineMarkdown(cell)); w > widths[col] {
+				widths[col] = w
+			}
+		}
+	}
+
+	lines := []string{renderTableBorder("┌", "┬", "┐", widths), renderTableRow(rows[0], widths, true, aligns), renderTableBorder("├", "┼", "┤", widths)}
+	for _, row := range rows[1:] {
+		lines = append(lines, renderTableRow(row, widths, false, aligns))
+	}
+	lines = append(lines, renderTableBorder("└", "┴", "┘", widths))
+	return strings.Join(lines, "\n")
+}
+
+func renderTableBorder(left, middle, right string, widths []int) string {
+	parts := make([]string, 0, len(widths)*2+1)
+	parts = append(parts, left)
+	for i, width := range widths {
+		if i > 0 {
+			parts = append(parts, middle)
+		}
+		parts = append(parts, strings.Repeat("─", width+2))
+	}
+	parts = append(parts, right)
+	return mdTableBorderStyle.Render(strings.Join(parts, ""))
+}
+
+func renderTableRow(row []string, widths []int, header bool, aligns ...[]tableAlignment) string {
+	var b strings.Builder
+	b.WriteString(mdTableBorderStyle.Render("│"))
+	var colAligns []tableAlignment
+	if len(aligns) > 0 {
+		colAligns = aligns[0]
+	}
+	for i, width := range widths {
+		text := ""
+		if i < len(row) {
+			text = row[i]
+		}
+		rendered := renderInlineMarkdown(text)
+		leftPad, rightPad := tablePadding(width, plainTextWidth(rendered), alignmentAt(colAligns, i, header))
+		b.WriteString(" ")
+		b.WriteString(strings.Repeat(" ", leftPad))
+		if header {
+			b.WriteString(mdTableHeaderStyle.Render(rendered))
+		} else {
+			b.WriteString(rendered)
+		}
+		b.WriteString(strings.Repeat(" ", rightPad))
+		b.WriteString(" ")
+		b.WriteString(mdTableBorderStyle.Render("│"))
+	}
+	return b.String()
+}
+
+func plainTextWidth(rendered string) int {
+	return runewidth.StringWidth(ansiEscapePattern.ReplaceAllString(rendered, ""))
 }
 
 func markdownHeading(line string) (string, int, bool) {
@@ -138,30 +325,46 @@ func markdownQuote(line string) (string, bool) {
 	return strings.TrimSpace(strings.TrimPrefix(trimmed, ">")), true
 }
 
-func markdownBullet(line string) (string, bool) {
-	trimmed := strings.TrimLeft(line, " \t")
+func markdownBullet(line string) (int, string, bool) {
+	indent, trimmed := markdownIndent(line)
 	if len(trimmed) < 2 {
-		return "", false
+		return 0, "", false
 	}
 	switch trimmed[0] {
 	case '-', '*', '+':
 		if trimmed[1] == ' ' {
-			return strings.TrimSpace(trimmed[2:]), true
+			return indent, strings.TrimSpace(trimmed[2:]), true
 		}
 	}
-	return "", false
+	return 0, "", false
 }
 
-func markdownOrderedItem(line string) (string, string, bool) {
-	trimmed := strings.TrimLeft(line, " \t")
+func markdownTaskItem(line string) (int, bool, string, bool) {
+	indent, trimmed := markdownIndent(line)
+	if len(trimmed) < 6 {
+		return 0, false, "", false
+	}
+	if (trimmed[0] != '-' && trimmed[0] != '*' && trimmed[0] != '+') || trimmed[1] != ' ' || trimmed[2] != '[' || trimmed[4] != ']' || trimmed[5] != ' ' {
+		return 0, false, "", false
+	}
+	switch trimmed[3] {
+	case ' ', 'x', 'X':
+		return indent, trimmed[3] == 'x' || trimmed[3] == 'X', strings.TrimSpace(trimmed[6:]), true
+	default:
+		return 0, false, "", false
+	}
+}
+
+func markdownOrderedItem(line string) (int, string, string, bool) {
+	indent, trimmed := markdownIndent(line)
 	i := 0
 	for i < len(trimmed) && trimmed[i] >= '0' && trimmed[i] <= '9' {
 		i++
 	}
 	if i == 0 || i+1 >= len(trimmed) || trimmed[i] != '.' || trimmed[i+1] != ' ' {
-		return "", "", false
+		return 0, "", "", false
 	}
-	return trimmed[:i], strings.TrimSpace(trimmed[i+2:]), true
+	return indent, trimmed[:i], strings.TrimSpace(trimmed[i+2:]), true
 }
 
 func markdownRule(line string) bool {
@@ -185,6 +388,12 @@ func renderInlineMarkdown(line string) string {
 	var out strings.Builder
 	for len(line) > 0 {
 		switch {
+		case strings.HasPrefix(line, "~~"):
+			if text, rest, ok := markdownDelimited(line, "~~"); ok {
+				out.WriteString(mdStrikeStyle.Render(renderInlineMarkdown(text)))
+				line = rest
+				continue
+			}
 		case strings.HasPrefix(line, "`"):
 			end := strings.Index(line[1:], "`")
 			if end >= 0 {
@@ -199,8 +408,20 @@ func renderInlineMarkdown(line string) string {
 				line = rest
 				continue
 			}
+		case strings.HasPrefix(line, "__"):
+			if text, rest, ok := markdownDelimited(line, "__"); ok {
+				out.WriteString(mdBoldStyle.Render(renderInlineMarkdown(text)))
+				line = rest
+				continue
+			}
 		case strings.HasPrefix(line, "*"):
 			if text, rest, ok := markdownDelimited(line, "*"); ok {
+				out.WriteString(mdItalicStyle.Render(renderInlineMarkdown(text)))
+				line = rest
+				continue
+			}
+		case strings.HasPrefix(line, "_"):
+			if text, rest, ok := markdownDelimited(line, "_"); ok {
 				out.WriteString(mdItalicStyle.Render(renderInlineMarkdown(text)))
 				line = rest
 				continue
@@ -256,9 +477,12 @@ func markdownLink(line string) (string, string, string, bool) {
 
 func nextMarkdownToken(line string) int {
 	indexes := []int{
+		strings.Index(line, "~~"),
 		strings.Index(line, "`"),
 		strings.Index(line, "**"),
+		strings.Index(line, "__"),
 		strings.Index(line, "*"),
+		strings.Index(line, "_"),
 		strings.Index(line, "["),
 	}
 	best := -1
@@ -271,4 +495,76 @@ func nextMarkdownToken(line string) int {
 		}
 	}
 	return best
+}
+
+func markdownIndent(line string) (int, string) {
+	spaces := 0
+	for _, r := range line {
+		if r == ' ' {
+			spaces++
+			continue
+		}
+		if r == '\t' {
+			spaces += 2
+			continue
+		}
+		break
+	}
+	return spaces / 2, strings.TrimLeft(line, " \t")
+}
+
+func renderListPrefix(indent int, marker string) string {
+	return agentStyle.Render(strings.Repeat("  ", indent) + marker)
+}
+
+func taskListMarker(checked bool) string {
+	if checked {
+		return "[x] "
+	}
+	return "[ ] "
+}
+
+func parseMarkdownTableAlignment(line string) []tableAlignment {
+	cells := parseMarkdownTableRow(line)
+	aligns := make([]tableAlignment, 0, len(cells))
+	for _, cell := range cells {
+		cell = strings.TrimSpace(cell)
+		left := strings.HasPrefix(cell, ":")
+		right := strings.HasSuffix(cell, ":")
+		switch {
+		case left && right:
+			aligns = append(aligns, alignCenter)
+		case right:
+			aligns = append(aligns, alignRight)
+		default:
+			aligns = append(aligns, alignLeft)
+		}
+	}
+	return aligns
+}
+
+func alignmentAt(aligns []tableAlignment, col int, header bool) tableAlignment {
+	if header {
+		return alignCenter
+	}
+	if col >= 0 && col < len(aligns) {
+		return aligns[col]
+	}
+	return alignLeft
+}
+
+func tablePadding(cellWidth, contentWidth int, align tableAlignment) (int, int) {
+	if contentWidth >= cellWidth {
+		return 0, 0
+	}
+	space := cellWidth - contentWidth
+	switch align {
+	case alignRight:
+		return space, 0
+	case alignCenter:
+		left := space / 2
+		return left, space - left
+	default:
+		return 0, space
+	}
 }
