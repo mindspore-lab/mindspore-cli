@@ -1,0 +1,149 @@
+name: Sync GitCode Release
+
+on:
+  release:
+    types:
+      - published
+      - edited
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview the GitCode API request without creating or updating a release"
+        required: false
+        default: true
+        type: boolean
+      tag_name:
+        description: "Release tag to sync"
+        required: true
+        type: string
+      release_name:
+        description: "Release title to sync (defaults to tag name if empty)"
+        required: false
+        type: string
+      body:
+        description: "Release notes markdown"
+        required: false
+        type: string
+      target_commitish:
+        description: "Target branch or commit"
+        required: false
+        default: main
+        type: string
+      prerelease:
+        description: "Whether this should be treated as a prerelease"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-gitcode-release-${{ github.event.release.tag_name || inputs.tag_name || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  sync-gitcode-release:
+    runs-on: ubuntu-latest
+    env:
+      GITCODE_OWNER: ${{ secrets.GITCODE_OWNER }}
+      GITCODE_REPO: ${{ secrets.GITCODE_REPO }}
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      GITCODE_API_BASE: ${{ secrets.GITCODE_API_BASE || 'https://api.gitcode.com/api/v5' }}
+      GH_TAG: ${{ github.event.release.tag_name || inputs.tag_name }}
+      GH_NAME: ${{ github.event.release.name || inputs.release_name }}
+      GH_BODY: ${{ github.event.release.body || inputs.body }}
+      GH_TARGET: ${{ github.event.release.target_commitish || inputs.target_commitish }}
+      GH_PRERELEASE: ${{ github.event.release.prerelease || inputs.prerelease || false }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+
+    steps:
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITCODE_OWNER}"
+          test -n "${GITCODE_REPO}"
+          test -n "${GH_TAG}"
+          if [ "${DRY_RUN}" != "true" ]; then
+            test -n "${GITCODE_TOKEN}"
+          fi
+
+      - name: Sync release metadata to GitCode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          api="${GITCODE_API_BASE}/repos/${GITCODE_OWNER}/${GITCODE_REPO}"
+          auth_q="access_token=${GITCODE_TOKEN}"
+          release_name="${GH_NAME:-$GH_TAG}"
+          release_body="${GH_BODY:-}"
+
+          payload="$(jq -n \
+            --arg tag "${GH_TAG}" \
+            --arg name "${release_name}" \
+            --arg body "${release_body}" \
+            --arg target "${GH_TARGET}" \
+            --argjson prerelease "${GH_PRERELEASE:-false}" \
+            '{
+              tag_name: $tag,
+              name: $name,
+              body: $body,
+              target_commitish: $target,
+              prerelease: $prerelease
+            }'
+          )"
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "Dry run enabled. No GitCode release will be created or updated."
+            echo "GET ${api}/releases/tags/${GH_TAG}"
+            echo "POST ${api}/releases"
+            echo "PATCH ${api}/releases/<id>"
+            echo "Payload:"
+            echo "${payload}" | jq .
+            exit 0
+          fi
+
+          echo "Checking GitCode release for tag ${GH_TAG}..."
+          http_code="$(curl -sS -o release.json -w "%{http_code}" \
+            "${api}/releases/tags/${GH_TAG}?${auth_q}")"
+
+          if [ "${http_code}" = "200" ]; then
+            release_id="$(jq -r '.id' release.json)"
+            echo "Updating existing GitCode release id=${release_id}..."
+            curl -sS --fail \
+              -X PATCH \
+              "${api}/releases/${release_id}?${auth_q}" \
+              -H "Content-Type: application/json" \
+              -d "${payload}" \
+              > result.json
+            jq '{id, tag_name, name}' result.json
+            exit 0
+          fi
+
+          if [ "${http_code}" != "404" ]; then
+            echo "Unexpected GitCode release lookup response: ${http_code}"
+            cat release.json || true
+            exit 1
+          fi
+
+          echo "Creating GitCode release for tag ${GH_TAG}..."
+          curl -sS --fail \
+            -X POST \
+            "${api}/releases?${auth_q}" \
+            -H "Content-Type: application/json" \
+            -d "${payload}" \
+            > result.json
+          jq '{id, tag_name, name}' result.json
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "## GitCode release sync"
+            echo ""
+            echo "- tag: \`${GH_TAG}\`"
+            echo "- repo: \`${GITCODE_OWNER}/${GITCODE_REPO}\`"
+            echo "- source: \`${{ github.event_name }}\`"
+            echo "- dry-run: \`${DRY_RUN}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
