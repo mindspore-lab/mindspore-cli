@@ -122,7 +122,7 @@ func (m *renderOnceModel) View() string {
 	return "success\n"
 }
 
-func TestTUIProgramOptionsEnableMouseWheelScrolling(t *testing.T) {
+func TestTUIProgramOptionsEnableAltScreenAndBracketedPaste(t *testing.T) {
 	var in bytes.Buffer
 	var out bytes.Buffer
 
@@ -140,12 +140,15 @@ func TestTUIProgramOptionsEnableMouseWheelScrolling(t *testing.T) {
 
 	got := out.String()
 	for _, want := range []string{
-		"\x1b[?1049h",
-		"\x1b[?1002h",
-		"\x1b[?1006h",
+		"\x1b[?1049h", // alt screen
+		"\x1b[?2004h", // bracketed paste
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected startup output to include %q, got %q", want, got)
 		}
+	}
+	// Mouse cell motion must NOT be enabled (breaks terminal paste)
+	if strings.Contains(got, "\x1b[?1002h") {
+		t.Fatal("mouse cell motion should be disabled to allow terminal paste")
 	}
 }

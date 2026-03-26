@@ -78,7 +78,6 @@ func (a *Application) runReal() error {
 func tuiProgramOptions(extra ...tea.ProgramOption) []tea.ProgramOption {
 	opts := []tea.ProgramOption{
 		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
 	}
 	return append(opts, extra...)
 }
