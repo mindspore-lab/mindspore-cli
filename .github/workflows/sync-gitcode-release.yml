@@ -204,27 +204,39 @@ jobs:
           fi
 
       - name: Upload release assets to GitCode
-        if: env.DRY_RUN != 'true' && env.asset_count != '0' && env.gitcode_release_id != ''
+        if: env.DRY_RUN != 'true' && env.asset_count != '0'
         shell: bash
         run: |
           set -euo pipefail
 
           api="${GITCODE_API_BASE}/repos/${GITCODE_OWNER}/${GITCODE_REPO}"
-          release_id="${gitcode_release_id}"
-
-          echo "Uploading assets to GitCode release id=${release_id}..."
+          auth_q="access_token=${GITCODE_TOKEN}"
 
           for file in release-assets/*; do
             if [ ! -f "${file}" ]; then
               continue
             fi
             file_name="$(basename "${file}")"
-            echo "Uploading ${file_name}..."
+            echo "Resolving upload URL for ${file_name}..."
+            curl -sS -G -o upload-url.json -w "" \
+              --data-urlencode "file_name=${file_name}" \
+              "${api}/releases/${GH_TAG}/upload_url?${auth_q}"
+
+            upload_url="$(jq -r '.upload_url // .url // .data.upload_url // .data.url // empty' upload-url.json)"
+            if [ -z "${upload_url}" ]; then
+              upload_url="$(jq -r 'strings' upload-url.json | head -n 1)"
+            fi
+            if [ -z "${upload_url}" ] || [ "${upload_url}" = "null" ]; then
+              echo "Could not determine upload URL for ${file_name}:"
+              cat upload-url.json
+              exit 1
+            fi
+
+            echo "Uploading ${file_name} (no auth - pre-signed URL)..."
             curl -sS --fail \
               -X POST \
-              -H "Authorization: Bearer ${GITCODE_TOKEN}" \
               -F "file=@${file}" \
-              "${api}/releases/${release_id}/attach_files"
+              "${upload_url}"
           done
 
       - name: Summary
