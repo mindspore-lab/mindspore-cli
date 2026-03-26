@@ -2,6 +2,7 @@ package session
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/vigo999/ms-cli/integrations/llm"
@@ -86,5 +87,18 @@ func TestCreateDefersDiskWritesUntilActivate(t *testing.T) {
 	replay := loaded.ReplayEvents()
 	if len(replay) != 3 {
 		t.Fatalf("replay event count = %d, want 3", len(replay))
+	}
+}
+
+func TestWorkDirKeySanitizesWindowsInvalidFilenameChars(t *testing.T) {
+	key := workDirKey(`C:\Users\alice\work\ms-cli`)
+
+	for _, invalid := range []string{`\\`, ":", "*", "?", `"`, "<", ">", "|", "/"} {
+		if strings.Contains(key, invalid) {
+			t.Fatalf("workDirKey(%q) = %q, contains invalid filename char %q", `C:\Users\alice\work\ms-cli`, key, invalid)
+		}
+	}
+	if strings.Trim(key, ".- ") == "" {
+		t.Fatalf("workDirKey(%q) = %q, want non-empty safe key", `C:\Users\alice\work\ms-cli`, key)
 	}
 }

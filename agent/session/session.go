@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/ui/model"
@@ -650,7 +651,29 @@ func normalizeWorkDir(workDir string) (string, error) {
 }
 
 func workDirKey(absWorkDir string) string {
-	return strings.ReplaceAll(filepath.Clean(absWorkDir), string(os.PathSeparator), "-")
+	key := filepath.Clean(absWorkDir)
+	replacer := strings.NewReplacer(
+		"/", "-",
+		"\\", "-",
+		":", "-",
+		"*", "-",
+		"?", "-",
+		"\"", "-",
+		"<", "-",
+		">", "-",
+		"|", "-",
+	)
+	key = replacer.Replace(key)
+	key = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '-'
+		}
+		return r
+	}, key)
+	if strings.Trim(key, ".- ") == "" {
+		return "workdir"
+	}
+	return key
 }
 
 func sessionBucketDir(key string) string {
