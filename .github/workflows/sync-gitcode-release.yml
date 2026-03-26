@@ -69,6 +69,30 @@ jobs:
             test -n "${GITCODE_TOKEN}"
           fi
 
+      - name: Download GitHub release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+
+          if [ "${{ github.event_name }}" = "release" ]; then
+            asset_count="$(jq '.release.assets | length' "${GITHUB_EVENT_PATH}")"
+          else
+            asset_count="$(gh release view "${GH_TAG}" --json assets --jq '.assets | length' 2>/dev/null || echo 0)"
+          fi
+
+          echo "GitHub release asset count: ${asset_count}"
+          echo "asset_count=${asset_count}" >> "${GITHUB_ENV}"
+
+          if [ "${asset_count}" = "0" ]; then
+            exit 0
+          fi
+
+          gh release download "${GH_TAG}" --dir release-assets
+          ls -lah release-assets
+
       - name: Sync release metadata to GitCode
         shell: bash
         run: |
@@ -101,6 +125,15 @@ jobs:
             echo "PATCH ${api}/releases/<id>"
             echo "Payload:"
             echo "${payload}" | jq .
+            if [ "${asset_count:-0}" != "0" ]; then
+              echo ""
+              echo "GitHub release assets found:"
+              find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
+              echo ""
+              echo "Planned GitCode attachment flow:"
+              echo "GET ${api}/releases/${GH_TAG}/upload_url"
+              echo "POST <upload_url> (multipart file upload)"
+            fi
             exit 0
           fi
 
@@ -136,6 +169,42 @@ jobs:
             > result.json
           jq '{id, tag_name, name}' result.json
 
+      - name: Upload release assets to GitCode
+        if: env.DRY_RUN != 'true' && env.asset_count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          api="${GITCODE_API_BASE}/repos/${GITCODE_OWNER}/${GITCODE_REPO}"
+          auth_q="access_token=${GITCODE_TOKEN}"
+
+          echo "Resolving GitCode release upload URL for tag ${GH_TAG}..."
+          curl -sS --fail \
+            "${api}/releases/${GH_TAG}/upload_url?${auth_q}" \
+            > upload-url.json
+
+          upload_url="$(jq -r '.upload_url // .url // .data.upload_url // .data.url // empty' upload-url.json)"
+          if [ -z "${upload_url}" ]; then
+            upload_url="$(jq -r 'strings' upload-url.json | head -n 1)"
+          fi
+
+          if [ -z "${upload_url}" ] || [ "${upload_url}" = "null" ]; then
+            echo "Could not determine GitCode release upload URL from response:"
+            cat upload-url.json
+            exit 1
+          fi
+
+          for file in release-assets/*; do
+            if [ ! -f "${file}" ]; then
+              continue
+            fi
+            echo "Uploading $(basename "${file}") to GitCode release..."
+            curl -sS --fail \
+              -X POST \
+              "${upload_url}" \
+              -F "file=@${file}"
+          done
+
       - name: Summary
         shell: bash
         run: |
@@ -146,4 +215,5 @@ jobs:
             echo "- repo: \`${GITCODE_OWNER}/${GITCODE_REPO}\`"
             echo "- source: \`${{ github.event_name }}\`"
             echo "- dry-run: \`${DRY_RUN}\`"
+            echo "- asset-count: \`${asset_count:-0}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
