@@ -48,7 +48,7 @@ func (a *Application) run() error {
 func (a *Application) runReal() error {
 	userCh := make(chan string, 8)
 	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
-	p := tea.NewProgram(tui, tea.WithAltScreen())
+	p := tea.NewProgram(tui, tuiProgramOptions()...)
 
 	// Emit saved login so the topbar shows the user immediately.
 	if a.issueUser != "" {
@@ -61,6 +61,14 @@ func (a *Application) runReal() error {
 	_, err := p.Run()
 	close(userCh)
 	return err
+}
+
+func tuiProgramOptions(extra ...tea.ProgramOption) []tea.ProgramOption {
+	opts := []tea.ProgramOption{
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	}
+	return append(opts, extra...)
 }
 
 func (a *Application) inputLoop(userCh <-chan string) {

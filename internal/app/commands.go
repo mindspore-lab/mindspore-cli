@@ -430,6 +430,7 @@ Permission Levels:
 
 Keybindings:
   enter      Send input
+  shift+drag Select terminal text in compatible terminals
   mouse wheel Scroll chat
   pgup/pgdn  Scroll chat
   home/end   Jump to top/bottom

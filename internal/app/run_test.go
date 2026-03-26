@@ -1,12 +1,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vigo999/ms-cli/agent/loop"
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/tools"
@@ -97,6 +99,53 @@ func TestInterruptTokenCancelsActiveTask(t *testing.T) {
 			}
 		case <-deadline:
 			return
+		}
+	}
+}
+
+type renderOnceModel struct {
+	rendered chan struct{}
+}
+
+func (m *renderOnceModel) Init() tea.Cmd { return nil }
+
+func (m *renderOnceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	return m, nil
+}
+
+func (m *renderOnceModel) View() string {
+	select {
+	case <-m.rendered:
+	default:
+		close(m.rendered)
+	}
+	return "success\n"
+}
+
+func TestTUIProgramOptionsEnableMouseWheelScrolling(t *testing.T) {
+	var in bytes.Buffer
+	var out bytes.Buffer
+
+	m := &renderOnceModel{rendered: make(chan struct{})}
+	p := tea.NewProgram(m, tuiProgramOptions(tea.WithInput(&in), tea.WithOutput(&out))...)
+
+	go func() {
+		<-m.rendered
+		p.Quit()
+	}()
+
+	if _, err := p.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"\x1b[?1049h",
+		"\x1b[?1002h",
+		"\x1b[?1006h",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected startup output to include %q, got %q", want, got)
 		}
 	}
 }
