@@ -232,9 +232,11 @@ jobs:
               exit 1
             fi
 
-            echo "Uploading ${file_name} (no auth - pre-signed URL)..."
+            echo "Upload URL: ${upload_url}"
+            echo "Uploading ${file_name} with Bearer auth..."
             curl -sS --fail \
               -X POST \
+              -H "Authorization: Bearer ${GITCODE_TOKEN}" \
               -F "file=@${file}" \
               "${upload_url}"
           done
