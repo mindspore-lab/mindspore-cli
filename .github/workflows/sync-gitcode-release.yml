@@ -155,8 +155,13 @@ jobs:
           if [ "${http_code}" = "200" ]; then
             release_id="$(jq -r '.id // empty' release.json)"
             if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
-              echo "Existing GitCode release found by tag; no release id in response, skipping metadata update."
-              jq '{tag_name, name}' release.json
+              echo "No id in tag lookup response, searching releases list..."
+              curl -sS -o releases-list.json \
+                "${api}/releases?${auth_q}&per_page=100"
+              release_id="$(jq -r --arg tag "${GH_TAG}" '.[] | select(.tag_name == $tag) | .id // empty' releases-list.json | head -n 1)"
+            fi
+            if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
+              echo "Could not determine release id for tag ${GH_TAG}, skipping update."
               exit 0
             fi
             echo "Updating existing GitCode release id=${release_id}..."
