@@ -390,7 +390,7 @@ var loopEventTypeMap = map[string]model.EventType{
 func convertLoopEvent(ev loop.Event) *model.Event {
 	uiType, ok := loopEventTypeMap[ev.Type]
 	if !ok {
-		if ev.Type == "TaskCompleted" {
+		if ev.Type == "TaskCompleted" || ev.Type == "TaskStarted" {
 			return nil
 		}
 		if ev.Message != "" {
