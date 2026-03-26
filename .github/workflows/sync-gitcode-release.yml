@@ -232,12 +232,10 @@ jobs:
               exit 1
             fi
 
-            echo "Upload URL: ${upload_url}"
-            echo "Uploading ${file_name} with Bearer auth..."
+            echo "Uploading ${file_name}..."
             curl -sS --fail \
-              -X POST \
-              -H "Authorization: Bearer ${GITCODE_TOKEN}" \
-              -F "file=@${file}" \
+              -X PUT \
+              -T "${file}" \
               "${upload_url}"
           done
 
