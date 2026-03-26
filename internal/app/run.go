@@ -19,6 +19,7 @@ import (
 
 const provideAPIKeyFirstMsg = "provide api key first"
 const interruptActiveTaskToken = "__interrupt_active_task__"
+const internalPermissionsActionPrefix = "\x00permissions:"
 
 // Run parses CLI args, wires dependencies, and starts the application.
 func Run(args []string) error {
@@ -69,6 +70,9 @@ func (a *Application) runReal() error {
 
 	go a.replayHistory()
 	go a.inputLoop(userCh)
+	if a.permissionSettingsIssue != nil {
+		a.emitPermissionSettingsPrompt("")
+	}
 
 	_, err := p.Run()
 	close(userCh)
@@ -89,6 +93,12 @@ func (a *Application) inputLoop(userCh <-chan string) {
 }
 
 func (a *Application) processInput(input string) {
+	if strings.HasPrefix(input, internalPermissionsActionPrefix) {
+		payload := strings.TrimPrefix(input, internalPermissionsActionPrefix)
+		a.cmdPermissionsInternal(strings.Fields(payload))
+		return
+	}
+
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
 		return
@@ -96,6 +106,11 @@ func (a *Application) processInput(input string) {
 
 	if trimmed == bootReadyToken {
 		a.startDeferredStartup()
+		return
+	}
+
+	if a.permissionSettingsIssue != nil {
+		a.handlePermissionSettingsPromptInput(trimmed)
 		return
 	}
 
@@ -109,12 +124,39 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
+	if a.permissionUI != nil && a.permissionUI.HandleInput(trimmed) {
+		return
+	}
+
 	if strings.HasPrefix(trimmed, "/") {
 		a.handleCommand(trimmed)
 		return
 	}
 
 	go a.runTask(trimmed)
+}
+
+func (a *Application) handlePermissionSettingsPromptInput(input string) {
+	if a == nil || a.permissionSettingsIssue == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "1", "y", "yes", "exit":
+		a.permissionSettingsIssue = nil
+		if a.EventCh != nil {
+			a.EventCh <- model.Event{Type: model.Done}
+		}
+	case "2", "c", "continue":
+		a.permissionSettingsIssue = nil
+		if a.EventCh != nil {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: "Continuing without the invalid permission settings file.",
+			}
+		}
+	default:
+		a.emitPermissionSettingsPrompt("Please choose 1 or 2.")
+	}
 }
 
 func (a *Application) runTask(description string) {
@@ -413,4 +455,3 @@ func convertLoopEvent(ev loop.Event) *model.Event {
 func generateTaskID() string {
 	return time.Now().Format("20060102-150405-000")
 }
-

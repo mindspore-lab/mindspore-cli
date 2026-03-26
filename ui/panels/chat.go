@@ -70,6 +70,23 @@ var (
 	diffNeutralStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("250")).
 				PaddingLeft(2)
+
+	toolPendingDotStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240"))
+	toolSuccessDotStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("114"))
+	toolErrorDotStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("196"))
+	toolCallLineStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252"))
+	toolResultPrefixStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("244"))
+	toolResultSummaryStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("250"))
+	toolResultDetailStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245"))
+	toolResultErrorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("203"))
 )
 
 // RenderMessages converts messages into styled text for the viewport.
@@ -121,111 +138,96 @@ func renderThinking(thinkingView string, width int) string {
 }
 
 func renderTool(m model.Message, width int) string {
-	switch m.Display {
-	case model.DisplayCollapsed:
-		return renderCollapsedTool(m, width)
-	case model.DisplayError:
-		return renderErrorTool(m, width)
+	call := renderToolCallLine(m)
+	if m.Pending {
+		return renderPrefixedBlock(call, width, "  ", "  ")
+	}
+	summary, details := toolResult(m)
+	if summary == "" && len(details) == 0 {
+		return renderPrefixedBlock(call, width, "  ", "  ")
+	}
+	lines := []string{call}
+	if summary != "" {
+		lines = append(lines, "  "+toolResultPrefixStyle.Render("⎿")+"  "+renderToolSummary(m, summary))
+	}
+	for _, line := range details {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, "      "+renderToolDetail(m, line))
+	}
+	return renderPrefixedBlock(strings.Join(lines, "\n"), width, "  ", "  ")
+}
+
+func renderToolCallLine(m model.Message) string {
+	dot := toolPendingDotStyle.Render("⏺")
+	switch {
+	case m.Pending:
+		dot = toolPendingDotStyle.Render("⏺")
+	case m.Display == model.DisplayError:
+		dot = toolErrorDotStyle.Render("⏺")
 	default:
-		return renderExpandedTool(m, width)
+		dot = toolSuccessDotStyle.Render("⏺")
 	}
+	return toolCallLineStyle.Render(dot + " " + strings.TrimSpace(m.ToolName) + "(" + strings.TrimSpace(toolCallArgs(m)) + ")")
 }
 
-// --- Collapsed: single dim line ---
-// "  ▸ Read model/layer3.go — 42 lines"
-// "  ▸ Grep "allocTensor" — 5 matches"
-func renderCollapsedTool(m model.Message, width int) string {
-	if isHighlightedSkillTool(m.ToolName) {
-		return renderHighlightedCollapsedTool(m, width)
+func toolCallArgs(m model.Message) string {
+	args := strings.TrimSpace(m.ToolArgs)
+	if args == "" {
+		args = strings.TrimSpace(toolHeadline(m.Content))
 	}
-
-	summary := ""
-	if m.Summary != "" {
-		summary = " — " + collapsedSummaryStyle.Render(m.Summary)
+	if args == "" {
+		args = "none"
 	}
-	body := collapsedNameStyle.Render(strings.TrimSpace(m.ToolName + " " + m.Content))
-	return renderPrefixedBlock(body+summary, width, "  "+collapsedIconStyle.Render("▸")+" ", "    ")
+	return args
 }
 
-func renderHighlightedCollapsedTool(m model.Message, width int) string {
-	body := collapsedTitleStyle.Render(strings.TrimSpace(m.ToolName))
-	if content := strings.TrimSpace(m.Content); content != "" {
-		body += " " + collapsedNameStyle.Render(content)
+func toolResult(m model.Message) (string, []string) {
+	lines := nonEmptyLines(m.Content)
+	summary := strings.TrimSpace(m.Summary)
+	if summary == "" && len(lines) > 0 {
+		summary = lines[0]
+		lines = lines[1:]
 	}
-	if summary := strings.TrimSpace(m.Summary); summary != "" {
-		if strings.Contains(summary, "\n") {
-			lines := strings.Split(summary, "\n")
-			for i := range lines {
-				lines[i] = collapsedSummaryStyle.Render(strings.TrimSpace(lines[i]))
-			}
-			body += "\n" + strings.Join(lines, "\n")
-		} else {
-			body += " — " + collapsedSummaryStyle.Render(summary)
+	return summary, lines
+}
+
+func renderToolSummary(m model.Message, line string) string {
+	if m.Display == model.DisplayError {
+		return toolResultErrorStyle.Render(line)
+	}
+	return toolResultSummaryStyle.Render(line)
+}
+
+func renderToolDetail(m model.Message, line string) string {
+	if m.Display == model.DisplayError {
+		return toolResultErrorStyle.Render(line)
+	}
+	return toolResultDetailStyle.Render(line)
+}
+
+func toolHeadline(content string) string {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	for _, line := range lines {
+		headline := strings.TrimSpace(line)
+		if headline != "" {
+			return headline
 		}
 	}
-	return renderPrefixedBlock(body, width, "  "+collapsedIconStyle.Render("▸")+" ", "    ")
+	return ""
 }
 
-func isHighlightedSkillTool(name string) bool {
-	name = strings.ToLower(strings.TrimSpace(name))
-	return strings.HasPrefix(name, "skill sync") ||
-		strings.HasPrefix(name, "skill ready") ||
-		strings.HasPrefix(name, "mindspore-skills")
-}
-
-// --- Expanded: full output with header + body ---
-func renderExpandedTool(m model.Message, width int) string {
-	// edit/write get diff rendering
-	if m.ToolName == "Edit" || m.ToolName == "Write" {
-		return renderDiffTool(m, width)
-	}
-
-	header := renderToolHeader("▸", m.ToolName, toolBorderStyle, toolHeaderStyle, width)
-
-	lines := strings.Split(m.Content, "\n")
-	styled := make([]string, len(lines))
-	for i, line := range lines {
-		styled[i] = toolContentStyle.Width(maxBodyWidth(width)).Render(line)
-	}
-	body := strings.Join(styled, "\n")
-
-	return header + "\n" + body
-}
-
-// --- Diff: edit/write with +/- coloring ---
-func renderDiffTool(m model.Message, width int) string {
-	header := renderToolHeader("▸", m.ToolName, toolBorderStyle, toolHeaderStyle, width)
-
-	lines := strings.Split(m.Content, "\n")
-	styled := make([]string, len(lines))
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(trimmed, "+"):
-			styled[i] = renderPrefixedBlock(diffAddStyle.Render(line), width, "  ", "  ")
-		case strings.HasPrefix(trimmed, "-"):
-			styled[i] = renderPrefixedBlock(diffRemoveStyle.Render(line), width, "  ", "  ")
-		default:
-			styled[i] = diffNeutralStyle.Width(maxBodyWidth(width)).Render(line)
+func nonEmptyLines(content string) []string {
+	raw := strings.Split(strings.TrimSpace(content), "\n")
+	out := make([]string, 0, len(raw))
+	for _, line := range raw {
+		if strings.TrimSpace(line) == "" {
+			continue
 		}
+		out = append(out, line)
 	}
-	body := strings.Join(styled, "\n")
-
-	return header + "\n" + body
-}
-
-// --- Error: red highlighted block ---
-func renderErrorTool(m model.Message, width int) string {
-	header := renderToolHeader("✗", m.ToolName+" failed", errorBorderStyle, errorHeaderStyle, width)
-
-	lines := strings.Split(m.Content, "\n")
-	styled := make([]string, len(lines))
-	for i, line := range lines {
-		styled[i] = errorContentStyle.Width(maxBodyWidth(width)).Render(line)
-	}
-	body := strings.Join(styled, "\n")
-
-	return header + "\n" + body
+	return out
 }
 
 func renderPrefixedBlock(content string, width int, firstPrefix, restPrefix string) string {

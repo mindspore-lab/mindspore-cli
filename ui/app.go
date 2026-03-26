@@ -14,19 +14,30 @@ import (
 )
 
 const (
-	topBarHeight              = 1 // brand line only
-	chatLineHeight            = 0
-	hintBarHeight             = 1
-	inputHeight               = 1
-	bottomSafePadding         = 2
-	verticalPad               = 2
-	bootDuration              = 2 * time.Second
-	bootTickRate              = 80 * time.Millisecond
-	bootReadyToken            = "__boot_ready__"
-	maxToolLines              = 120
-	maxToolRunes              = 12000
-	interruptQueuedTrainToken = "__interrupt_queued_train__"
-	interruptActiveTaskToken  = "__interrupt_active_task__"
+	topBarHeight                    = 1 // brand line only
+	chatLineHeight                  = 0
+	hintBarHeight                   = 1
+	inputHeight                     = 1
+	bottomSafePadding               = 2
+	verticalPad                     = 2
+	bootDuration                    = 2 * time.Second
+	bootTickRate                    = 80 * time.Millisecond
+	defaultToolMaxRunes             = 12000
+	writeEditPreviewHeadLines       = 5
+	writeEditPreviewTailLines       = 0
+	shellPreviewHeadLines           = 5
+	shellPreviewTailLines           = 0
+	errorPreviewHeadLines           = 5
+	errorPreviewTailLines           = 0
+	defaultPreviewHeadLines         = 5
+	defaultPreviewTailLines         = 0
+	collapsedPreviewMaxLines        = 3
+	bootReadyToken                  = "__boot_ready__"
+	maxToolLines                    = 120
+	maxToolRunes                    = 12000
+	interruptQueuedTrainToken       = "__interrupt_queued_train__"
+	interruptActiveTaskToken        = "__interrupt_active_task__"
+	internalPermissionsActionPrefix = "\x00permissions:"
 )
 
 var (
@@ -100,6 +111,39 @@ func evSource(data *model.TrainEventData, fallback string) string {
 type bootDoneMsg struct{}
 type bootTickMsg struct{}
 
+type permissionPromptState struct {
+	title    string
+	message  string
+	options  []model.PermissionOption
+	selected int
+}
+
+type permissionsViewState struct {
+	tab          int
+	search       string
+	searchCursor int
+	selected     int
+	allow        []string
+	ask          []string
+	deny         []string
+	dialogMode   permissionsDialogMode
+	dialogInput  string
+	dialogCursor int
+	dialogChoice int
+	dialogTarget string
+	dialogSource string
+	dialogRule   string
+}
+
+type permissionsDialogMode int
+
+const (
+	permissionsDialogNone permissionsDialogMode = iota
+	permissionsDialogAddRule
+	permissionsDialogChooseRuleScope
+	permissionsDialogDeleteRule
+)
+
 // App is the TUI root model.
 type App struct {
 	state         model.State
@@ -120,7 +164,11 @@ type App struct {
 	issueView     model.IssueViewState
 	bootActive    bool
 	bootHighlight int
-	queuedInputs []string
+	queuedInputs  []string
+
+	permissionPrompt *permissionPromptState
+	permissionsView  *permissionsViewState
+	toolsExpanded    bool
 }
 
 // New creates a new App driven by the given event channel.
@@ -191,6 +239,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		m, cmd := a.handleKey(msg)
+		if updated, ok := m.(App); ok {
+			updated.updateViewport()
+			m = updated
+		}
 		return m, a.ensureWaitForEvent(cmd)
 
 	case tea.MouseMsg:
@@ -289,8 +341,249 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleIssueKey(msg)
 	}
 
+	if msg.String() == "ctrl+o" {
+		a.toolsExpanded = !a.toolsExpanded
+		return a, nil
+	}
+
 	if a.bugView.Active() {
 		return a.handleBugKey(msg)
+	}
+
+	if a.permissionPrompt != nil {
+		switch msg.String() {
+		case "up", "left":
+			if len(a.permissionPrompt.options) > 0 {
+				a.permissionPrompt.selected--
+				if a.permissionPrompt.selected < 0 {
+					a.permissionPrompt.selected = len(a.permissionPrompt.options) - 1
+				}
+			}
+			return a, nil
+		case "down", "right", "tab":
+			if len(a.permissionPrompt.options) > 0 {
+				a.permissionPrompt.selected = (a.permissionPrompt.selected + 1) % len(a.permissionPrompt.options)
+			}
+			return a, nil
+		case "enter":
+			if len(a.permissionPrompt.options) > 0 {
+				input := a.permissionPrompt.options[a.permissionPrompt.selected].Input
+				a.permissionPrompt = nil
+				if a.userCh != nil {
+					select {
+					case a.userCh <- input:
+					default:
+					}
+				}
+			}
+			return a, nil
+		case "esc":
+			a.permissionPrompt = nil
+			if a.userCh != nil {
+				select {
+				case a.userCh <- "esc":
+				default:
+				}
+			}
+			return a, nil
+		default:
+			return a, nil
+		}
+	}
+
+	if a.permissionsView != nil {
+		if a.permissionsView.dialogMode != permissionsDialogNone {
+			switch a.permissionsView.dialogMode {
+			case permissionsDialogAddRule:
+				switch msg.String() {
+				case "enter":
+					if rule := strings.TrimSpace(a.permissionsView.dialogInput); rule != "" {
+						a.permissionsView.dialogRule = rule
+						a.permissionsView.dialogMode = permissionsDialogChooseRuleScope
+						a.permissionsView.dialogChoice = 0
+						return a, nil
+					}
+					return a, nil
+				case "backspace":
+					a.permissionsView.dialogInput, a.permissionsView.dialogCursor = deleteRuneBeforeCursor(a.permissionsView.dialogInput, a.permissionsView.dialogCursor)
+					return a, nil
+				case "delete":
+					a.permissionsView.dialogInput, a.permissionsView.dialogCursor = deleteRuneAtCursor(a.permissionsView.dialogInput, a.permissionsView.dialogCursor)
+					return a, nil
+				case "left":
+					a.permissionsView.dialogCursor = moveCursorLeft(a.permissionsView.dialogCursor)
+					return a, nil
+				case "right":
+					a.permissionsView.dialogCursor = moveCursorRight(a.permissionsView.dialogInput, a.permissionsView.dialogCursor)
+					return a, nil
+				case "home", "ctrl+a":
+					a.permissionsView.dialogCursor = 0
+					return a, nil
+				case "end", "ctrl+e":
+					a.permissionsView.dialogCursor = len([]rune(a.permissionsView.dialogInput))
+					return a, nil
+				case "esc":
+					a.permissionsView.dialogMode = permissionsDialogNone
+					a.permissionsView.dialogInput = ""
+					a.permissionsView.dialogCursor = 0
+					return a, nil
+				default:
+					if msg.Type == tea.KeyRunes {
+						a.permissionsView.dialogInput, a.permissionsView.dialogCursor = insertRunesAtCursor(a.permissionsView.dialogInput, a.permissionsView.dialogCursor, msg.Runes)
+					} else if msg.Type == tea.KeySpace {
+						a.permissionsView.dialogInput, a.permissionsView.dialogCursor = insertRunesAtCursor(a.permissionsView.dialogInput, a.permissionsView.dialogCursor, []rune{' '})
+					}
+					return a, nil
+				}
+			case permissionsDialogChooseRuleScope:
+				switch msg.String() {
+				case "up", "left":
+					a.permissionsView.dialogChoice--
+					if a.permissionsView.dialogChoice < 0 {
+						a.permissionsView.dialogChoice = 1
+					}
+					return a, nil
+				case "down", "right", "tab":
+					a.permissionsView.dialogChoice = (a.permissionsView.dialogChoice + 1) % 2
+					return a, nil
+				case "enter":
+					cmd, ok := permissionsRuleToAddCommand(a.permissionsView.tab, a.permissionsView.dialogRule, permissionScopeByChoice(a.permissionsView.dialogChoice))
+					if ok && a.userCh != nil {
+						a.permissionsView = nil
+						select {
+						case a.userCh <- cmd:
+						default:
+						}
+					}
+					return a, nil
+				case "esc":
+					a.permissionsView.dialogMode = permissionsDialogAddRule
+					a.permissionsView.dialogChoice = 0
+					return a, nil
+				default:
+					return a, nil
+				}
+			case permissionsDialogDeleteRule:
+				switch msg.String() {
+				case "up", "left":
+					a.permissionsView.dialogChoice--
+					if a.permissionsView.dialogChoice < 0 {
+						a.permissionsView.dialogChoice = 1
+					}
+					return a, nil
+				case "down", "right", "tab":
+					a.permissionsView.dialogChoice = (a.permissionsView.dialogChoice + 1) % 2
+					return a, nil
+				case "enter":
+					yes := a.permissionsView.dialogChoice == 0
+					if !yes {
+						a.permissionsView.dialogMode = permissionsDialogNone
+						return a, nil
+					}
+					var (
+						cmd string
+						ok  bool
+					)
+					cmd, ok = permissionsRemoveCommandForItem(a.permissionsView.tab, a.permissionsView.dialogTarget)
+					a.permissionsView = nil
+					if ok && a.userCh != nil {
+						select {
+						case a.userCh <- cmd:
+						default:
+						}
+					}
+					return a, nil
+				case "esc":
+					a.permissionsView.dialogMode = permissionsDialogNone
+					return a, nil
+				default:
+					return a, nil
+				}
+			}
+		}
+
+		switch msg.String() {
+		case "shift+tab":
+			a.permissionsView.tab = (a.permissionsView.tab + 2) % 3
+			a.permissionsView.selected = 0
+			return a, nil
+		case "tab":
+			a.permissionsView.tab = (a.permissionsView.tab + 1) % 3
+			a.permissionsView.selected = 0
+			return a, nil
+		case "left":
+			a.permissionsView.searchCursor = moveCursorLeft(a.permissionsView.searchCursor)
+			return a, nil
+		case "right":
+			a.permissionsView.searchCursor = moveCursorRight(a.permissionsView.search, a.permissionsView.searchCursor)
+			return a, nil
+		case "up":
+			items := permissionsFilteredItems(a.permissionsView)
+			if len(items) > 0 {
+				a.permissionsView.selected--
+				if a.permissionsView.selected < 0 {
+					a.permissionsView.selected = len(items) - 1
+				}
+			}
+			return a, nil
+		case "down":
+			items := permissionsFilteredItems(a.permissionsView)
+			if len(items) > 0 {
+				a.permissionsView.selected = (a.permissionsView.selected + 1) % len(items)
+			}
+			return a, nil
+		case "enter":
+			items := permissionsFilteredItems(a.permissionsView)
+			if len(items) == 0 {
+				return a, nil
+			}
+			selected := items[a.permissionsView.selected]
+			if selected == "Add a new rule…" {
+				a.permissionsView.dialogMode = permissionsDialogAddRule
+				a.permissionsView.dialogInput = ""
+				a.permissionsView.dialogCursor = 0
+				a.permissionsView.dialogRule = ""
+				return a, nil
+			}
+			a.permissionsView.dialogMode = permissionsDialogDeleteRule
+			a.permissionsView.dialogChoice = 0
+			a.permissionsView.dialogTarget = selected
+			a.permissionsView.dialogSource = "From project local settings"
+			return a, nil
+		case "backspace":
+			a.permissionsView.search, a.permissionsView.searchCursor = deleteRuneBeforeCursor(a.permissionsView.search, a.permissionsView.searchCursor)
+			a.permissionsView.selected = 0
+			return a, nil
+		case "delete":
+			a.permissionsView.search, a.permissionsView.searchCursor = deleteRuneAtCursor(a.permissionsView.search, a.permissionsView.searchCursor)
+			a.permissionsView.selected = 0
+			return a, nil
+		case "home", "ctrl+a":
+			a.permissionsView.searchCursor = 0
+			return a, nil
+		case "end", "ctrl+e":
+			a.permissionsView.searchCursor = len([]rune(a.permissionsView.search))
+			return a, nil
+		case " ":
+			a.permissionsView.search, a.permissionsView.searchCursor = insertRunesAtCursor(a.permissionsView.search, a.permissionsView.searchCursor, []rune{' '})
+			a.permissionsView.selected = 0
+			return a, nil
+		case "esc":
+			a.permissionsView = nil
+			return a, nil
+		default:
+			if msg.Type == tea.KeyRunes {
+				a.permissionsView.search, a.permissionsView.searchCursor = insertRunesAtCursor(a.permissionsView.search, a.permissionsView.searchCursor, msg.Runes)
+				a.permissionsView.selected = 0
+				return a, nil
+			}
+			if msg.Type == tea.KeySpace {
+				a.permissionsView.search, a.permissionsView.searchCursor = insertRunesAtCursor(a.permissionsView.search, a.permissionsView.searchCursor, []rune{' '})
+				a.permissionsView.selected = 0
+				return a, nil
+			}
+			return a, nil
+		}
 	}
 
 	// Check if we're in slash suggestion mode
@@ -374,7 +667,6 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.input, cmd = a.input.Update(msg)
 		a.resizeActiveLayout()
 		return a, cmd
-
 	case "ctrl+j", "shift+enter":
 		var cmd tea.Cmd
 		a.input, cmd = a.input.Update(msg)
@@ -529,6 +821,14 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.state = a.state.WithThinking(false)
 		a.state = a.appendToStreamingAgent(ev.Message)
 
+	case model.PermissionPrompt:
+		a.state = a.state.WithThinking(false)
+		a.permissionPrompt = toPermissionPromptState(ev)
+
+	case model.PermissionsView:
+		a.state = a.state.WithThinking(false)
+		a.permissionsView = toPermissionsViewState(ev)
+
 	case model.ToolCallStart:
 		a.state = a.state.WithThinking(false)
 		a.state = a.commitStreamingAgent()
@@ -541,8 +841,9 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.state = a.resolveToolEvent(ev, model.Message{
 			Kind:     model.MsgTool,
 			ToolName: "Shell",
+			ToolArgs: ev.Message,
 			Display:  model.DisplayExpanded,
-			Content:  truncateToolContent(ev.Message),
+			Content:  ev.Message,
 		})
 
 	case model.CmdOutput:
@@ -556,7 +857,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		stats.FilesRead++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
-			Kind: model.MsgTool, ToolName: "Read",
+			Kind: model.MsgTool, ToolName: "Read", ToolArgs: ev.Message,
 			Display: model.DisplayCollapsed, Content: ev.Message, Summary: ev.Summary,
 		})
 
@@ -565,7 +866,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		stats.Searches++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
-			Kind: model.MsgTool, ToolName: "Grep",
+			Kind: model.MsgTool, ToolName: "Grep", ToolArgs: ev.Message,
 			Display: model.DisplayCollapsed, Content: ev.Message, Summary: ev.Summary,
 		})
 
@@ -574,7 +875,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		stats.Searches++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
-			Kind: model.MsgTool, ToolName: "Glob",
+			Kind: model.MsgTool, ToolName: "Glob", ToolArgs: ev.Message,
 			Display: model.DisplayCollapsed, Content: ev.Message, Summary: ev.Summary,
 		})
 
@@ -583,8 +884,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		stats.FilesEdited++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
-			Kind: model.MsgTool, ToolName: "Edit",
-			Display: model.DisplayExpanded, Content: truncateToolContent(ev.Message),
+			Kind: model.MsgTool, ToolName: "Edit", ToolArgs: ev.Message,
+			Display: model.DisplayExpanded, Content: ev.Message,
 		})
 
 	case model.ToolWrite:
@@ -592,8 +893,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		stats.FilesEdited++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
-			Kind: model.MsgTool, ToolName: "Write",
-			Display: model.DisplayExpanded, Content: truncateToolContent(ev.Message),
+			Kind: model.MsgTool, ToolName: "Write", ToolArgs: ev.Message,
+			Display: model.DisplayExpanded, Content: ev.Message,
 		})
 
 	case model.ToolSkill:
@@ -616,8 +917,8 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		stats.Errors++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
-			Kind: model.MsgTool, ToolName: displayToolName(ev.ToolName),
-			Display: model.DisplayError, Content: truncateToolContent(ev.Message),
+			Kind: model.MsgTool, ToolName: displayToolName(ev.ToolName), ToolArgs: ev.Message,
+			Display: model.DisplayError, Content: ev.Message,
 		})
 
 	case model.ToolReplay:
@@ -1609,8 +1910,9 @@ func (a App) appendToLastTool(line string) model.State {
 			msgs[i] = model.Message{
 				Kind:     model.MsgTool,
 				ToolName: msgs[i].ToolName,
+				ToolArgs: msgs[i].ToolArgs,
 				Display:  msgs[i].Display,
-				Content:  truncateToolContent(content),
+				Content:  content,
 				Summary:  msgs[i].Summary,
 				Pending:  false,
 			}
@@ -1645,6 +1947,7 @@ func (a App) pendingToolMessage(ev model.Event) model.Message {
 	return model.Message{
 		Kind:     model.MsgTool,
 		ToolName: toolName,
+		ToolArgs: content,
 		Display:  display,
 		Content:  content,
 		Summary:  summary,
@@ -1678,28 +1981,36 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 		return model.Message{
 			Kind:     model.MsgTool,
 			ToolName: valueOrString(pending.ToolName, "Shell"),
+			ToolArgs: valueOrString(pending.ToolArgs, ev.Message),
 			Display:  model.DisplayExpanded,
-			Content:  truncateToolContent(ev.Message),
+			Content:  ev.Message,
 			Summary:  ev.Summary,
 		}
 	case model.ToolEdit, model.ToolWrite:
 		return model.Message{
 			Kind:     model.MsgTool,
 			ToolName: pending.ToolName,
+			ToolArgs: valueOrString(pending.ToolArgs, pending.Content),
 			Display:  model.DisplayExpanded,
-			Content:  truncateToolContent(ev.Message),
+			Content:  ev.Message,
 			Summary:  ev.Summary,
 		}
-	case model.ToolRead, model.ToolGrep, model.ToolGlob, model.ToolSkill:
-		content := pending.Content
-		if strings.TrimSpace(content) == "" {
-			content = ev.Message
-		}
+	case model.ToolRead:
 		return model.Message{
 			Kind:     model.MsgTool,
 			ToolName: pending.ToolName,
+			ToolArgs: valueOrString(pending.ToolArgs, ev.Message),
 			Display:  model.DisplayCollapsed,
-			Content:  content,
+			Content:  "",
+			Summary:  firstNonEmpty(ev.Summary, pending.Summary),
+		}
+	case model.ToolGrep, model.ToolGlob, model.ToolSkill:
+		return model.Message{
+			Kind:     model.MsgTool,
+			ToolName: pending.ToolName,
+			ToolArgs: valueOrString(pending.ToolArgs, ev.Message),
+			Display:  model.DisplayCollapsed,
+			Content:  ev.Message,
 			Summary:  firstNonEmpty(ev.Summary, pending.Summary),
 		}
 	case model.ToolError:
@@ -1710,8 +2021,9 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 		return model.Message{
 			Kind:     model.MsgTool,
 			ToolName: toolName,
+			ToolArgs: valueOrString(pending.ToolArgs, pending.Content),
 			Display:  model.DisplayError,
-			Content:  truncateToolContent(ev.Message),
+			Content:  ev.Message,
 		}
 	default:
 		return pending
@@ -1749,7 +2061,7 @@ func replayToolMessage(ev model.Event) model.Message {
 	switch strings.TrimSpace(ev.ToolName) {
 	case "shell", "edit", "write":
 		display = model.DisplayExpanded
-		content = truncateToolContent(ev.Message)
+		content = truncateToolContentForTool(ev.ToolName, ev.Message)
 	}
 
 	return model.Message{
@@ -1760,36 +2072,95 @@ func replayToolMessage(ev model.Event) model.Message {
 	}
 }
 
-func truncateToolContent(content string) string {
+func truncateToolContentForTool(toolName, content string) string {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
-	runes := []rune(content)
+	if strings.TrimSpace(content) == "" {
+		return content
+	}
+	headLines, tailLines := toolPreviewPolicy(toolName)
+	return truncateToolContentWithPolicy(content, headLines, tailLines, defaultToolMaxRunes)
+}
+
+func toolPreviewPolicy(toolName string) (headLines, tailLines int) {
+	switch strings.ToLower(strings.TrimSpace(toolName)) {
+	case "write", "edit":
+		return writeEditPreviewHeadLines, writeEditPreviewTailLines
+	case "shell":
+		return shellPreviewHeadLines, shellPreviewTailLines
+	case "tool", "engine":
+		return errorPreviewHeadLines, errorPreviewTailLines
+	default:
+		return defaultPreviewHeadLines, defaultPreviewTailLines
+	}
+}
+
+func truncateToolContentWithPolicy(content string, headLines, tailLines, maxRunes int) string {
+	originalLines := strings.Split(content, "\n")
+	omittedLines := 0
 	truncatedByRunes := false
-	if len(runes) > maxToolRunes {
-		runes = runes[:maxToolRunes]
-		content = string(runes)
+
+	runes := []rune(content)
+	if len(runes) > maxRunes {
+		content = string(runes[:maxRunes])
 		truncatedByRunes = true
 	}
 
 	lines := strings.Split(content, "\n")
-	truncatedByLines := false
-	if len(lines) > maxToolLines {
-		lines = lines[:maxToolLines]
-		content = strings.Join(lines, "\n")
-		truncatedByLines = true
+	visible := lines
+	if headLines >= 0 && tailLines >= 0 && len(lines) > headLines+tailLines && len(lines) > headLines {
+		head := append([]string{}, lines[:headLines]...)
+		tail := []string{}
+		if tailLines > 0 && tailLines < len(lines)-headLines {
+			tail = append([]string{}, lines[len(lines)-tailLines:]...)
+		}
+		visible = append(head, tail...)
+		omittedLines = len(lines) - len(visible)
 	}
 
-	if !truncatedByRunes && !truncatedByLines {
-		return content
+	if truncatedByRunes && len(originalLines) > len(lines) {
+		omittedLines += len(originalLines) - len(lines)
+	}
+	if !truncatedByRunes && omittedLines <= 0 {
+		return strings.Join(visible, "\n")
 	}
 
-	var parts []string
-	if truncatedByLines {
-		parts = append(parts, fmt.Sprintf("%d lines", maxToolLines))
+	if omittedLines < 1 {
+		omittedLines = 1
 	}
-	if truncatedByRunes {
-		parts = append(parts, fmt.Sprintf("%d chars", maxToolRunes))
+	visible = append(visible, fmt.Sprintf("… +%d lines (ctrl+o to expand)", omittedLines))
+	return strings.Join(visible, "\n")
+}
+
+func collapsedToolDetails(content string, maxLines int) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		filtered = append(filtered, line)
 	}
-	return content + "\n[ui truncated after " + strings.Join(parts, ", ") + "]"
+	if len(filtered) == 0 {
+		return ""
+	}
+	if maxLines <= 0 || len(filtered) <= maxLines {
+		return strings.Join(filtered, "\n")
+	}
+	visible := append([]string{}, filtered[:maxLines]...)
+	visible = append(visible, fmt.Sprintf("… +%d lines (ctrl+o to expand)", len(filtered)-maxLines))
+	return strings.Join(visible, "\n")
+}
+
+func collapsedPreviewLines(toolName string) int {
+	switch strings.ToLower(strings.TrimSpace(toolName)) {
+	case "read":
+		return 0
+	case "skill":
+		return 2
+	default:
+		return collapsedPreviewMaxLines
+	}
 }
 
 func firstNonEmpty(values ...string) string {
@@ -2034,7 +2405,14 @@ func (a *App) updateViewport() {
 	if width < 1 {
 		width = 1
 	}
-	content := panels.RenderMessages(a.state, a.thinking.View(), width, a.trainView.Active)
+	content := panels.RenderMessages(a.viewportRenderState(), a.thinking.View(), width, a.trainView.Active)
+	// Pad content so it's bottom-anchored (like CC/Codex).
+	contentLines := strings.Count(content, "\n") + 1
+	viewHeight := a.viewport.Model.Height
+	if contentLines < viewHeight && content != "" {
+		padding := strings.Repeat("\n", viewHeight-contentLines)
+		content = padding + content
+	}
 	a.viewport = a.viewport.SetContent(content)
 	// Only auto-scroll to bottom if user hasn't scrolled up.
 	if atBottom {
@@ -2047,6 +2425,49 @@ func (a App) activeHUDHeight() int {
 		return lipgloss.Height(panels.RenderTrainHUD(a.trainView, a.width, a.agentStatus()))
 	}
 	return 0
+}
+
+func (a App) viewportRenderState() model.State {
+	s := a.state
+	msgs := make([]model.Message, len(s.Messages))
+	copy(msgs, s.Messages)
+	for i := range msgs {
+		msgs[i] = a.renderToolMessageContent(msgs[i])
+	}
+
+	if a.permissionPrompt != nil {
+		msgs = append(msgs, model.Message{
+			Kind:    model.MsgAgent,
+			Content: renderPermissionPromptPopup(a.permissionPrompt),
+		})
+	} else if a.permissionsView != nil {
+		msgs = append(msgs, model.Message{
+			Kind:    model.MsgAgent,
+			Content: renderPermissionsViewPopup(a.permissionsView),
+		})
+	}
+
+	s.Messages = msgs
+	return s
+}
+
+func (a App) renderToolMessageContent(msg model.Message) model.Message {
+	if msg.Kind != model.MsgTool || msg.Pending {
+		return msg
+	}
+	if strings.EqualFold(strings.TrimSpace(msg.ToolName), "Read") {
+		msg.Content = ""
+		return msg
+	}
+	if a.toolsExpanded {
+		return msg
+	}
+	if msg.Display == model.DisplayCollapsed {
+		msg.Content = collapsedToolDetails(msg.Content, collapsedPreviewLines(msg.ToolName))
+		return msg
+	}
+	msg.Content = truncateToolContentForTool(msg.ToolName, msg.Content)
+	return msg
 }
 
 func (a App) chatLine() string {
@@ -2148,4 +2569,473 @@ func overlayPopup(bg, popup string, width, height int) string {
 		bgLines = bgLines[:height]
 	}
 	return strings.Join(bgLines, "\n")
+}
+
+func toPermissionPromptState(ev model.Event) *permissionPromptState {
+	if ev.Permission == nil {
+		return &permissionPromptState{
+			title:    "Permission required",
+			message:  strings.TrimSpace(ev.Message),
+			options:  []model.PermissionOption{{Input: "1", Label: "1. Yes"}, {Input: "2", Label: "2. Allow for this session"}, {Input: "3", Label: "3. No"}},
+			selected: 0,
+		}
+	}
+
+	options := ev.Permission.Options
+	if len(options) == 0 {
+		options = []model.PermissionOption{{Input: "1", Label: "1. Yes"}, {Input: "3", Label: "3. No"}}
+	}
+	selected := ev.Permission.DefaultIndex
+	if selected < 0 || selected >= len(options) {
+		selected = 0
+	}
+	return &permissionPromptState{
+		title:    valueOrString(ev.Permission.Title, "Permission required"),
+		message:  strings.TrimSpace(valueOrString(ev.Permission.Message, ev.Message)),
+		options:  options,
+		selected: selected,
+	}
+}
+
+func renderPermissionPromptPopup(p *permissionPromptState) string {
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(false)
+	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Underline(true)
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+
+	lines := []string{titleStyle.Render(p.title), ""}
+	if strings.TrimSpace(p.message) != "" {
+		lines = append(lines, normalStyle.Render(p.message), "")
+	}
+	for i, opt := range p.options {
+		prefix := "  "
+		style := normalStyle
+		if i == p.selected {
+			prefix = "> "
+			style = selectedStyle
+		}
+		lines = append(lines, prefix+style.Render(opt.Label))
+	}
+	lines = append(lines, "", hintStyle.Render("↑/↓ select · enter confirm · esc cancel"))
+
+	content := strings.Join(lines, "\n")
+	return lipgloss.NewStyle().
+		Padding(0, 1).
+		Render(content)
+}
+
+func toPermissionsViewState(ev model.Event) *permissionsViewState {
+	data := ev.Permissions
+	if data == nil {
+		data = &model.PermissionsViewData{}
+	}
+	return &permissionsViewState{
+		tab:          0,
+		search:       "",
+		searchCursor: 0,
+		selected:     0,
+		allow:        append([]string{}, data.Allow...),
+		ask:          append([]string{}, data.Ask...),
+		deny:         append([]string{}, data.Deny...),
+	}
+}
+
+func permissionsFilteredItems(v *permissionsViewState) []string {
+	items := []string{}
+	var source []string
+	switch v.tab {
+	case 0:
+		items = append(items, "Add a new rule…")
+		source = v.allow
+	case 1:
+		items = append(items, "Add a new rule…")
+		source = v.ask
+	case 2:
+		items = append(items, "Add a new rule…")
+		source = v.deny
+	}
+	items = append(items, source...)
+	query := strings.TrimSpace(strings.ToLower(v.search))
+	if query == "" {
+		return items
+	}
+	filtered := make([]string, 0, len(items))
+	for _, it := range items {
+		if strings.Contains(strings.ToLower(it), query) {
+			filtered = append(filtered, it)
+		}
+	}
+	return filtered
+}
+
+func permissionsLevelByTab(tab int) string {
+	switch tab {
+	case 0:
+		return "allow_always"
+	case 1:
+		return "ask"
+	case 2:
+		return "deny"
+	default:
+		return "ask"
+	}
+}
+
+func permissionScopeByChoice(choice int) string {
+	switch choice {
+	case 1:
+		return "user"
+	default:
+		return "project"
+	}
+}
+
+func permissionsRuleToAddCommand(tab int, raw, scope string) (string, bool) {
+	rule := strings.TrimSpace(raw)
+	if rule == "" {
+		return "", false
+	}
+	level := permissionsLevelByTab(tab)
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if scope == "" {
+		scope = "project"
+	}
+	if scope != "project" && scope != "user" {
+		return "", false
+	}
+	return internalPermissionsActionPrefix + "add " + level + " " + rule + " --scope " + scope, true
+}
+
+func moveCursorLeft(cursor int) int {
+	if cursor <= 0 {
+		return 0
+	}
+	return cursor - 1
+}
+
+func moveCursorRight(s string, cursor int) int {
+	n := len([]rune(s))
+	if cursor >= n {
+		return n
+	}
+	return cursor + 1
+}
+
+func insertRunesAtCursor(s string, cursor int, add []rune) (string, int) {
+	r := []rune(s)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(r) {
+		cursor = len(r)
+	}
+	out := make([]rune, 0, len(r)+len(add))
+	out = append(out, r[:cursor]...)
+	out = append(out, add...)
+	out = append(out, r[cursor:]...)
+	return string(out), cursor + len(add)
+}
+
+func deleteRuneBeforeCursor(s string, cursor int) (string, int) {
+	r := []rune(s)
+	if cursor <= 0 || len(r) == 0 {
+		if cursor < 0 {
+			return s, 0
+		}
+		return s, cursor
+	}
+	if cursor > len(r) {
+		cursor = len(r)
+	}
+	out := make([]rune, 0, len(r)-1)
+	out = append(out, r[:cursor-1]...)
+	out = append(out, r[cursor:]...)
+	return string(out), cursor - 1
+}
+
+func deleteRuneAtCursor(s string, cursor int) (string, int) {
+	r := []rune(s)
+	if len(r) == 0 || cursor < 0 || cursor >= len(r) {
+		if cursor < 0 {
+			return s, 0
+		}
+		if cursor > len(r) {
+			return s, len(r)
+		}
+		return s, cursor
+	}
+	out := make([]rune, 0, len(r)-1)
+	out = append(out, r[:cursor]...)
+	out = append(out, r[cursor+1:]...)
+	return string(out), cursor
+}
+
+func renderDialogInputWithCursor(input string, cursor int, placeholder string) string {
+	if input == "" {
+		return placeholder
+	}
+	r := []rune(input)
+	if len(r) == 0 {
+		return placeholder
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(r) {
+		cursor = len(r)
+	}
+
+	visible := func(ch rune) string {
+		if ch == ' ' {
+			return "\u00a0"
+		}
+		return string(ch)
+	}
+
+	var b strings.Builder
+	for i, ch := range r {
+		s := visible(ch)
+		if i == cursor {
+			b.WriteString(lipgloss.NewStyle().Reverse(true).Render(s))
+			continue
+		}
+		b.WriteString(s)
+	}
+	if cursor == len(r) {
+		b.WriteString(lipgloss.NewStyle().Reverse(true).Render("\u00a0"))
+	}
+	return b.String()
+}
+
+func permissionRuleDescription(rule string) string {
+	rule = strings.TrimSpace(rule)
+	if rule == "" {
+		return "The permission rule"
+	}
+	if idx := strings.Index(rule, "("); idx > 0 && strings.HasSuffix(rule, ")") {
+		tool := strings.TrimSpace(rule[:idx])
+		spec := strings.TrimSpace(rule[idx+1 : len(rule)-1])
+		switch strings.ToLower(tool) {
+		case "bash":
+			if spec != "" {
+				return "The Bash command " + spec
+			}
+		case "webfetch":
+			if spec != "" {
+				return "The WebFetch request " + spec
+			}
+		}
+		return fmt.Sprintf("The %s rule %s", tool, spec)
+	}
+	return "The " + rule + " permission rule"
+}
+
+func permissionsRemoveCommandForItem(tab int, item string) (string, bool) {
+	it := strings.TrimSpace(item)
+	if it == "" || it == "Add a new rule…" {
+		return "", false
+	}
+	lower := strings.ToLower(it)
+	if strings.HasPrefix(lower, "bash(") && strings.HasSuffix(lower, ")") {
+		cmd := strings.TrimSpace(it[len("Bash(") : len(it)-1])
+		if cmd == "" {
+			return "", false
+		}
+		return internalPermissionsActionPrefix + "remove command " + cmd, true
+	}
+	if strings.HasPrefix(lower, "path(") && strings.HasSuffix(lower, ")") {
+		pattern := strings.TrimSpace(it[len("Path(") : len(it)-1])
+		if pattern == "" {
+			return "", false
+		}
+		return internalPermissionsActionPrefix + "remove path " + pattern, true
+	}
+	if strings.HasPrefix(lower, "edit(") && strings.HasSuffix(lower, ")") {
+		pattern := strings.TrimSpace(it[len("Edit(") : len(it)-1])
+		if pattern == "" {
+			return "", false
+		}
+		return internalPermissionsActionPrefix + "remove path " + pattern, true
+	}
+	if strings.HasPrefix(it, "/") {
+		return "", false
+	}
+	return internalPermissionsActionPrefix + "remove tool " + it, true
+}
+
+func renderPermissionsViewPopup(v *permissionsViewState) string {
+	tabs := []string{"Allow", "Ask", "Deny"}
+	header := fmt.Sprintf("Permissions:  %s  (tab/shift+tab to cycle)", strings.Join(tabs, "   "))
+
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
+	selectedTabStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	tabRendered := make([]string, len(tabs))
+	for i, tab := range tabs {
+		if i == v.tab {
+			tabRendered[i] = selectedTabStyle.Render(tab)
+		} else {
+			tabRendered[i] = tab
+		}
+	}
+	header = fmt.Sprintf("Permissions:  %s  (tab/shift+tab to cycle)", strings.Join(tabRendered, "   "))
+
+	modeMsg := "Claude Code won't ask before using allowed tools."
+	switch v.tab {
+	case 1:
+		modeMsg = "Claude Code will always ask for confirmation before using these tools."
+	case 2:
+		modeMsg = "Claude Code will always reject requests to use denied tools."
+	}
+	searchValue := renderDialogInputWithCursor(v.search, v.searchCursor, "Search…")
+	searchBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("244")).
+		Padding(0, 1).
+		Render("⌕ " + searchValue)
+
+	items := permissionsFilteredItems(v)
+	if v.dialogMode != permissionsDialogNone {
+		return renderPermissionsDialog(v)
+	}
+
+	lines := []string{headerStyle.Render(header), "", normalStyle.Render(modeMsg), searchBox, ""}
+	if len(items) == 0 {
+		lines = append(lines, dimStyle.Render("No rules matched your search."))
+	} else {
+		for i, item := range items {
+			prefix := "  "
+			style := normalStyle
+			if i == v.selected {
+				prefix = "❯ "
+				style = selectedStyle
+			}
+			lines = append(lines, prefix+style.Render(fmt.Sprintf("%d. %s", i+1, item)))
+		}
+	}
+	lines = append(lines, "", hintStyle.Render("Press ↑↓ to navigate · Enter to select · Type to search · ←/→ move cursor · Esc to cancel"))
+
+	return strings.Join(lines, "\n")
+}
+
+func renderPermissionsDialog(v *permissionsViewState) string {
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
+	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+
+	switch v.dialogMode {
+	case permissionsDialogAddRule:
+		title := "Add allow permission rule"
+		switch v.tab {
+		case 1:
+			title = "Add ask permission rule"
+		case 2:
+			title = "Add deny permission rule"
+		}
+		input := renderDialogInputWithCursor(v.dialogInput, v.dialogCursor, "Enter permission rule…")
+		box := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Padding(0, 1).
+			Render(input)
+		lines := []string{
+			titleStyle.Render(title),
+			"",
+			normalStyle.Render("Permission rules are a tool name, optionally followed by a specifier in parentheses."),
+			normalStyle.Render("e.g., WebFetch(domain:example.com) or Bash(ls -la)"),
+			"",
+			box,
+			"",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true).Render("Enter to continue · ←/→ move cursor · Esc to cancel"),
+		}
+		return lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Padding(0, 1).
+			Render(strings.Join(lines, "\n"))
+	case permissionsDialogChooseRuleScope:
+		title := "Add allow permission rule"
+		switch v.tab {
+		case 1:
+			title = "Add ask permission rule"
+		case 2:
+			title = "Add deny permission rule"
+		}
+		rule := strings.TrimSpace(v.dialogRule)
+		if rule == "" {
+			rule = strings.TrimSpace(v.dialogInput)
+		}
+		desc := permissionRuleDescription(rule)
+		opt1Prefix, opt2Prefix := "  ", "  "
+		opt1Style, opt2Style := normalStyle, normalStyle
+		switch v.dialogChoice {
+		case 1:
+			opt2Prefix, opt2Style = "❯ ", selectedStyle
+		default:
+			opt1Prefix, opt1Style = "❯ ", selectedStyle
+		}
+		lines := []string{
+			titleStyle.Render(title),
+			"",
+			normalStyle.Render("  " + rule),
+			normalStyle.Render("  " + desc),
+			"",
+			normalStyle.Render("Where should this rule be saved?"),
+			opt1Prefix + opt1Style.Render("1. Project settings          Saved in .ms-cli/permissions.json"),
+			opt2Prefix + opt2Style.Render("2. User settings             Saved in ~/.ms-cli/permissions.json"),
+			"",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true).Render("Enter to confirm · Esc to cancel"),
+		}
+		return lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Padding(0, 1).
+			Render(strings.Join(lines, "\n"))
+	case permissionsDialogDeleteRule:
+		title := "Delete allowed tool?"
+		if v.tab == 1 {
+			title = "Delete ask tool?"
+		} else if v.tab == 2 {
+			title = "Delete denied tool?"
+		}
+		yesPrefix := "  "
+		noPrefix := "  "
+		yesStyle := normalStyle
+		noStyle := normalStyle
+		if v.dialogChoice == 0 {
+			yesPrefix = "❯ "
+			yesStyle = selectedStyle
+		} else {
+			noPrefix = "❯ "
+			noStyle = selectedStyle
+		}
+		lines := []string{
+			titleStyle.Render(title),
+			"",
+			normalStyle.Render("  " + v.dialogTarget),
+		}
+		if strings.TrimSpace(v.dialogSource) != "" {
+			lines = append(lines, normalStyle.Render("  "+v.dialogSource))
+		}
+		lines = append(lines,
+			"",
+			normalStyle.Render("Are you sure you want to delete this permission rule?"),
+			"",
+			yesPrefix+yesStyle.Render("1. Yes"),
+			noPrefix+noStyle.Render("2. No"),
+			"",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true).Render("Esc to cancel"),
+		)
+		return lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Padding(0, 1).
+			Render(strings.Join(lines, "\n"))
+	default:
+		return ""
+	}
 }

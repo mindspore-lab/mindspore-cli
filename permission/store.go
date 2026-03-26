@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // FilePermissionStore 基于文件的权限存储
@@ -14,6 +17,16 @@ type FilePermissionStore struct {
 	mu        sync.RWMutex
 	filepath  string
 	decisions []PermissionDecision
+}
+
+type permissionSettingsFile struct {
+	Permissions *permissionRuleBuckets `json:"permissions"`
+}
+
+type permissionRuleBuckets struct {
+	Allow []string `json:"allow,omitempty"`
+	Ask   []string `json:"ask,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
 }
 
 // NewFilePermissionStore 创建文件权限存储
@@ -128,9 +141,10 @@ func (s *FilePermissionStore) RemoveExpiredDecisions(maxAge time.Duration) error
 
 // save 保存到文件（必须持有锁）
 func (s *FilePermissionStore) save() error {
-	data, err := json.MarshalIndent(s.decisions, "", "  ")
+	settings := settingsFromDecisions(s.decisions)
+	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal decisions: %w", err)
+		return fmt.Errorf("marshal settings: %w", err)
 	}
 
 	return os.WriteFile(s.filepath, data, 0644)
@@ -143,7 +157,12 @@ func (s *FilePermissionStore) load() error {
 		return err
 	}
 
-	return json.Unmarshal(data, &s.decisions)
+	decisions, err := decodeDecisions(data)
+	if err != nil {
+		return err
+	}
+	s.decisions = decisions
+	return nil
 }
 
 // GetFilePath 获取存储文件路径
@@ -211,7 +230,7 @@ type PermissionStoreConfig struct {
 func DefaultPermissionStoreConfig() PermissionStoreConfig {
 	return PermissionStoreConfig{
 		Type:   "file",
-		Path:   ".ms-cli/permissions.json",
+		Path:   ".ms-cli/permissions.state.json",
 		MaxAge: 7 * 24 * time.Hour, // 7 days
 	}
 }
@@ -275,7 +294,7 @@ func (s *FilePermissionStore) ExportToFile(exportPath string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	data, err := json.MarshalIndent(s.decisions, "", "  ")
+	data, err := json.MarshalIndent(settingsFromDecisions(s.decisions), "", "  ")
 	if err != nil {
 		return err
 	}
@@ -290,8 +309,8 @@ func (s *FilePermissionStore) ImportFromFile(importPath string) error {
 		return err
 	}
 
-	var imported []PermissionDecision
-	if err := json.Unmarshal(data, &imported); err != nil {
+	imported, err := decodeDecisions(data)
+	if err != nil {
 		return err
 	}
 
@@ -317,4 +336,234 @@ func (s *FilePermissionStore) ImportFromFile(importPath string) error {
 	}
 
 	return s.save()
+}
+
+func decodeDecisions(data []byte) ([]PermissionDecision, error) {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		return []PermissionDecision{}, nil
+	}
+
+	if strings.HasPrefix(trimmed, "[") {
+		return nil, fmt.Errorf("invalid settings format: expected object with permissions buckets, got legacy array")
+	}
+
+	var settings permissionSettingsFile
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return nil, fmt.Errorf("invalid settings JSON: %w", err)
+	}
+	if !hasPermissionsObject(settings) {
+		return nil, fmt.Errorf("invalid settings format: missing \"permissions\" object")
+	}
+
+	return decisionsFromSettings(settings)
+}
+
+func hasPermissionsObject(settings permissionSettingsFile) bool {
+	return settings.Permissions != nil
+}
+
+func decisionsFromSettings(settings permissionSettingsFile) ([]PermissionDecision, error) {
+	if settings.Permissions == nil {
+		return nil, fmt.Errorf("missing permissions object")
+	}
+	out := make([]PermissionDecision, 0, len(settings.Permissions.Allow)+len(settings.Permissions.Ask)+len(settings.Permissions.Deny))
+	now := time.Now()
+	appendRules := func(bucket string, rules []string, level PermissionLevel) error {
+		for idx, raw := range rules {
+			decision, err := decisionFromRule(raw, level, now, bucket, idx)
+			if err != nil {
+				return err
+			}
+			out = append(out, decision)
+		}
+		return nil
+	}
+	if err := appendRules("allow", settings.Permissions.Allow, PermissionAllowSession); err != nil {
+		return nil, err
+	}
+	if err := appendRules("ask", settings.Permissions.Ask, PermissionAsk); err != nil {
+		return nil, err
+	}
+	if err := appendRules("deny", settings.Permissions.Deny, PermissionDeny); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func decisionFromRule(raw string, level PermissionLevel, ts time.Time, bucket string, idx int) (PermissionDecision, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return PermissionDecision{}, fmt.Errorf("permissions.%s[%d]: rule cannot be empty", bucket, idx)
+	}
+	if err := validateRuleToolCase(raw, bucket, idx); err != nil {
+		return PermissionDecision{}, err
+	}
+	rule, err := ParsePermissionRule(raw)
+	if err != nil {
+		return PermissionDecision{}, fmt.Errorf("permissions.%s[%d]: %w", bucket, idx, err)
+	}
+	d := PermissionDecision{
+		Level:     level,
+		Timestamp: ts,
+	}
+	switch rule.Tool {
+	case "bash":
+		d.Tool = "shell"
+		d.Action = rule.Specifier
+	case "read":
+		d.Tool = "read"
+		d.Path = rule.Specifier
+	case "edit":
+		d.Tool = "edit"
+		d.Path = rule.Specifier
+	case "write":
+		d.Tool = "write"
+		d.Path = rule.Specifier
+	case "webfetch":
+		d.Tool = "webfetch"
+		d.Action = rule.Specifier
+	case "agent":
+		d.Tool = "agent"
+		d.Action = rule.Specifier
+	default:
+		d.Tool = rule.Tool
+		d.Action = rule.Specifier
+	}
+	if strings.TrimSpace(d.Tool) == "" {
+		return PermissionDecision{}, fmt.Errorf("permissions.%s[%d]: invalid rule %q", bucket, idx, raw)
+	}
+	return d, nil
+}
+
+func validateRuleToolCase(raw, bucket string, idx int) error {
+	tool := raw
+	if open := strings.Index(raw, "("); open >= 0 {
+		tool = raw[:open]
+	}
+	tool = strings.TrimSpace(tool)
+	if tool == "" {
+		return fmt.Errorf("permissions.%s[%d]: invalid rule %q", bucket, idx, raw)
+	}
+	if strings.HasPrefix(strings.ToLower(tool), "mcp__") {
+		return nil
+	}
+	r, sz := utf8.DecodeRuneInString(tool)
+	if r == utf8.RuneError && sz == 0 {
+		return fmt.Errorf("permissions.%s[%d]: invalid rule %q", bucket, idx, raw)
+	}
+	if !unicode.IsUpper(r) {
+		suggestion := strings.ToUpper(string(r)) + tool[sz:]
+		return fmt.Errorf("permissions.%s[%d]: %q: Tool names must start with uppercase. Use %q", bucket, idx, tool, suggestion)
+	}
+	return nil
+}
+
+func settingsFromDecisions(decisions []PermissionDecision) permissionSettingsFile {
+	settings := permissionSettingsFile{
+		Permissions: &permissionRuleBuckets{
+			Allow: make([]string, 0),
+			Ask:   make([]string, 0),
+			Deny:  make([]string, 0),
+		},
+	}
+
+	seenAllow := map[string]struct{}{}
+	seenAsk := map[string]struct{}{}
+	seenDeny := map[string]struct{}{}
+
+	for _, d := range decisions {
+		rule := strings.TrimSpace(ruleFromDecision(d))
+		if rule == "" {
+			continue
+		}
+		switch d.Level {
+		case PermissionDeny:
+			if _, ok := seenDeny[rule]; ok {
+				continue
+			}
+			seenDeny[rule] = struct{}{}
+			settings.Permissions.Deny = append(settings.Permissions.Deny, rule)
+		case PermissionAsk:
+			if _, ok := seenAsk[rule]; ok {
+				continue
+			}
+			seenAsk[rule] = struct{}{}
+			settings.Permissions.Ask = append(settings.Permissions.Ask, rule)
+		default:
+			if _, ok := seenAllow[rule]; ok {
+				continue
+			}
+			seenAllow[rule] = struct{}{}
+			settings.Permissions.Allow = append(settings.Permissions.Allow, rule)
+		}
+	}
+
+	if len(settings.Permissions.Allow) == 0 {
+		settings.Permissions.Allow = nil
+	}
+	if len(settings.Permissions.Ask) == 0 {
+		settings.Permissions.Ask = nil
+	}
+	if len(settings.Permissions.Deny) == 0 {
+		settings.Permissions.Deny = nil
+	}
+	return settings
+}
+
+func ruleFromDecision(d PermissionDecision) string {
+	tool := strings.ToLower(strings.TrimSpace(d.Tool))
+	action := strings.TrimSpace(d.Action)
+	path := strings.TrimSpace(d.Path)
+
+	if tool == "shell" {
+		if action == "" {
+			return "Bash"
+		}
+		return fmt.Sprintf("Bash(%s)", action)
+	}
+	if path != "" {
+		spec := path
+		if filepath.IsAbs(spec) {
+			spec = "//" + strings.TrimPrefix(filepath.ToSlash(spec), "/")
+		}
+		switch tool {
+		case "read", "grep", "glob":
+			return fmt.Sprintf("Read(%s)", spec)
+		case "write":
+			return fmt.Sprintf("Write(%s)", spec)
+		default:
+			return fmt.Sprintf("Edit(%s)", spec)
+		}
+	}
+	if action != "" {
+		switch tool {
+		case "webfetch":
+			return fmt.Sprintf("WebFetch(%s)", action)
+		case "agent":
+			return fmt.Sprintf("Agent(%s)", action)
+		default:
+			return fmt.Sprintf("%s(%s)", canonicalRuleTool(tool), action)
+		}
+	}
+	return canonicalRuleTool(tool)
+}
+
+func canonicalRuleTool(tool string) string {
+	switch strings.ToLower(strings.TrimSpace(tool)) {
+	case "shell":
+		return "Bash"
+	case "read", "grep", "glob":
+		return "Read"
+	case "edit":
+		return "Edit"
+	case "write":
+		return "Write"
+	case "webfetch":
+		return "WebFetch"
+	case "agent":
+		return "Agent"
+	default:
+		return strings.TrimSpace(tool)
+	}
 }

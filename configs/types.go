@@ -64,9 +64,13 @@ type UIConfig struct {
 type PermissionsConfig struct {
 	SkipRequests bool              `yaml:"skip_requests"`
 	DefaultLevel string            `yaml:"default_level"`
+	Allow        []string          `yaml:"allow,omitempty"`
+	Ask          []string          `yaml:"ask,omitempty"`
+	Deny         []string          `yaml:"deny,omitempty"`
 	ToolPolicies map[string]string `yaml:"tool_policies,omitempty"`
 	AllowedTools []string          `yaml:"allowed_tools"`
 	BlockedTools []string          `yaml:"blocked_tools,omitempty"`
+	RuleSources  map[string]string `yaml:"-"`
 }
 
 // ContextConfig holds the context management configuration.
@@ -129,9 +133,13 @@ func DefaultConfig() *Config {
 		Permissions: PermissionsConfig{
 			SkipRequests: false,
 			DefaultLevel: "ask",
+			Allow:        []string{},
+			Ask:          []string{},
+			Deny:         []string{},
 			ToolPolicies: make(map[string]string),
 			AllowedTools: []string{},
 			BlockedTools: []string{},
+			RuleSources:  map[string]string{},
 		},
 		Context: ContextConfig{
 			Window:              200000,

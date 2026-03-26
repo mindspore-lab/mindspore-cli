@@ -41,18 +41,20 @@ var Version = "MindSpore AI Infra Agent CLI. " + version.Version
 
 // Application is the top-level composition container.
 type Application struct {
-	Engine        *loop.Engine
-	EventCh       chan model.Event
-	llmReady      bool
-	WorkDir       string
-	RepoURL       string
-	Config        *configs.Config
-	provider      llm.Provider
-	toolRegistry  *tools.Registry
-	ctxManager    *agentctx.Manager
-	permService   permission.PermissionService
-	session       *session.Session
-	replayBacklog []model.Event
+	Engine                  *loop.Engine
+	EventCh                 chan model.Event
+	llmReady                bool
+	WorkDir                 string
+	RepoURL                 string
+	Config                  *configs.Config
+	provider                llm.Provider
+	toolRegistry            *tools.Registry
+	ctxManager              *agentctx.Manager
+	permService             permission.PermissionService
+	permissionUI            *PermissionPromptUI
+	permissionSettingsIssue *permissionSettingsIssue
+	session                 *session.Session
+	replayBacklog           []model.Event
 
 	// Skills
 	skillLoader   *skills.Loader
@@ -105,6 +107,8 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		workDir = "."
 	}
 	workDir, _ = filepath.Abs(workDir)
+
+	eventCh := make(chan model.Event, 64)
 
 	config, err := configs.LoadWithEnv()
 	if err != nil {
@@ -207,23 +211,43 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	engine.SetTrajectoryRecorder(newTrajectoryRecorder(runtimeSession, ctxManager))
 
 	permService := permission.NewDefaultPermissionService(config.Permissions)
+	permissionUI := NewPermissionPromptUI(eventCh)
+	permService.SetUI(permissionUI)
+	var permSettingsIssue *permissionSettingsIssue
+	if issue := preloadScopedPermissionRules(permService, workDir); issue != nil {
+		permSettingsIssue = issue
+	}
+	storeCfg := sessionPermissionStoreConfig(runtimeSession)
+	if store, err := permission.NewPermissionStore(storeCfg); err == nil {
+		permService.SetStore(store)
+	} else {
+		if permSettingsIssue == nil {
+			storePath := storeCfg.Path
+			permSettingsIssue = &permissionSettingsIssue{
+				FilePath: normalizePermissionSettingsPath(storePath, workDir),
+				Detail:   err.Error(),
+			}
+		}
+	}
 	engine.SetPermissionService(permService)
 
 	app := &Application{
-		Engine:        engine,
-		EventCh:       make(chan model.Event, 64),
-		WorkDir:       workDir,
-		RepoURL:       "github.com/vigo999/ms-cli",
-		Config:        config,
-		provider:      provider,
-		toolRegistry:  toolRegistry,
-		ctxManager:    ctxManager,
-		permService:   permService,
-		session:       runtimeSession,
-		replayBacklog: replayBacklog,
-		llmReady:      llmReady,
-		skillLoader:   skillLoader,
-		skillsHomeDir: strings.TrimSpace(homeDir),
+		Engine:                  engine,
+		EventCh:                 eventCh,
+		WorkDir:                 workDir,
+		RepoURL:                 "github.com/vigo999/ms-cli",
+		Config:                  config,
+		provider:                provider,
+		toolRegistry:            toolRegistry,
+		ctxManager:              ctxManager,
+		permService:             permService,
+		permissionUI:            permissionUI,
+		permissionSettingsIssue: permSettingsIssue,
+		session:                 runtimeSession,
+		replayBacklog:           replayBacklog,
+		llmReady:                llmReady,
+		skillLoader:             skillLoader,
+		skillsHomeDir:           strings.TrimSpace(homeDir),
 	}
 
 	// Auto-login from saved credentials.
@@ -236,6 +260,19 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	}
 
 	return app, nil
+}
+
+func sessionPermissionStoreConfig(runtimeSession *session.Session) permission.PermissionStoreConfig {
+	cfg := permission.DefaultPermissionStoreConfig()
+	if runtimeSession == nil {
+		return cfg
+	}
+	sessionDir := filepath.Dir(runtimeSession.Path())
+	if strings.TrimSpace(sessionDir) == "" {
+		return cfg
+	}
+	cfg.Path = filepath.Join(sessionDir, "permissions.json")
+	return cfg
 }
 
 // SetProvider updates model/key and reinitializes the engine.

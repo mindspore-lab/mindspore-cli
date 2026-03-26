@@ -42,6 +42,7 @@ type Message struct {
 	Kind      MessageKind
 	Content   string
 	ToolName  string
+	ToolArgs  string
 	Display   DisplayMode
 	Summary   string // shown when collapsed, e.g. "5 matches", "23 files"
 	Pending   bool
@@ -60,6 +61,8 @@ const (
 	AnalysisReady     EventType = "AnalysisReady"
 	AgentReply        EventType = "AgentReply"
 	AgentReplyDelta   EventType = "AgentReplyDelta"
+	PermissionPrompt  EventType = "PermissionPrompt"
+	PermissionsView   EventType = "PermissionsView"
 	AgentThinking     EventType = "AgentThinking"
 	UserInput         EventType = "UserInput"
 	ToolReplay        EventType = "ToolReplay"
@@ -82,19 +85,44 @@ const (
 // Event is sent from the agent loop to the TUI.
 // Implements tea.Msg so Bubble Tea can route it.
 type Event struct {
-	Type       EventType
-	Task       string
-	Message    string
-	ToolName   string
-	Summary    string
-	CtxUsed    int
-	CtxMax     int
-	TokensUsed int
-	Train      *TrainEventData // non-nil for train events only
-	BugView    *BugEventData   // non-nil for bug view events only
-	IssueView  *IssueEventData // non-nil for issue view events only
-	Bug        *bugs.Bug       // reserved for lightweight bug payloads
-	Issue      *issuepkg.Issue // reserved for lightweight issue payloads
+	Type        EventType
+	Task        string
+	Message     string
+	ToolName    string
+	Summary     string
+	CtxUsed     int
+	CtxMax      int
+	TokensUsed  int
+	Train       *TrainEventData // non-nil for train events only
+	Project     *ProjectStatusView
+	Permission  *PermissionPromptData
+	Permissions *PermissionsViewData
+	BugView     *BugEventData   // non-nil for bug view events only
+	IssueView   *IssueEventData // non-nil for issue view events only
+	Bug         *bugs.Bug       // reserved for lightweight bug payloads
+	Issue       *issuepkg.Issue // reserved for lightweight issue payloads
+}
+
+// PermissionPromptData describes a structured permission prompt for interactive UI rendering.
+type PermissionPromptData struct {
+	Title        string
+	Message      string
+	Options      []PermissionOption
+	DefaultIndex int
+}
+
+type PermissionOption struct {
+	// Input is the token sent back to backend permission handler, e.g. "1", "2", "3", "esc".
+	Input string
+	Label string
+}
+
+// PermissionsViewData is the payload for interactive /permissions view.
+type PermissionsViewData struct {
+	Allow       []string
+	Ask         []string
+	Deny        []string
+	RuleSources map[string]string
 }
 
 // TaskStats tracks execution statistics for the current task.

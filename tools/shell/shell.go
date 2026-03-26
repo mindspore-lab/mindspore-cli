@@ -81,8 +81,6 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (*tools
 	}
 
 	var parts []string
-	parts = append(parts, fmt.Sprintf("$ %s", command))
-
 	if result.Stdout != "" {
 		parts = append(parts, result.Stdout)
 	}
@@ -90,12 +88,16 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (*tools
 	if result.Stderr != "" {
 		parts = append(parts, fmt.Sprintf("[stderr]\n%s", result.Stderr))
 	}
-
-	parts = append(parts, fmt.Sprintf("exit status %d", result.ExitCode))
+	if len(parts) == 0 {
+		parts = append(parts, "(No output)")
+	}
 
 	output := strings.Join(parts, "\n")
 
-	summary := fmt.Sprintf("exit %d", result.ExitCode)
+	summary := "completed"
+	if result.ExitCode != 0 {
+		summary = fmt.Sprintf("exit %d", result.ExitCode)
+	}
 	if result.Error != nil {
 		summary = fmt.Sprintf("error: %s", result.Error.Error())
 	}
