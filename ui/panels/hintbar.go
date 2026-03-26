@@ -44,7 +44,7 @@ var hints = []hint{
 func RenderHintBar(s model.State, width int) string {
 	sep := hintSepStyle.Render("  ")
 	left := hintKeyStyle.Render(s.Model.Name) + sep +
-		hintDescStyle.Render(fmt.Sprintf("ctx: %s/%s", formatHintTokens(s.Model.CtxUsed), formatHintTokens(s.Model.CtxMax))) + sep +
+		hintDescStyle.Render(formatCtxHint(s.Model.CtxUsed, s.Model.CtxMax)) + sep +
 		hintDescStyle.Render(shortenHintPath(s.WorkDir))
 
 	if s.IssueUser != "" {
@@ -67,6 +67,17 @@ func RenderHintBar(s model.State, width int) string {
 	}
 
 	return line
+}
+
+func formatCtxHint(used, max int) string {
+	if max <= 0 {
+		return "ctx: -"
+	}
+	left := 100 - int(float64(used)/float64(max)*100)
+	if left < 0 {
+		left = 0
+	}
+	return fmt.Sprintf("ctx: %d%% left", left)
 }
 
 func formatHintTokens(n int) string {
