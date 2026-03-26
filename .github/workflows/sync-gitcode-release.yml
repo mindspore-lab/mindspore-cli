@@ -167,6 +167,7 @@ jobs:
               -d "${payload}" \
               > result.json
             jq '{id, tag_name, name}' result.json
+            echo "gitcode_release_id=${release_id}" >> "${GITHUB_ENV}"
             exit 0
           fi
 
@@ -188,46 +189,33 @@ jobs:
             -d "${payload}" \
             > result.json
           jq '{id, tag_name, name}' result.json
+          release_id="$(jq -r '.id // empty' result.json)"
+          if [ -n "${release_id}" ] && [ "${release_id}" != "null" ]; then
+            echo "gitcode_release_id=${release_id}" >> "${GITHUB_ENV}"
+          fi
 
       - name: Upload release assets to GitCode
-        if: env.DRY_RUN != 'true' && env.asset_count != '0'
+        if: env.DRY_RUN != 'true' && env.asset_count != '0' && env.gitcode_release_id != ''
         shell: bash
         run: |
           set -euo pipefail
 
           api="${GITCODE_API_BASE}/repos/${GITCODE_OWNER}/${GITCODE_REPO}"
-          auth_q="access_token=${GITCODE_TOKEN}"
+          release_id="${gitcode_release_id}"
+
+          echo "Uploading assets to GitCode release id=${release_id}..."
 
           for file in release-assets/*; do
             if [ ! -f "${file}" ]; then
               continue
             fi
             file_name="$(basename "${file}")"
-            echo "Resolving GitCode release upload URL for ${file_name}..."
-            upload_http_code="$(curl -sS -G -o upload-url.json -w "%{http_code}" \
-              --data-urlencode "file_name=${file_name}" \
-              "${api}/releases/${GH_TAG}/upload_url?${auth_q}")"
-            if [ "${upload_http_code}" != "200" ]; then
-              echo "Unexpected GitCode upload_url response: ${upload_http_code}"
-              cat upload-url.json || true
-              exit 1
-            fi
-
-            upload_url="$(jq -r '.upload_url // .url // .data.upload_url // .data.url // empty' upload-url.json)"
-            if [ -z "${upload_url}" ]; then
-              upload_url="$(jq -r 'strings' upload-url.json | head -n 1)"
-            fi
-            if [ -z "${upload_url}" ] || [ "${upload_url}" = "null" ]; then
-              echo "Could not determine GitCode release upload URL from response:"
-              cat upload-url.json
-              exit 1
-            fi
-
-            echo "Uploading ${file_name} to GitCode release..."
+            echo "Uploading ${file_name}..."
             curl -sS --fail \
               -X POST \
-              "${upload_url}?${auth_q}" \
-              -F "file=@${file}"
+              -H "Authorization: Bearer ${GITCODE_TOKEN}" \
+              -F "file=@${file}" \
+              "${api}/releases/${release_id}/attach_files"
           done
 
       - name: Summary
