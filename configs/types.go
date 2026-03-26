@@ -173,10 +173,6 @@ func DefaultConfig() *Config {
 func (c *Config) Validate() error {
 	c.normalize()
 
-	if strings.TrimSpace(c.Model.Model) == "" {
-		return fmt.Errorf("model name is required")
-	}
-
 	if provider := strings.ToLower(strings.TrimSpace(c.Model.Provider)); provider != "" {
 		switch provider {
 		case "openai-completion", "openai-responses", "anthropic":

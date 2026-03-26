@@ -104,7 +104,7 @@ func TestLoadWithEnv_IgnoresConfigFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadWithEnv() error = %v", err)
 	}
-	if got, want := cfg.Model.Model, "gpt-4o-mini"; got != want {
+	if got, want := cfg.Model.Model, ""; got != want {
 		t.Fatalf("model = %q, want %q", got, want)
 	}
 	if cfg.Request.MaxIterations == nil {
@@ -127,7 +127,7 @@ func TestApplyEnvOverrides_OnlyMSCLIVariables(t *testing.T) {
 	cfg := DefaultConfig()
 	ApplyEnvOverrides(cfg)
 
-	if got, want := cfg.Model.Model, "gpt-4o-mini"; got != want {
+	if got, want := cfg.Model.Model, ""; got != want {
 		t.Fatalf("model after non-MSCLI env overrides = %q, want %q", got, want)
 	}
 	if got, want := cfg.Model.Key, ""; got != want {
@@ -165,7 +165,7 @@ func TestLoadWithEnv_IgnoresWhitespaceOnlyModelEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadWithEnv() error = %v", err)
 	}
-	if got, want := cfg.Model.Model, "gpt-4o-mini"; got != want {
+	if got, want := cfg.Model.Model, ""; got != want {
 		t.Fatalf("model = %q, want %q", got, want)
 	}
 }
