@@ -2,6 +2,7 @@
 package slash
 
 import (
+	"sort"
 	"strings"
 	"sync"
 )
@@ -77,25 +78,38 @@ func (r *Registry) Match(prefix string) []Command {
 }
 
 // Suggestions returns command names that match the given input.
+// Exact matches are listed first, then sorted alphabetically.
 func (r *Registry) Suggestions(input string) []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	// If input is just "/", return all commands
-	if input == "/" {
-		names := make([]string, 0, len(r.commands))
-		for name := range r.commands {
-			names = append(names, name)
-		}
-		return names
-	}
 
-	// Otherwise match by prefix
 	var matches []string
-	for name := range r.commands {
-		if strings.HasPrefix(name, input) {
+	if input == "/" {
+		for name := range r.commands {
 			matches = append(matches, name)
 		}
+	} else {
+		for name := range r.commands {
+			if strings.HasPrefix(name, input) {
+				matches = append(matches, name)
+			}
+		}
 	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		// Exact match goes first
+		iExact := matches[i] == input
+		jExact := matches[j] == input
+		if iExact != jExact {
+			return iExact
+		}
+		// Then shorter names first (closer matches)
+		if len(matches[i]) != len(matches[j]) {
+			return len(matches[i]) < len(matches[j])
+		}
+		return matches[i] < matches[j]
+	})
+
 	return matches
 }
 

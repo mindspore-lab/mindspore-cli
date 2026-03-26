@@ -1,6 +1,6 @@
-# ms-cli
+# mindspore-cli
 
-AI infrastructure agent for MindSpore development.
+AI Infra Agent
 
 ## Install
 
@@ -8,21 +8,6 @@ AI infrastructure agent for MindSpore development.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vigo999/ms-cli/main/scripts/install.sh | bash
-```
-
-This downloads the latest release binary to `~/.ms-cli/bin/mscli` and configures your PATH.
-The installer uses GitHub as the canonical latest-tag source, probes the matching GitHub and GitCode assets for that tag, and downloads from the faster reachable mirror.
-
-Optional overrides:
-
-```bash
-# Force one source instead of auto-probing.
-MSCLI_INSTALL_SOURCE=github curl -fsSL https://raw.githubusercontent.com/vigo999/ms-cli/main/scripts/install.sh | bash
-MSCLI_INSTALL_SOURCE=gitcode curl -fsSL https://raw.githubusercontent.com/vigo999/ms-cli/main/scripts/install.sh | bash
-
-# Override repo coordinates if your GitCode mirror uses a different owner/repo.
-# Default GitCode mirror: zwiori/ms-cli
-MSCLI_GITCODE_REPO=your-mirror/ms-cli curl -fsSL https://raw.githubusercontent.com/vigo999/ms-cli/main/scripts/install.sh | bash
 ```
 
 ### Build from source
@@ -45,109 +30,6 @@ export MSCLI_API_KEY=sk-...
 # Run
 mscli
 ```
-
-### Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/project` | Show project status (overview, milestones, tasks, support) |
-| `/project add tasks "title" --owner X --due 03-25` | Add a task (admin) |
-| `/project add milestones "title" --progress 50` | Add a milestone (admin) |
-| `/project add support "feature name"` | Add a support entry (admin) |
-| `/project update <id> --progress 80` | Update a task by ID (admin) |
-| `/project update "title" --progress 80` | Update a milestone by title (admin) |
-| `/project rm <id\|title>` | Remove an item (admin) |
-| `/project overview --phase X --owner Y` | Edit project overview (admin) |
-| `/bugs` | List bugs |
-| `/report <title>` | Report a bug |
-| `/claim <id>` | Claim a bug |
-| `/dock` | Show bug dashboard |
-| `/login <token>` | Login to the bug/project server |
-| `/model <provider:model>` | Switch LLM model |
-| `/clear` | Clear chat |
-
-### Server Setup
-
-The bug and project server runs separately:
-
-```bash
-# Build and deploy
-go build -o /opt/mscli/ms-cli-server ./cmd/ms-cli-server
-
-# Start with config
-cd /opt/mscli && ./ms-cli-server -config ./server.yaml
-```
-
-See `configs/server.yaml` for server configuration (auth tokens, database, listen address).
-
-## Documentation
-
-- Architecture: [`docs/arch.md`](docs/arch.md)
-- Contributor guide: [`docs/agent-contributor-guide.md`](docs/agent-contributor-guide.md)
-- Implementation plans: [`docs/impl-guide/`](docs/impl-guide/)
-- Feature backlog: [`docs/features-backlog.md`](docs/features-backlog.md)
-
-### Command-Line Options
-
-```bash
-# Select URL and model
-./ms-cli --url https://api.openai.com/v1 --model gpt-4o
-
-# Set API key directly
-./ms-cli --api-key sk-xxx
-```
-
-## LLM API Configuration
-
-`ms-cli` supports three provider modes:
-
-- `openai-completion`: OpenAI Chat Completions API and compatible gateways (default)
-- `openai-responses`: OpenAI Responses API
-- `anthropic`: Anthropic Messages API protocol
-
-Provider routing is fully configuration-driven (no runtime protocol probing).
-
-### Configuration sources
-
-Runtime config now comes from:
-
-1. built-in defaults
-2. environment variables: `MSCLI_*`
-3. session overrides (`/model` in the current process only, not persisted)
-
-`~/.ms-cli/config.yaml` and `./.ms-cli/config.yaml` are no longer read.
-The shared skills repo URL and branch are built into the binary.
-
-### Environment variables
-
-Use unified `MSCLI_*` names:
-
-- `MSCLI_PROVIDER`
-- `MSCLI_MODEL`
-- `MSCLI_API_KEY`
-- `MSCLI_BASE_URL`
-- `MSCLI_TEMPERATURE` for an optional per-request override
-- `MSCLI_MAX_TOKENS` for an optional per-request output limit override
-- `MSCLI_TIMEOUT`
-- `MSCLI_CONTEXT_WINDOW`
-
-CLI flags `--api-key`, `--url`, `--model` are startup overrides for the current run.
-
-
-
-### Context window defaults and request overrides
-
-When `model.model` matches known families (`gpt-5` ~ `gpt-5.4`, `claude-4.5` ~ `claude-4.6`, `glm-4.7*`, `glm-5*`, `kimi-k2*`, `kimi-k2.5*`, `minimax-m2.5*`, `minimax-m2.7*`, `deepseek*`, `qwen3*`, `qwen3.5*`), ms-cli auto-fills:
-
-- `context.window`
-
-Precedence is:
-
-1. `MSCLI_CONTEXT_WINDOW`
-2. auto defaults from model name
-3. built-in defaults
-
-`MSCLI_MAX_TOKENS` and `MSCLI_TEMPERATURE` are request-only overrides. When unset, ms-cli omits those fields from outbound LLM requests, except the Anthropic path, which falls back to `max_tokens=64000`.
 
 ### Use OpenAI API
 
@@ -180,21 +62,3 @@ export MSCLI_BASE_URL=https://openrouter.ai/api/v1
 export MSCLI_MODEL=anthropic/claude-3.5-sonnet
 ./ms-cli
 ```
-
-### In-session model/provider switch
-
-Inside CLI:
-
-- `/model gpt-4o-mini` (switch model, keep current provider)
-- `/model openai-completion:gpt-4o-mini`
-- `/model openai-responses:gpt-4o`
-- `/model anthropic:claude-3-5-sonnet`
-
-## Known Limitations
-
-- Running Bubble Tea in non-interactive shells may fail with `/dev/tty` errors.
-- The bug/project server requires SQLite (CGO enabled).
-
-## Architecture Rule
-
-UI listens to events; agent loop emits events; tool execution does not depend on UI.

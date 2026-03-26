@@ -26,7 +26,7 @@ func RenderBootScreen(width, height, highlight int) string {
 		return ""
 	}
 
-	content := renderBootShimmer("MindSpore AI Infra Agent", highlight)
+	content := renderBootShimmer("MindSpore", highlight)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 }
 

@@ -21,7 +21,7 @@ func TestRenderBootScreenHasSingleBorderlessTitle(t *testing.T) {
 	}
 
 	plain := ansiPattern.ReplaceAllString(got, "")
-	if count := strings.Count(plain, "MindSpore AI Infra Agent"); count != 1 {
+	if count := strings.Count(plain, "MindSpore"); count != 1 {
 		t.Fatalf("expected one boot title, got %d in:\n%s", count, plain)
 	}
 }

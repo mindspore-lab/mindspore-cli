@@ -355,14 +355,25 @@ func RenderTrainActionStrip(tv model.TrainWorkspaceState, width int, focused boo
 
 // RenderSelectionPopup renders a selection popup box string (without placement).
 func RenderSelectionPopup(popup *model.SelectionPopup) string {
-	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true).Align(lipgloss.Center)
 	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 
+	// Find the widest option line to size the title
+	maxW := lipgloss.Width(popup.Title)
+	for _, opt := range popup.Options {
+		w := 2 + lipgloss.Width(opt.Label)
+		if opt.Desc != "" {
+			w += 1 + lipgloss.Width(opt.Desc)
+		}
+		if w > maxW {
+			maxW = w
+		}
+	}
+
 	var lines []string
-	lines = append(lines, titleStyle.Render(popup.Title))
+	lines = append(lines, titleStyle.Width(maxW).Render(popup.Title))
 	lines = append(lines, "")
 	for i, opt := range popup.Options {
 		marker := "  "
@@ -371,11 +382,7 @@ func RenderSelectionPopup(popup *model.SelectionPopup) string {
 			marker = "> "
 			style = selectedStyle
 		}
-		line := marker + style.Render(opt.Label)
-		if opt.Desc != "" {
-			line += " " + descStyle.Render(opt.Desc)
-		}
-		lines = append(lines, line)
+		lines = append(lines, marker+style.Render(opt.Label))
 	}
 	lines = append(lines, "")
 	lines = append(lines, hintStyle.Render("↑/↓ select · enter confirm · esc cancel"))

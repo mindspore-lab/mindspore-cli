@@ -130,29 +130,8 @@ func (a *Application) cmdModel(args []string) {
 }
 
 func (a *Application) openModelPicker() {
-	providerName := a.Config.Model.Provider
-	if providerName == "" {
-		providerName = "openai-completion"
-	}
-	modelName := a.Config.Model.Model
-	url := a.Config.Model.URL
-	if url == "" {
-		url = "https://api.openai.com/v1"
-	}
-
-	apiKeyStatus := "not set"
-	if strings.TrimSpace(a.Config.Model.Key) != "" {
-		apiKeyStatus = "set"
-	}
-
 	popup := &model.SelectionPopup{
-		Title: fmt.Sprintf(
-			"Model Selection\nProvider: %s\nURL: %s\nModel: %s\nKey: %s",
-			providerName,
-			url,
-			modelName,
-			apiKeyStatus,
-		),
+		Title:    "Model Selection",
 		ActionID: "model_picker",
 	}
 	for _, preset := range listBuiltinModelPresets() {

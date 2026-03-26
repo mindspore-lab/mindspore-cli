@@ -24,18 +24,8 @@ on:
         description: "Release notes markdown"
         required: false
         type: string
-      target_commitish:
-        description: "Target branch or commit"
-        required: false
-        default: main
-        type: string
       prerelease:
         description: "Whether this should be treated as a prerelease"
-        required: false
-        default: false
-        type: boolean
-      skip_assets:
-        description: "Skip GitCode asset upload and sync metadata only"
         required: false
         default: false
         type: boolean
@@ -58,10 +48,8 @@ jobs:
       GH_TAG: ${{ github.event.release.tag_name || inputs.tag_name }}
       GH_NAME: ${{ github.event.release.name || inputs.release_name }}
       GH_BODY: ${{ github.event.release.body || inputs.body }}
-      GH_TARGET: ${{ github.event.release.target_commitish || inputs.target_commitish }}
       GH_PRERELEASE: ${{ github.event.release.prerelease || inputs.prerelease || false }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
-      SKIP_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_assets || false }}
 
     steps:
       - name: Validate configuration
@@ -74,36 +62,6 @@ jobs:
           if [ "${DRY_RUN}" != "true" ]; then
             test -n "${GITCODE_TOKEN}"
           fi
-
-      - name: Download GitHub release assets
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p release-assets
-
-          if [ "${SKIP_ASSETS}" = "true" ]; then
-            echo "Skipping GitHub release asset download."
-            echo "asset_count=0" >> "${GITHUB_ENV}"
-            exit 0
-          fi
-
-          if [ "${{ github.event_name }}" = "release" ]; then
-            asset_count="$(jq '.release.assets | length' "${GITHUB_EVENT_PATH}")"
-          else
-            asset_count="$(gh release view "${GH_TAG}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets | length' 2>/dev/null || echo 0)"
-          fi
-
-          echo "GitHub release asset count: ${asset_count}"
-          echo "asset_count=${asset_count}" >> "${GITHUB_ENV}"
-
-          if [ "${asset_count}" = "0" ]; then
-            exit 0
-          fi
-
-          gh release download "${GH_TAG}" --repo "${GITHUB_REPOSITORY}" --dir release-assets
-          ls -lah release-assets
 
       - name: Sync release metadata to GitCode
         shell: bash
@@ -119,33 +77,19 @@ jobs:
             --arg tag "${GH_TAG}" \
             --arg name "${release_name}" \
             --arg body "${release_body}" \
-            --arg target "${GH_TARGET}" \
             --argjson prerelease "${GH_PRERELEASE:-false}" \
             '{
               tag_name: $tag,
               name: $name,
               body: $body,
-              target_commitish: $target,
               prerelease: $prerelease
             }'
           )"
 
           if [ "${DRY_RUN}" = "true" ]; then
             echo "Dry run enabled. No GitCode release will be created or updated."
-            echo "GET ${api}/releases/tags/${GH_TAG}"
-            echo "POST ${api}/releases"
-            echo "PATCH ${api}/releases/<id>"
             echo "Payload:"
             echo "${payload}" | jq .
-            if [ "${asset_count:-0}" != "0" ]; then
-              echo ""
-              echo "GitHub release assets found:"
-              find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
-              echo ""
-              echo "Planned GitCode attachment flow:"
-              echo "GET ${api}/releases/${GH_TAG}/upload_url"
-              echo "POST <upload_url> (multipart file upload)"
-            fi
             exit 0
           fi
 
@@ -155,20 +99,8 @@ jobs:
           api_error_code="$(jq -r '.error_code // empty' release.json 2>/dev/null || true)"
 
           if [ "${http_code}" = "200" ]; then
-            release_id="$(jq -r '.id // empty' release.json)"
-            if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
-              echo "Existing GitCode release found by tag; no release id in response, skipping metadata update."
-              jq '{tag_name, name}' release.json
-              exit 0
-            fi
-            echo "Updating existing GitCode release id=${release_id}..."
-            curl -sS --fail \
-              -X PATCH \
-              "${api}/releases/${release_id}?${auth_q}" \
-              -H "Content-Type: application/json" \
-              -d "${payload}" \
-              > result.json
-            jq '{id, tag_name, name}' result.json
+            echo "GitCode release ${GH_TAG} already exists."
+            jq '{tag_name, name}' release.json
             exit 0
           fi
 
@@ -189,50 +121,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "${payload}" \
             > result.json
-          jq '{id, tag_name, name}' result.json
-
-      - name: Upload release assets to GitCode
-        if: env.DRY_RUN != 'true' && env.asset_count != '0'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          api="${GITCODE_API_BASE}/repos/${GITCODE_OWNER}/${GITCODE_REPO}"
-          auth_q="access_token=${GITCODE_TOKEN}"
-
-          for file in release-assets/*; do
-            if [ ! -f "${file}" ]; then
-              continue
-            fi
-            file_name="$(basename "${file}")"
-            echo "Resolving GitCode release upload URL for ${file_name}..."
-            upload_http_code="$(curl -sS -G -o upload-url.json -w "%{http_code}" \
-              -H "PRIVATE-TOKEN: ${GITCODE_TOKEN}" \
-              --data-urlencode "file_name=${file_name}" \
-              "${api}/releases/${GH_TAG}/upload_url")"
-            if [ "${upload_http_code}" != "200" ]; then
-              echo "Unexpected GitCode upload_url response: ${upload_http_code}"
-              cat upload-url.json || true
-              exit 1
-            fi
-
-            upload_url="$(jq -r '.upload_url // .url // .data.upload_url // .data.url // empty' upload-url.json)"
-            if [ -z "${upload_url}" ]; then
-              upload_url="$(jq -r 'strings' upload-url.json | head -n 1)"
-            fi
-            if [ -z "${upload_url}" ] || [ "${upload_url}" = "null" ]; then
-              echo "Could not determine GitCode release upload URL from response:"
-              cat upload-url.json
-              exit 1
-            fi
-
-            echo "Uploading ${file_name} to GitCode release..."
-            curl -sS --fail \
-              -X POST \
-              -H "PRIVATE-TOKEN: ${GITCODE_TOKEN}" \
-              "${upload_url}" \
-              -F "file=@${file}"
-          done
+          jq '{tag_name, name}' result.json
 
       - name: Summary
         shell: bash
@@ -244,5 +133,4 @@ jobs:
             echo "- repo: \`${GITCODE_OWNER}/${GITCODE_REPO}\`"
             echo "- source: \`${{ github.event_name }}\`"
             echo "- dry-run: \`${DRY_RUN}\`"
-            echo "- asset-count: \`${asset_count:-0}\`"
           } >> "${GITHUB_STEP_SUMMARY}"

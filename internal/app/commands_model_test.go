@@ -94,8 +94,8 @@ func TestCmdModel_NoArgsShowsBuiltinPresetCandidate(t *testing.T) {
 	if ev.Popup == nil {
 		t.Fatal("ModelPickerOpen popup = nil, want popup")
 	}
-	if !strings.Contains(ev.Popup.Title, "Provider:") {
-		t.Fatalf("popup title = %q, want provider metadata", ev.Popup.Title)
+	if !strings.Contains(ev.Popup.Title, "Model Selection") {
+		t.Fatalf("popup title = %q, want Model Selection header", ev.Popup.Title)
 	}
 	if len(ev.Popup.Options) == 0 || ev.Popup.Options[0].ID != "kimi-k2.5-free" {
 		t.Fatalf("popup options = %#v, want kimi preset option", ev.Popup.Options)
