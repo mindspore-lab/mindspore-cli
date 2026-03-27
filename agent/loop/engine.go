@@ -349,8 +349,13 @@ func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResp
 	}
 
 	if len(resp.ToolCalls) > 0 {
-		for _, tc := range resp.ToolCalls {
+		for i, tc := range resp.ToolCalls {
 			if err := ex.executeToolCall(ctx, tc); err != nil {
+				if errors.Is(err, context.Canceled) {
+					if backfillErr := ex.addInterruptedToolResults(resp.ToolCalls[i+1:]); backfillErr != nil {
+						return false, backfillErr
+					}
+				}
 				return false, err
 			}
 		}
@@ -384,6 +389,9 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	path := extractPathArg(tc.Function.Arguments)
 	granted, err := ex.engine.permission.Request(ctx, toolName, action, path)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			return ex.addInterruptedToolResult(tc.ID)
+		}
 		return err
 	}
 	if !granted {
@@ -402,7 +410,7 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	result, err := tool.Execute(ctx, tc.Function.Arguments)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-			return context.Canceled
+			return ex.addInterruptedToolResult(tc.ID)
 		}
 		errMsg := fmt.Sprintf("Tool execution error: %v", err)
 		if err := ex.addToolResultWithFallback(tc.ID, errMsg); err != nil {
@@ -417,7 +425,7 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 
 	if result.Error != nil {
 		if errors.Is(result.Error, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-			return context.Canceled
+			return ex.addInterruptedToolResult(tc.ID)
 		}
 		errMsg := result.Error.Error()
 		if err := ex.addToolResultWithFallback(tc.ID, errMsg); err != nil {
@@ -444,6 +452,38 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 		return err
 	}
 	ex.addToolEvent(toolName, result)
+	return nil
+}
+
+func (ex *executor) addInterruptedToolResult(callID string) error {
+	const interruptedToolResult = "tool execution interrupted by user"
+	if err := ex.addToolResultWithFallback(callID, interruptedToolResult); err != nil {
+		return err
+	}
+	if err := ex.persistSnapshot(); err != nil {
+		return err
+	}
+	ex.addEvent(NewEvent(EventToolError, interruptedToolResult))
+	return context.Canceled
+}
+
+func (ex *executor) addInterruptedToolResults(calls []llm.ToolCall) error {
+	if len(calls) == 0 {
+		return nil
+	}
+
+	const interruptedToolResult = "tool execution interrupted by user before execution"
+	for _, tc := range calls {
+		if strings.TrimSpace(tc.ID) == "" {
+			continue
+		}
+		if err := ex.addToolResultWithFallback(tc.ID, interruptedToolResult); err != nil {
+			return err
+		}
+	}
+	if err := ex.persistSnapshot(); err != nil {
+		return err
+	}
 	return nil
 }
 

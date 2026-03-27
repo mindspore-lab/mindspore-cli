@@ -5,6 +5,7 @@ package shell
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -99,6 +100,9 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (*tools
 		summary = fmt.Sprintf("exit %d", result.ExitCode)
 	}
 	if result.Error != nil {
+		if errors.Is(result.Error, context.Canceled) || errors.Is(result.Error, context.DeadlineExceeded) {
+			return nil, result.Error
+		}
 		summary = fmt.Sprintf("error: %s", result.Error.Error())
 	}
 
