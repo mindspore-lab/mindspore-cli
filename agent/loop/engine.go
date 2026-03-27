@@ -220,6 +220,8 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 	llmCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	ex.sanitizeToolPairsBeforeRequest()
+
 	req := &llm.CompletionRequest{
 		Messages:    ex.requestMessages(),
 		Tools:       ex.engine.tools.ToLLMTools(),
@@ -246,6 +248,39 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 	}
 
 	return resp, nil
+}
+
+func (ex *executor) sanitizeToolPairsBeforeRequest() {
+	if ex.engine == nil || ex.engine.ctxManager == nil {
+		return
+	}
+
+	messages := ex.engine.ctxManager.GetNonSystemMessages()
+	valid := validToolCallIDs(messages)
+	sanitized, report := sanitizeMessagesForValidToolCallIDs(messages, valid)
+	if report.changed() {
+		ex.engine.ctxManager.SetNonSystemMessages(sanitized)
+		valid = validToolCallIDs(sanitized)
+	}
+
+	if ex.usesResponsesChain() && ex.responsesPreviousID != "" && len(ex.responsesFollowup) > 0 {
+		sanitizedFollowup, followupReport := sanitizeMessagesForValidToolCallIDs(ex.responsesFollowup, valid)
+		ex.responsesFollowup = sanitizedFollowup
+		if len(ex.responsesFollowup) == 0 {
+			ex.responsesPreviousID = ""
+		}
+		if !report.changed() && followupReport.changed() {
+			report = followupReport
+		}
+	}
+
+	if !report.changed() {
+		return
+	}
+
+	ev := NewEvent(EventToolError, report.warningMessage())
+	ev.ToolName = "context"
+	ex.addEvent(ev)
 }
 
 func (ex *executor) requestMessages() []llm.Message {
