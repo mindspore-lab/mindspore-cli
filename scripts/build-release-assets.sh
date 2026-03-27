@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+
 VERSION="${1:-}"
 
 if [ -z "${VERSION}" ]; then
@@ -46,6 +49,8 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Building ${VERSION} into temporary directory ${BUILD_DIR}"
+
+cd "${REPO_ROOT}"
 
 for platform in "${PLATFORMS[@]}"; do
   GOOS="${platform%/*}"
