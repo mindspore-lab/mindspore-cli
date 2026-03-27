@@ -132,6 +132,11 @@ func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
 			result.Error = err
 		}
 	}
+	if result.Error == nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			result.Error = ctxErr
+		}
+	}
 
 	return result, nil
 }
