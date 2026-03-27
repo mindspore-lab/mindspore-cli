@@ -113,21 +113,21 @@ resolve_latest() {
 
   case "$INSTALL_SOURCE" in
     auto)
-      echo "Resolving latest release from mirror..."
+      echo "Resolving latest release from mirror..." >&2
       latest="$(latest_from_manifest "$MIRROR_MANIFEST_URL" 2>/dev/null || true)"
       if [ -n "$latest" ]; then
         printf '%s\n' "$latest"
         return 0
       fi
-      echo "Mirror manifest unavailable, falling back to GitHub..."
+      echo "Mirror manifest unavailable, falling back to GitHub..." >&2
       latest="$(latest_from_github 2>/dev/null || true)"
       ;;
     mirror)
-      echo "Resolving latest release from mirror..."
+      echo "Resolving latest release from mirror..." >&2
       latest="$(latest_from_manifest "$MIRROR_MANIFEST_URL" 2>/dev/null || true)"
       ;;
     github)
-      echo "Resolving latest release from GitHub..."
+      echo "Resolving latest release from GitHub..." >&2
       latest="$(latest_from_github 2>/dev/null || true)"
       ;;
     *)
