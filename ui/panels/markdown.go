@@ -31,14 +31,17 @@ var (
 			Foreground(lipgloss.Color("239"))
 
 	mdCodeBlockStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252")).
-				Background(lipgloss.Color("236")).
+				Foreground(lipgloss.Color("254")).
+				Background(lipgloss.Color("235")).
+				BorderLeft(true).
+				BorderStyle(lipgloss.ThickBorder()).
+				BorderForeground(lipgloss.Color("67")).
 				PaddingLeft(1).
 				PaddingRight(1)
 
 	mdCodeInlineStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("229")).
-				Background(lipgloss.Color("238"))
+				Foreground(lipgloss.Color("230")).
+				Background(lipgloss.Color("60"))
 
 	mdBoldStyle = lipgloss.NewStyle().Bold(true)
 
@@ -68,17 +71,17 @@ var (
 			PaddingRight(1)
 )
 
-func renderAgentContent(content string) string {
+func renderAgentContent(content string, width int) string {
 	if content == "" {
 		return ""
 	}
 	if ansiEscapePattern.MatchString(content) {
 		return content
 	}
-	return renderMarkdown(content)
+	return renderMarkdown(content, width)
 }
 
-func renderMarkdown(content string) string {
+func renderMarkdown(content string, width int) string {
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	rendered := make([]string, 0, len(lines))
 	inCodeBlock := false
@@ -102,14 +105,14 @@ func renderMarkdown(content string) string {
 			continue
 		}
 		if inCodeBlock {
-			rendered = append(rendered, mdCodeBlockStyle.Render(line))
+			rendered = append(rendered, renderCodeBlockLine(line, width))
 			continue
 		}
 		if trimmed == "" {
 			rendered = append(rendered, "")
 			continue
 		}
-		if block, next, ok := markdownTable(lines, i); ok {
+		if block, next, ok := markdownTable(lines, i, width); ok {
 			rendered = append(rendered, block)
 			i = next - 1
 			continue
@@ -152,7 +155,7 @@ const (
 	alignRight
 )
 
-func markdownTable(lines []string, start int) (string, int, bool) {
+func markdownTable(lines []string, start int, width int) (string, int, bool) {
 	if start+1 >= len(lines) {
 		return "", start, false
 	}
@@ -175,7 +178,7 @@ func markdownTable(lines []string, start int) (string, int, bool) {
 	if len(rows) < 2 {
 		return "", start, false
 	}
-	return renderMarkdownTable(rows, parseMarkdownTableAlignment(separator)), i, true
+	return renderMarkdownTable(rows, parseMarkdownTableAlignment(separator), width), i, true
 }
 
 func isMarkdownTableRow(line string) bool {
@@ -221,7 +224,7 @@ func parseMarkdownTableRow(line string) []string {
 	return out
 }
 
-func renderMarkdownTable(rows [][]string, aligns []tableAlignment) string {
+func renderMarkdownTable(rows [][]string, aligns []tableAlignment, width int) string {
 	colCount := 0
 	for _, row := range rows {
 		if len(row) > colCount {
@@ -240,6 +243,7 @@ func renderMarkdownTable(rows [][]string, aligns []tableAlignment) string {
 			}
 		}
 	}
+	widths = constrainTableWidths(widths, width)
 
 	lines := []string{renderTableBorder("┌", "┬", "┐", widths), renderTableRow(rows[0], widths, true, aligns), renderTableBorder("├", "┼", "┤", widths)}
 	for _, row := range rows[1:] {
@@ -274,7 +278,7 @@ func renderTableRow(row []string, widths []int, header bool, aligns ...[]tableAl
 		if i < len(row) {
 			text = row[i]
 		}
-		rendered := renderInlineMarkdown(text)
+		rendered := renderInlineMarkdown(truncatePlainText(text, width))
 		leftPad, rightPad := tablePadding(width, plainTextWidth(rendered), alignmentAt(colAligns, i, header))
 		b.WriteString(" ")
 		b.WriteString(strings.Repeat(" ", leftPad))
@@ -288,6 +292,85 @@ func renderTableRow(row []string, widths []int, header bool, aligns ...[]tableAl
 		b.WriteString(mdTableBorderStyle.Render("│"))
 	}
 	return b.String()
+}
+
+func constrainTableWidths(widths []int, maxWidth int) []int {
+	if len(widths) == 0 {
+		return widths
+	}
+	if maxWidth < minimumTableWidth(len(widths)) {
+		maxWidth = minimumTableWidth(len(widths))
+	}
+	constrained := append([]int(nil), widths...)
+	for tableRenderWidth(constrained) > maxWidth {
+		col := widestColumnIndex(constrained)
+		if constrained[col] <= 3 {
+			break
+		}
+		constrained[col]--
+	}
+	return constrained
+}
+
+func tableRenderWidth(widths []int) int {
+	width := 1
+	for _, colWidth := range widths {
+		width += colWidth + 3
+	}
+	return width
+}
+
+func minimumTableWidth(cols int) int {
+	if cols <= 0 {
+		return 1
+	}
+	return 1 + cols*3
+}
+
+func widestColumnIndex(widths []int) int {
+	best := 0
+	for i := 1; i < len(widths); i++ {
+		if widths[i] > widths[best] {
+			best = i
+		}
+	}
+	return best
+}
+
+func truncatePlainText(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(text) <= width {
+		return text
+	}
+	if width == 1 {
+		return "…"
+	}
+	limit := width - 1
+	var b strings.Builder
+	used := 0
+	for _, r := range text {
+		rw := runewidth.RuneWidth(r)
+		if used+rw > limit {
+			break
+		}
+		b.WriteRune(r)
+		used += rw
+	}
+	return b.String() + "…"
+}
+
+func renderCodeBlockLine(line string, width int) string {
+	contentWidth := width - codeBlockDecorationWidth()
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	return mdCodeBlockStyle.Render(truncatePlainText(line, contentWidth))
+}
+
+func codeBlockDecorationWidth() int {
+	return mdCodeBlockStyle.GetHorizontalFrameSize()
 }
 
 func plainTextWidth(rendered string) int {

@@ -172,6 +172,93 @@ func TestRenderMessagesRendersCodeFenceLangAndStrikethrough(t *testing.T) {
 	}
 }
 
+func TestRenderMessagesInlineCodeAndFenceMarkers(t *testing.T) {
+	state := model.NewState("test", ".", "", "demo-model", 4096)
+	state = state.WithMessage(model.Message{
+		Kind:    model.MsgAgent,
+		Content: "Use `<words>` and `inline` here.\n\n```txt\nnot a fence marker\n```",
+	})
+
+	rendered := RenderMessages(state, "", 80)
+	plain := testANSIPattern.ReplaceAllString(rendered, "")
+
+	for _, want := range []string{"<words>", "inline", "txt", "not a fence marker"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected %q in rendered output, got:\n%s", want, plain)
+		}
+	}
+	if strings.Contains(plain, "`") {
+		t.Fatalf("expected inline and fenced code markers to be hidden, got:\n%s", plain)
+	}
+}
+
+func TestRenderMessagesKeepsWideTableBordersStable(t *testing.T) {
+	state := model.NewState("test", ".", "", "demo-model", 4096)
+	state = state.WithMessage(model.Message{
+		Kind: model.MsgAgent,
+		Content: "| Name | Description | Notes |\n" +
+			"| ---- | ----------- | ----- |\n" +
+			"| alpha | this cell is intentionally very wide to exercise truncation | keep border stable |\n" +
+			"| beta | another wide value that used to trigger outer wrapping | second row |",
+	})
+
+	rendered := RenderMessages(state, "", 42)
+	plain := testANSIPattern.ReplaceAllString(rendered, "")
+	lines := strings.Split(plain, "\n")
+
+	var tableLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "┌") || strings.HasPrefix(trimmed, "├") || strings.HasPrefix(trimmed, "└") || strings.HasPrefix(trimmed, "│") {
+			tableLines = append(tableLines, trimmed)
+		}
+	}
+	if len(tableLines) < 5 {
+		t.Fatalf("expected full rendered table, got:\n%s", plain)
+	}
+	for _, fragment := range []string{"┐", "┤", "┘"} {
+		if !strings.Contains(plain, fragment) {
+			t.Fatalf("expected %q in rendered output, got:\n%s", fragment, plain)
+		}
+	}
+	counts := map[string]int{"┌": 0, "├": 0, "└": 0}
+	for _, line := range tableLines {
+		switch {
+		case strings.HasPrefix(line, "┌"):
+			counts["┌"]++
+		case strings.HasPrefix(line, "├"):
+			counts["├"]++
+		case strings.HasPrefix(line, "└"):
+			counts["└"]++
+		}
+	}
+	for border, count := range counts {
+		if count != 1 {
+			t.Fatalf("expected exactly one %s border line, got %d in:\n%s", border, count, plain)
+		}
+	}
+}
+
+func TestRenderMessagesRendersCodeBlockAsDistinctBlock(t *testing.T) {
+	state := model.NewState("test", ".", "", "demo-model", 4096)
+	state = state.WithMessage(model.Message{
+		Kind:    model.MsgAgent,
+		Content: "before\n\n```py\nprint(\"hi\")\n```\n\nafter",
+	})
+
+	rendered := RenderMessages(state, "", 60)
+	plain := testANSIPattern.ReplaceAllString(rendered, "")
+
+	for _, want := range []string{"before", "py", "┃ print(\"hi\")", "after"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected %q in rendered output, got:\n%s", want, plain)
+		}
+	}
+	if strings.Contains(plain, "```py") {
+		t.Fatalf("expected fenced code marker to be hidden, got:\n%s", plain)
+	}
+}
+
 func TestRenderMessagesRendersTableAlignmentSyntax(t *testing.T) {
 	state := model.NewState("test", ".", "", "demo-model", 4096)
 	state = state.WithMessage(model.Message{

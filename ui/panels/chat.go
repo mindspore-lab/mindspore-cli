@@ -128,7 +128,9 @@ func renderUserMsg(content string, width int) string {
 }
 
 func renderAgentMsg(content string, width int) string {
-	return renderPrefixedBlock(renderAgentContent(content), width, "  ", "  ")
+	firstPrefix := "  "
+	restPrefix := "  "
+	return renderPrefixedLines(renderAgentContent(content, prefixedBodyWidth(width, firstPrefix, restPrefix)), firstPrefix, restPrefix)
 }
 
 func renderThinking(thinkingView string, width int) string {
@@ -231,16 +233,13 @@ func nonEmptyLines(content string) []string {
 }
 
 func renderPrefixedBlock(content string, width int, firstPrefix, restPrefix string) string {
-	prefixWidth := lipgloss.Width(firstPrefix)
-	if w := lipgloss.Width(restPrefix); w > prefixWidth {
-		prefixWidth = w
-	}
-	bodyWidth := width - prefixWidth
-	if bodyWidth < 1 {
-		bodyWidth = 1
-	}
+	bodyWidth := prefixedBodyWidth(width, firstPrefix, restPrefix)
 	wrapped := lipgloss.NewStyle().Width(bodyWidth).Render(content)
-	lines := strings.Split(wrapped, "\n")
+	return renderPrefixedLines(wrapped, firstPrefix, restPrefix)
+}
+
+func renderPrefixedLines(content, firstPrefix, restPrefix string) string {
+	lines := strings.Split(content, "\n")
 	for i := range lines {
 		if i == 0 {
 			lines[i] = firstPrefix + lines[i]
@@ -249,6 +248,18 @@ func renderPrefixedBlock(content string, width int, firstPrefix, restPrefix stri
 		lines[i] = restPrefix + lines[i]
 	}
 	return strings.Join(lines, "\n")
+}
+
+func prefixedBodyWidth(width int, firstPrefix, restPrefix string) int {
+	prefixWidth := lipgloss.Width(firstPrefix)
+	if w := lipgloss.Width(restPrefix); w > prefixWidth {
+		prefixWidth = w
+	}
+	bodyWidth := width - prefixWidth
+	if bodyWidth < 1 {
+		bodyWidth = 1
+	}
+	return bodyWidth
 }
 
 func renderToolHeader(icon, title string, borderStyle, titleStyle lipgloss.Style, width int) string {
