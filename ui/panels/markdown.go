@@ -32,7 +32,6 @@ var (
 
 	mdCodeBlockStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("254")).
-				Background(lipgloss.Color("235")).
 				BorderLeft(true).
 				BorderStyle(lipgloss.ThickBorder()).
 				BorderForeground(lipgloss.Color("67")).
@@ -40,8 +39,7 @@ var (
 				PaddingRight(1)
 
 	mdCodeInlineStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("60"))
+				Foreground(lipgloss.Color("60"))
 
 	mdBoldStyle = lipgloss.NewStyle().Bold(true)
 
