@@ -365,6 +365,10 @@ func wrapTableText(text string, width int) []string {
 				current = word
 				continue
 			}
+			if isInlineCodeToken(word) {
+				current = truncateInlineCodeToken(word, width)
+				continue
+			}
 			parts := splitPlainText(word, width)
 			lines = append(lines, parts[:len(parts)-1]...)
 			current = parts[len(parts)-1]
@@ -382,6 +386,10 @@ func wrapTableText(text string, width int) []string {
 			current = word
 			continue
 		}
+		if isInlineCodeToken(word) {
+			current = truncateInlineCodeToken(word, width)
+			continue
+		}
 		parts := splitPlainText(word, width)
 		lines = append(lines, parts[:len(parts)-1]...)
 		current = parts[len(parts)-1]
@@ -395,6 +403,33 @@ func wrapTableText(text string, width int) []string {
 	return lines
 }
 
+func isInlineCodeToken(token string) bool {
+	return len(token) >= 2 && strings.HasPrefix(token, "`") && strings.HasSuffix(token, "`") && strings.Count(token, "`") == 2
+}
+
+func truncateInlineCodeToken(token string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(token) <= width {
+		return token
+	}
+	if width <= 3 {
+		return strings.Repeat("…", 1)
+	}
+
+	content := token[1 : len(token)-1]
+	innerWidth := width - 2
+	if innerWidth <= 1 {
+		return "`…`"
+	}
+	parts := splitPlainText(content, innerWidth-1)
+	truncated := ""
+	if len(parts) > 0 {
+		truncated = parts[0]
+	}
+	return "`" + truncated + "…`"
+}
 func splitPlainText(text string, width int) []string {
 	if width <= 0 {
 		return []string{""}

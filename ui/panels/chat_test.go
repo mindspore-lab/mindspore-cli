@@ -264,24 +264,22 @@ func TestRenderMessagesRendersCodeBlockAsDistinctBlock(t *testing.T) {
 	}
 }
 
-func TestRenderMessagesRendersTableAlignmentSyntax(t *testing.T) {
+func TestRenderMessagesRendersTableInlineCodeWithoutBreakingCodeSpan(t *testing.T) {
 	state := model.NewState("test", ".", "", "demo-model", 4096)
 	state = state.WithMessage(model.Message{
 		Kind: model.MsgAgent,
-		Content: "| left | center | right |\n" +
-			"| :--- | :----: | ----: |\n" +
-			"| a | bb | ccc |",
+		Content: "| File | Description |\n" +
+			"| ---- | ----------- |\n" +
+			"| `manager_test.go` | Tests for context manager |",
 	})
 
-	rendered := RenderMessages(state, "", 100)
+	rendered := RenderMessages(state, "", 38)
 	plain := testANSIPattern.ReplaceAllString(rendered, "")
 
-	for _, want := range []string{"left", "center", "right", "a", "bb", "ccc"} {
-		if !strings.Contains(plain, want) {
-			t.Fatalf("expected %q in rendered output, got:\n%s", want, plain)
-		}
+	if strings.Contains(plain, "manager_test.g\no") {
+		t.Fatalf("expected inline code token to stay on one table line, got:\n%s", plain)
 	}
-	if strings.Contains(plain, ":----:") {
-		t.Fatalf("expected alignment separator row to be hidden, got:\n%s", plain)
+	if !strings.Contains(plain, "manager") {
+		t.Fatalf("expected file name content to remain visible, got:\n%s", plain)
 	}
 }
