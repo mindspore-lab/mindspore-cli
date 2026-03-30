@@ -244,7 +244,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updated.updateViewport()
 			m = updated
 		}
-		return m, a.ensureWaitForEvent(cmd)
+		return m, cmd
 
 	case tea.MouseMsg:
 		var cmd tea.Cmd
@@ -284,15 +284,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return a, tea.Batch(cmds...)
-}
-
-// ensureWaitForEvent wraps a cmd to always include waitForEvent,
-// so the UI keeps listening for backend events after key presses.
-func (a App) ensureWaitForEvent(cmd tea.Cmd) tea.Cmd {
-	if cmd == nil {
-		return a.waitForEvent
-	}
-	return tea.Batch(cmd, a.waitForEvent)
 }
 
 // chatWidth returns the width available for the chat panel.
@@ -814,6 +805,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.TaskDone:
 		a.state = a.state.WithThinking(false)
+		a.state = a.commitStreamingAgent()
 
 	case model.AgentThinking:
 		a.state = a.state.WithThinking(true)

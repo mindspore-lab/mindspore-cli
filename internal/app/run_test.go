@@ -90,14 +90,23 @@ func TestInterruptTokenCancelsActiveTask(t *testing.T) {
 		t.Fatal("timed out waiting for task cancellation")
 	}
 
-	deadline := time.After(200 * time.Millisecond)
+	deadline := time.NewTimer(300 * time.Millisecond)
+	defer deadline.Stop()
+
+	foundTaskDone := false
 	for {
 		select {
 		case ev := <-app.EventCh:
-			if ev.Type == model.ToolError && strings.Contains(strings.ToLower(ev.Message), "canceled") {
-				t.Fatalf("expected interrupt cancellation to stay silent, got tool error %q", ev.Message)
+			switch ev.Type {
+			case model.TaskDone:
+				foundTaskDone = true
+			case model.ToolError:
+				t.Fatalf("expected no ToolError after interrupt, got %q", ev.Message)
 			}
-		case <-deadline:
+		case <-deadline.C:
+			if !foundTaskDone {
+				t.Fatal("timed out waiting for TaskDone after interrupt")
+			}
 			return
 		}
 	}

@@ -198,6 +198,7 @@ func (a *Application) runTask(description string) {
 		}
 	})
 	if errors.Is(err, context.Canceled) {
+		emit(model.Event{Type: model.TaskDone})
 		persistSnapshot()
 		return
 	}

@@ -557,6 +557,73 @@ func TestCtrlCSendsInterruptTokenForActiveTask(t *testing.T) {
 	}
 }
 
+func TestTaskDoneDispatchesQueuedInputWhenTrainNotBusy(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	app.trainView.Active = true
+	app.queuedInputs = []string{"continue"}
+	app.trainView.Runs = []model.TrainRunState{{
+		ID:    "primary",
+		Phase: model.TrainPhaseReady,
+	}}
+	app.trainView.ActiveRunID = "primary"
+
+	next, _ := app.handleEvent(model.Event{Type: model.TaskDone})
+	app = next.(App)
+
+	select {
+	case msg := <-userCh:
+		if msg != "continue" {
+			t.Fatalf("expected queued input to auto-dispatch after TaskDone, got %q", msg)
+		}
+	default:
+		t.Fatal("expected queued input to be auto-dispatched after TaskDone")
+	}
+	if got := len(app.queuedInputs); got != 0 {
+		t.Fatalf("expected queued input to be consumed, got %d items", got)
+	}
+}
+
+func TestKeyUpdateDoesNotForceEventResubscribe(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd != nil {
+		t.Fatal("expected key update to return only key-handler cmd without forced waitForEvent")
+	}
+}
+
+func TestTaskDoneCommitsStreamingAgentBeforeNextTurn(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.handleEvent(model.Event{Type: model.AgentReplyDelta, Message: "old"})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{Type: model.TaskDone})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{Type: model.UserInput, Message: "继续"})
+	app = next.(App)
+	next, _ = app.handleEvent(model.Event{Type: model.AgentReplyDelta, Message: "new"})
+	app = next.(App)
+
+	if got := len(app.state.Messages); got != 3 {
+		t.Fatalf("expected 3 messages (old agent, user, new agent), got %d: %#v", got, app.state.Messages)
+	}
+	if got := app.state.Messages[0].Content; got != "old" {
+		t.Fatalf("expected first agent message to stay unchanged after interrupt, got %q", got)
+	}
+	if app.state.Messages[0].Streaming {
+		t.Fatal("expected interrupted streaming message to be committed on TaskDone")
+	}
+	if got := app.state.Messages[2].Content; got != "new" {
+		t.Fatalf("expected new turn delta to start a fresh agent message, got %q", got)
+	}
+}
+
 func TestToolErrorClearsThinkingIndicator(t *testing.T) {
 	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
 	app.bootActive = false
