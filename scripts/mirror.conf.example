@@ -1,0 +1,10 @@
+# Mirror server config for release publishing.
+# Copy to mirror.conf and fill in your values:
+#   cp scripts/mirror.conf.example scripts/mirror.conf
+
+MSCODE_MIRROR_HOST="${MSCODE_MIRROR_HOST:-your-server-ip}"
+MSCODE_MIRROR_USER="${MSCODE_MIRROR_USER:-your-user}"
+MSCODE_MIRROR_PORT="${MSCODE_MIRROR_PORT:-22}"
+MSCODE_MIRROR_SSH_KEY="${MSCODE_MIRROR_SSH_KEY:-${HOME}/your-key.pem}"
+MSCODE_MIRROR_ROOT="${MSCODE_MIRROR_ROOT:-/opt/downloads/mscode/releases}"
+MSCODE_MIRROR_BASE_URL="${MSCODE_MIRROR_BASE_URL:-http://your-server-ip/mscode/releases}"
