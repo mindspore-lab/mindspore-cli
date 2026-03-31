@@ -37,7 +37,7 @@ var buildProvider = func(resolved llm.ResolvedConfig) (llm.Provider, error) {
 	return llm.DefaultManager().Build(resolved)
 }
 
-var Version = "MindSpore CLI. " + version.Version
+var Version = "MindSpore Code. " + version.Version
 
 // Application is the top-level composition container.
 type Application struct {
