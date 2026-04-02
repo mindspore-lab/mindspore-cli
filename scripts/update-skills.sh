@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Configuration — change these to switch skills source.
 SKILLS_REPO="https://github.com/vigo999/mindspore-skills"
-SKILLS_BRANCH="refactor-arch-4.1"
+SKILLS_BRANCH="main"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
