@@ -39,6 +39,27 @@ func TestTextInputHistoryRecall(t *testing.T) {
 	}
 }
 
+func TestTextInputSeedHistoryPreservesRecallOrder(t *testing.T) {
+	input := NewTextInput()
+	input = input.SeedHistory([]string{"older prompt", "newer old prompt"})
+	input = input.PushHistory("current prompt")
+
+	input = input.PrevHistory()
+	if got := input.Value(); got != "current prompt" {
+		t.Fatalf("expected latest current-session prompt first, got %q", got)
+	}
+
+	input = input.PrevHistory()
+	if got := input.Value(); got != "newer old prompt" {
+		t.Fatalf("expected newest seeded old-history next, got %q", got)
+	}
+
+	input = input.PrevHistory()
+	if got := input.Value(); got != "older prompt" {
+		t.Fatalf("expected oldest seeded prompt last, got %q", got)
+	}
+}
+
 func TestTextInputHistoryDoesNotBreakSlashSuggestions(t *testing.T) {
 	input := NewTextInput()
 	input = input.PushHistory("/project")

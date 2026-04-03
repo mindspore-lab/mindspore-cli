@@ -334,6 +334,59 @@ func TestUpDownRecallInputHistoryInsteadOfScrollingViewport(t *testing.T) {
 	}
 }
 
+func TestSubmittedChatInputPersistsThroughAppender(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	var persisted []string
+	app = app.WithInputHistoryAppender(func(value string) {
+		persisted = append(persisted, value)
+	})
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	app.input.Model.SetValue("hello history")
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	select {
+	case msg := <-userCh:
+		if msg != "hello history" {
+			t.Fatalf("expected submit to reach backend, got %q", msg)
+		}
+	default:
+		t.Fatal("expected submit to reach backend")
+	}
+	if len(persisted) != 1 || persisted[0] != "hello history" {
+		t.Fatalf("expected submit to persist once, got %#v", persisted)
+	}
+}
+
+func TestSubmittedChatInputDoesNotPersistConsecutiveDuplicateTwice(t *testing.T) {
+	userCh := make(chan string, 2)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	var persisted []string
+	app = app.WithInputHistoryAppender(func(value string) {
+		persisted = append(persisted, value)
+	})
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	app.input.Model.SetValue("same input")
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+	app.input.Model.SetValue("same input")
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	if len(persisted) != 1 || persisted[0] != "same input" {
+		t.Fatalf("expected consecutive duplicate submit to persist once, got %#v", persisted)
+	}
+}
+
 func TestCtrlJInsertsComposerNewlineWithoutSubmitting(t *testing.T) {
 	userCh := make(chan string, 1)
 	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
@@ -777,6 +830,10 @@ func TestToolErrorClearsThinkingIndicator(t *testing.T) {
 func TestBusyTrainQueuesInputInBannerInsteadOfChatStream(t *testing.T) {
 	userCh := make(chan string, 1)
 	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	var persisted []string
+	app = app.WithInputHistoryAppender(func(value string) {
+		persisted = append(persisted, value)
+	})
 	app.bootActive = false
 
 	next, _ := app.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
@@ -810,5 +867,8 @@ func TestBusyTrainQueuesInputInBannerInsteadOfChatStream(t *testing.T) {
 	}
 	if strings.Contains(view, "> /train qwen3 lora") {
 		t.Fatalf("expected queued command to stay out of chat stream, got:\n%s", view)
+	}
+	if len(persisted) != 1 || persisted[0] != "/train qwen3 lora" {
+		t.Fatalf("expected queued input to persist once, got %#v", persisted)
 	}
 }

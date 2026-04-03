@@ -261,16 +261,46 @@ func (t TextInput) ConsumeEscapedEnter() (TextInput, bool) {
 
 // PushHistory stores a submitted input line for later up/down recall.
 func (t TextInput) PushHistory(value string) TextInput {
+	t, _ = t.recordHistory(value)
+	return t
+}
+
+// RecordHistory stores a submitted input line and reports whether it was added.
+func (t TextInput) RecordHistory(value string) (TextInput, bool) {
+	return t.recordHistory(value)
+}
+
+func (t TextInput) recordHistory(value string) (TextInput, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return t
+		return t, false
 	}
 	if n := len(t.history); n > 0 && t.history[n-1] == value {
 		t.historyIndex = -1
 		t.historyDraft = ""
-		return t
+		return t, false
 	}
 	t.history = append(t.history, value)
+	t.historyIndex = -1
+	t.historyDraft = ""
+	return t, true
+}
+
+// SeedHistory preloads older persisted history in oldest-first order.
+func (t TextInput) SeedHistory(values []string) TextInput {
+	if len(values) == 0 {
+		return t
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if n := len(t.history); n > 0 && t.history[n-1] == value {
+			continue
+		}
+		t.history = append(t.history, value)
+	}
 	t.historyIndex = -1
 	t.historyDraft = ""
 	return t

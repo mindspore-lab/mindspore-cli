@@ -58,6 +58,10 @@ func TestIssueViewUsesDedicatedSurfaceAndShowsComposerInDetail(t *testing.T) {
 func TestIssueDetailComposerSubmitsMultilineNote(t *testing.T) {
 	userCh := make(chan string, 1)
 	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	var persisted []string
+	app = app.WithInputHistoryAppender(func(value string) {
+		persisted = append(persisted, value)
+	})
 	app.bootActive = false
 
 	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 28})
@@ -92,6 +96,9 @@ func TestIssueDetailComposerSubmitsMultilineNote(t *testing.T) {
 
 	if got := app.input.Value(); got != "" {
 		t.Fatalf("expected composer reset after submit, got %q", got)
+	}
+	if len(persisted) != 1 || persisted[0] != "line one\nline two" {
+		t.Fatalf("expected issue detail submit to persist original input, got %#v", persisted)
 	}
 }
 
