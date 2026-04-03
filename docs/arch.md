@@ -22,7 +22,7 @@ ms-factory (incubating/)    knowledge — operator/failure/trick/model cards
 mindspore-code/
   cmd/mscode/              process entrypoint
   internal/
-    app/                   composition root, startup, commands, UI bridging
+    app/                   composition root, startup, commands, UI bridging, prompt history persistence
     factory/               local factory card store and resolver
     project/               roadmap and weekly status helpers
     train/                 train request and target types
@@ -143,6 +143,11 @@ features migrate to agent-skills.
 
 - **`agent/session/`**
   Owns session state, trajectory persistence, and resume reconstruction.
+
+- **`internal/app/` prompt history helpers**
+  Own workdir-level prompt recall persistence for `↑/↓`. This is separate
+  from session transcript persistence and only seeds the composer's local
+  in-memory history on startup.
 
 - **`integrations/skills/`**
   Refreshes the shared skills repo into `~/.mscode/mindspore-skills`,

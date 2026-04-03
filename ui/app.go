@@ -201,6 +201,7 @@ type App struct {
 	toolsExpanded    *bool
 	modelPicker      *model.SelectionPopup
 	setupPopup       *model.SetupPopup
+	appendHistoryFn  func(string)
 
 	// Tool output viewer (alt-screen overlay, toggled via Ctrl+O)
 	toolOutputView *toolOutputViewState
@@ -239,6 +240,26 @@ func NewReplay(ch <-chan model.Event, userCh chan<- string, version, workDir, re
 	return app
 }
 
+// SeedInputHistory preloads persisted prompt history into the current composer.
+func (a App) SeedInputHistory(values []string) App {
+	a.input = a.input.SeedHistory(values)
+	return a
+}
+
+// WithInputHistoryAppender installs the persistence hook for submitted prompts.
+func (a App) WithInputHistoryAppender(fn func(string)) App {
+	a.appendHistoryFn = fn
+	return a
+}
+
+func (a App) rememberInput(value string) App {
+	var added bool
+	a.input, added = a.input.RecordHistory(value)
+	if added && a.appendHistoryFn != nil {
+		a.appendHistoryFn(value)
+	}
+	return a
+}
 func (a App) waitForEvent() tea.Msg {
 	// Prevent multiple goroutines from reading the event channel
 	// concurrently — that causes non-deterministic event ordering.
@@ -941,7 +962,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if a.shouldQueueInput(val) {
 			a.queuedInputs = append(a.queuedInputs, val)
-			a.input = a.input.PushHistory(val)
+			a = a.rememberInput(val)
 			a.input = a.input.Reset()
 			a.resizeActiveLayout()
 			return a, a.printUserInput(val)
@@ -954,7 +975,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: val})
 			a.state = a.startWait(model.WaitModel)
 		}
-		a.input = a.input.PushHistory(val)
+		a = a.rememberInput(val)
 		a.input = a.input.Reset()
 		a.resizeActiveLayout()
 		printCmd := a.printUserInput(val)

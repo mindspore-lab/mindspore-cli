@@ -51,7 +51,7 @@ This summary matches the current tree in this checkout.
 ```text
 mindspore-code/
   cmd/mscode/              process entrypoint
-  internal/app/            bootstrap, wiring, commands, startup, train flow
+  internal/app/            bootstrap, wiring, commands, startup, train flow, prompt recall persistence
   internal/project/        roadmap and weekly helpers
   internal/train/          training types and target abstraction
   agent/
@@ -120,6 +120,7 @@ Package rules:
 
 - `cmd/mscode/` should call `internal/app` only.
 - `internal/app/` is the wiring layer and should not become a reusable dependency for the rest of the repo.
+- `internal/app/` owns persisted prompt recall wiring and storage. Do not reuse that history for resume or transcript reconstruction.
 - `internal/app/train.go` maps train lane events to UI state updates — it is the only place that bridges `workflow/train` and `ui/model`.
 - `agent/` must not depend directly on `ui/` or `runtime/`.
 - `agent/` should use tools or interfaces rather than reaching into execution infrastructure directly.
@@ -154,6 +155,7 @@ Examples:
 - Do not bypass permission checks for tool or shell execution.
 - Do not import UI packages from agent, tools, or runtime layers.
 - Do not split session persistence into parallel trace-style subsystems.
+- Do not make `ui/components` own disk persistence logic when app-layer wiring can keep the component stateful but storage-agnostic.
 - Do not update docs by copying stale structure; verify against the current tree first.
 
 ## Root Agent Files

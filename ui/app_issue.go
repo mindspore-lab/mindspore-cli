@@ -173,7 +173,7 @@ func (a App) handleIssueDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		input := a.rewriteIssueInput(val)
-		a.input = a.input.PushHistory(val)
+		a = a.rememberInput(val)
 		a.input = a.input.Reset()
 		if a.issueView.Detail.Issue != nil {
 			a.input.Model.Placeholder = "Add note to " + a.issueView.Detail.Issue.Key + "..."

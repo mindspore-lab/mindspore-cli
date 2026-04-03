@@ -94,6 +94,13 @@ func (a *Application) runReal() error {
 	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
 	if a.replayOnly {
 		tui = ui.NewReplay(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
+	} else {
+		if history, err := loadInputHistoryForWorkdir(a.WorkDir); err == nil {
+			tui = tui.SeedInputHistory(history)
+		}
+		tui = tui.WithInputHistoryAppender(func(text string) {
+			_ = appendInputHistory(a.WorkDir, text)
+		})
 	}
 	p := tea.NewProgram(tui, tuiProgramOptions()...)
 
