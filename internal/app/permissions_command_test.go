@@ -203,3 +203,25 @@ func TestHandleCommand_InternalPermissionsAddRuleWithScopePersistsToLocalSetting
 		t.Fatalf("permissions.json content = %s", text)
 	}
 }
+
+func TestCmdYoloTogglesLoadSkillPermission(t *testing.T) {
+	app, permSvc := newPermAppForTest(t)
+
+	app.cmdYolo()
+	ev := <-app.EventCh
+	if ev.Type != model.AgentReply || !strings.Contains(ev.Message, "enabled") {
+		t.Fatalf("unexpected enable response: %#v", ev)
+	}
+	if got := permSvc.Check("load_skill", ""); got != permission.PermissionAllowAlways {
+		t.Fatalf("Check(load_skill) after enable = %s, want %s", got, permission.PermissionAllowAlways)
+	}
+
+	app.cmdYolo()
+	ev = <-app.EventCh
+	if ev.Type != model.AgentReply || !strings.Contains(ev.Message, "disabled") {
+		t.Fatalf("unexpected disable response: %#v", ev)
+	}
+	if got := permSvc.Check("load_skill", ""); got != permission.PermissionAsk {
+		t.Fatalf("Check(load_skill) after disable = %s, want %s", got, permission.PermissionAsk)
+	}
+}

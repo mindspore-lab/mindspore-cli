@@ -746,6 +746,7 @@ func (a *Application) cmdYolo() {
 		permSvc.Grant("shell", permission.PermissionAsk)
 		permSvc.Grant("write", permission.PermissionAsk)
 		permSvc.Grant("edit", permission.PermissionAsk)
+		permSvc.Grant("load_skill", permission.PermissionAsk)
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
 			Message: "YOLO mode disabled. Will ask for confirmation on destructive operations.",
@@ -757,6 +758,7 @@ func (a *Application) cmdYolo() {
 		permSvc.Grant("read", permission.PermissionAllowAlways)
 		permSvc.Grant("grep", permission.PermissionAllowAlways)
 		permSvc.Grant("glob", permission.PermissionAllowAlways)
+		permSvc.Grant("load_skill", permission.PermissionAllowAlways)
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
 			Message: "YOLO mode enabled! All operations will be auto-approved. Use with caution!",
