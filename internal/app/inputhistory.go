@@ -1,4 +1,4 @@
-package inputhistory
+package app
 
 import (
 	"bufio"
@@ -12,19 +12,18 @@ import (
 )
 
 const (
-	HistoryLoadMax               = 100
-	HistoryMaxBytes        int64 = 512 * 1024
-	historyTrimTargetBytes       = HistoryMaxBytes * 4 / 5
+	inputHistoryLoadMax               = 100
+	inputHistoryMaxBytes        int64 = 512 * 1024
+	inputHistoryTrimTargetBytes       = inputHistoryMaxBytes * 4 / 5
 )
 
-type entry struct {
+type inputHistoryEntry struct {
 	Display   string `json:"display"`
 	Timestamp int64  `json:"timestamp"`
 	WorkDir   string `json:"workdir"`
 }
 
-// FilePath returns the persistent prompt-history file path.
-func FilePath() (string, error) {
+func inputHistoryFilePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
@@ -32,10 +31,8 @@ func FilePath() (string, error) {
 	return filepath.Join(home, ".mscode", "history.jsonl"), nil
 }
 
-// LoadWorkdir returns the most recent prompt-history entries for workDir in
-// oldest-first order so in-memory append preserves expected Up-arrow recall.
-func LoadWorkdir(workDir string) ([]string, error) {
-	path, err := FilePath()
+func loadInputHistoryForWorkdir(workDir string) ([]string, error) {
+	path, err := inputHistoryFilePath()
 	if err != nil {
 		return nil, err
 	}
@@ -50,9 +47,9 @@ func LoadWorkdir(workDir string) ([]string, error) {
 
 	var matches []string
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), int(HistoryMaxBytes))
+	scanner.Buffer(make([]byte, 0, 64*1024), int(inputHistoryMaxBytes))
 	for scanner.Scan() {
-		var row entry
+		var row inputHistoryEntry
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
 			continue
 		}
@@ -64,19 +61,18 @@ func LoadWorkdir(workDir string) ([]string, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan history: %w", err)
 	}
-	if len(matches) > HistoryLoadMax {
-		matches = matches[len(matches)-HistoryLoadMax:]
+	if len(matches) > inputHistoryLoadMax {
+		matches = matches[len(matches)-inputHistoryLoadMax:]
 	}
 	return matches, nil
 }
 
-// Append records one prompt-history entry for workDir.
-func Append(workDir, text string) error {
+func appendInputHistory(workDir, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
 	}
-	path, err := FilePath()
+	path, err := inputHistoryFilePath()
 	if err != nil {
 		return err
 	}
@@ -84,7 +80,7 @@ func Append(workDir, text string) error {
 		return fmt.Errorf("create history dir: %w", err)
 	}
 
-	row := entry{
+	row := inputHistoryEntry{
 		Display:   text,
 		Timestamp: time.Now().UnixMilli(),
 		WorkDir:   workDir,
@@ -107,10 +103,10 @@ func Append(workDir, text string) error {
 	if closeErr != nil {
 		return fmt.Errorf("close history file: %w", closeErr)
 	}
-	return trimIfNeeded(path)
+	return trimInputHistoryIfNeeded(path)
 }
 
-func trimIfNeeded(path string) error {
+func trimInputHistoryIfNeeded(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -118,7 +114,7 @@ func trimIfNeeded(path string) error {
 		}
 		return fmt.Errorf("stat history: %w", err)
 	}
-	if info.Size() <= HistoryMaxBytes {
+	if info.Size() <= inputHistoryMaxBytes {
 		return nil
 	}
 
@@ -139,7 +135,7 @@ func trimIfNeeded(path string) error {
 			continue
 		}
 		lineSize := int64(len(line) + 1)
-		if size+lineSize > historyTrimTargetBytes && len(kept) > 0 {
+		if size+lineSize > inputHistoryTrimTargetBytes && len(kept) > 0 {
 			break
 		}
 		kept = append(kept, line)
@@ -148,11 +144,11 @@ func trimIfNeeded(path string) error {
 	for left, right := 0, len(kept)-1; left < right; left, right = left+1, right-1 {
 		kept[left], kept[right] = kept[right], kept[left]
 	}
+
 	content := ""
 	if len(kept) > 0 {
 		content = strings.Join(kept, "\n") + "\n"
 	}
-
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("write trimmed history: %w", err)

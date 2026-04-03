@@ -1,4 +1,4 @@
-package inputhistory
+package app
 
 import (
 	"os"
@@ -8,46 +8,46 @@ import (
 	"testing"
 )
 
-func TestLoadWorkdirReturnsOldestFirstRecentWindow(t *testing.T) {
+func TestLoadInputHistoryForWorkdirReturnsOldestFirstRecentWindow(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	for i := 0; i < HistoryLoadMax+5; i++ {
-		if err := Append("/repo/a", "prompt-"+strconv.Itoa(i)); err != nil {
+	for i := 0; i < inputHistoryLoadMax+5; i++ {
+		if err := appendInputHistory("/repo/a", "prompt-"+strconv.Itoa(i)); err != nil {
 			t.Fatalf("append history: %v", err)
 		}
 	}
-	if err := Append("/repo/b", "other-workdir"); err != nil {
+	if err := appendInputHistory("/repo/b", "other-workdir"); err != nil {
 		t.Fatalf("append history for other workdir: %v", err)
 	}
 
-	got, err := LoadWorkdir("/repo/a")
+	got, err := loadInputHistoryForWorkdir("/repo/a")
 	if err != nil {
 		t.Fatalf("load history: %v", err)
 	}
-	if len(got) != HistoryLoadMax {
-		t.Fatalf("expected %d entries, got %d", HistoryLoadMax, len(got))
+	if len(got) != inputHistoryLoadMax {
+		t.Fatalf("expected %d entries, got %d", inputHistoryLoadMax, len(got))
 	}
 	if got[0] != "prompt-5" {
 		t.Fatalf("expected oldest kept entry prompt-5, got %q", got[0])
 	}
-	if got[len(got)-1] != "prompt-"+strconv.Itoa(HistoryLoadMax+4) {
+	if got[len(got)-1] != "prompt-"+strconv.Itoa(inputHistoryLoadMax+4) {
 		t.Fatalf("expected newest entry prompt-104, got %q", got[len(got)-1])
 	}
 }
 
-func TestAppendTrimKeepsNewestTail(t *testing.T) {
+func TestAppendInputHistoryTrimKeepsNewestTail(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	chunk := strings.Repeat("x", int(HistoryMaxBytes/4))
+	chunk := strings.Repeat("x", int(inputHistoryMaxBytes/4))
 	for i := 0; i < 6; i++ {
-		if err := Append("/repo/a", chunk+"-"+strconv.Itoa(i)); err != nil {
+		if err := appendInputHistory("/repo/a", chunk+"-"+strconv.Itoa(i)); err != nil {
 			t.Fatalf("append history %d: %v", i, err)
 		}
 	}
 
-	path, err := FilePath()
+	path, err := inputHistoryFilePath()
 	if err != nil {
 		t.Fatalf("history path: %v", err)
 	}
@@ -55,8 +55,8 @@ func TestAppendTrimKeepsNewestTail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat history: %v", err)
 	}
-	if info.Size() > HistoryMaxBytes {
-		t.Fatalf("expected trimmed history at or below %d bytes, got %d", HistoryMaxBytes, info.Size())
+	if info.Size() > inputHistoryMaxBytes {
+		t.Fatalf("expected trimmed history at or below %d bytes, got %d", inputHistoryMaxBytes, info.Size())
 	}
 
 	data, err := os.ReadFile(path)
@@ -72,11 +72,11 @@ func TestAppendTrimKeepsNewestTail(t *testing.T) {
 	}
 }
 
-func TestLoadWorkdirSkipsMalformedLines(t *testing.T) {
+func TestLoadInputHistoryForWorkdirSkipsMalformedLines(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	path, err := FilePath()
+	path, err := inputHistoryFilePath()
 	if err != nil {
 		t.Fatalf("history path: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestLoadWorkdirSkipsMalformedLines(t *testing.T) {
 		t.Fatalf("write history file: %v", err)
 	}
 
-	got, err := LoadWorkdir("/repo/a")
+	got, err := loadInputHistoryForWorkdir("/repo/a")
 	if err != nil {
 		t.Fatalf("load history: %v", err)
 	}

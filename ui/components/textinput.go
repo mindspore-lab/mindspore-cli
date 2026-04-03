@@ -45,7 +45,7 @@ type TextInput struct {
 	historyIndex     int
 	historyDraft     string
 	width            int
-	maxVisibleRows int // 0 = unlimited; when set, the editor becomes scrollable
+	maxVisibleRows   int // 0 = unlimited; when set, the editor becomes scrollable
 }
 
 // NewTextInput creates a focused multiline composer with a prompt.

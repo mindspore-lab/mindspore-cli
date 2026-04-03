@@ -15,7 +15,6 @@ import (
 	"github.com/vigo999/mindspore-code/agent/loop"
 	"github.com/vigo999/mindspore-code/agent/session"
 	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/internal/inputhistory"
 	"github.com/vigo999/mindspore-code/internal/version"
 	"github.com/vigo999/mindspore-code/ui"
 	"github.com/vigo999/mindspore-code/ui/components"
@@ -95,11 +94,11 @@ func (a *Application) runReal() error {
 	if a.replayOnly {
 		tui = ui.NewReplay(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
 	} else {
-		if history, err := inputhistory.LoadWorkdir(a.WorkDir); err == nil {
+		if history, err := loadInputHistoryForWorkdir(a.WorkDir); err == nil {
 			tui = tui.SeedInputHistory(history)
 		}
 		tui = tui.WithInputHistoryAppender(func(text string) {
-			_ = inputhistory.Append(a.WorkDir, text)
+			_ = appendInputHistory(a.WorkDir, text)
 		})
 	}
 	p := tea.NewProgram(tui, tuiProgramOptions()...)

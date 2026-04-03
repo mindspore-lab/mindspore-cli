@@ -22,9 +22,8 @@ ms-factory (incubating/)    knowledge — operator/failure/trick/model cards
 mindspore-code/
   cmd/mscode/              process entrypoint
   internal/
-    app/                   composition root, startup, commands, UI bridging
+    app/                   composition root, startup, commands, UI bridging, prompt history persistence
     factory/               local factory card store and resolver
-    inputhistory/          prompt recall persistence for the chat composer
     project/               roadmap and weekly status helpers
     train/                 train request and target types
   agent/
@@ -145,8 +144,8 @@ features migrate to agent-skills.
 - **`agent/session/`**
   Owns session state, trajectory persistence, and resume reconstruction.
 
-- **`internal/inputhistory/`**
-  Owns workdir-level prompt recall persistence for `↑/↓`. This is separate
+- **`internal/app/` prompt history helpers**
+  Own workdir-level prompt recall persistence for `↑/↓`. This is separate
   from session transcript persistence and only seeds the composer's local
   in-memory history on startup.
 

@@ -167,23 +167,23 @@ const (
 
 // App is the TUI root model.
 type App struct {
-	state                model.State
-	input                components.TextInput
-	thinking             components.ThinkingSpinner
-	width                int
-	height               int
-	eventCh              <-chan model.Event
-	userCh               chan<- string // sends user input to the engine bridge
-	lastInterrupt        time.Time     // track last ctrl+c for double-press exit
-	mouseEnabled         bool
-	replayWait           *model.ReplayWaitData
-	modalAltScreen bool
-	deltaMu        *sync.Mutex
-	deltaBuf       *strings.Builder // buffers agent deltas until a full line is ready
-	deltaStarted   *bool            // true after the first agent delta line is printed
-	eventListening *int32           // atomic flag: 1 = waitForEvent goroutine is active
-	cmdOutputStarted *bool          // true after first shell output line is printed
-	cmdOutputLines   *int           // lines printed so far for current shell command
+	state            model.State
+	input            components.TextInput
+	thinking         components.ThinkingSpinner
+	width            int
+	height           int
+	eventCh          <-chan model.Event
+	userCh           chan<- string // sends user input to the engine bridge
+	lastInterrupt    time.Time     // track last ctrl+c for double-press exit
+	mouseEnabled     bool
+	replayWait       *model.ReplayWaitData
+	modalAltScreen   bool
+	deltaMu          *sync.Mutex
+	deltaBuf         *strings.Builder // buffers agent deltas until a full line is ready
+	deltaStarted     *bool            // true after the first agent delta line is printed
+	eventListening   *int32           // atomic flag: 1 = waitForEvent goroutine is active
+	cmdOutputStarted *bool            // true after first shell output line is printed
+	cmdOutputLines   *int             // lines printed so far for current shell command
 
 	// Train mode
 	trainView     model.TrainViewState
@@ -216,19 +216,19 @@ type toolOutputViewState struct {
 // userCh may be nil — user input won't be forwarded.
 func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
 	return App{
-		state:          model.NewState(version, workDir, repoURL, modelName, ctxMax),
-		input:          components.NewTextInput(),
-		thinking:       components.NewThinkingSpinner(),
-		eventCh:        ch,
-		userCh:         userCh,
-		bootActive:     true,
-		deltaMu:           &sync.Mutex{},
-		deltaBuf:          &strings.Builder{},
-		eventListening:    new(int32),
-		deltaStarted:      new(bool),
-		cmdOutputStarted:  new(bool),
-		cmdOutputLines:    new(int),
-		toolsExpanded:     new(bool),
+		state:            model.NewState(version, workDir, repoURL, modelName, ctxMax),
+		input:            components.NewTextInput(),
+		thinking:         components.NewThinkingSpinner(),
+		eventCh:          ch,
+		userCh:           userCh,
+		bootActive:       true,
+		deltaMu:          &sync.Mutex{},
+		deltaBuf:         &strings.Builder{},
+		eventListening:   new(int32),
+		deltaStarted:     new(bool),
+		cmdOutputStarted: new(bool),
+		cmdOutputLines:   new(int),
+		toolsExpanded:    new(bool),
 	}
 }
 
