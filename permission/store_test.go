@@ -84,3 +84,72 @@ func TestFilePermissionStore_LoadRejectsLowercaseToolName(t *testing.T) {
 		t.Fatalf("err = %v, want location hint permissions.allow[0]", err)
 	}
 }
+
+func TestFilePermissionStore_SaveAndReloadCustomToolState(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "permissions.json")
+	store, err := NewFilePermissionStore(path)
+	if err != nil {
+		t.Fatalf("NewFilePermissionStore() err = %v", err)
+	}
+
+	wantAction := `{"name":"failure-agent"}`
+	if err := store.SaveDecision(PermissionDecision{
+		Tool:      "load_skill",
+		Action:    wantAction,
+		Level:     PermissionAllowSession,
+		Timestamp: time.Now(),
+	}); err != nil {
+		t.Fatalf("SaveDecision() err = %v", err)
+	}
+
+	reloaded, err := NewFilePermissionStore(path)
+	if err != nil {
+		t.Fatalf("reload NewFilePermissionStore() err = %v", err)
+	}
+	decisions, err := reloaded.LoadDecisions()
+	if err != nil {
+		t.Fatalf("LoadDecisions() err = %v", err)
+	}
+	if len(decisions) != 1 {
+		t.Fatalf("loaded decisions = %d, want 1", len(decisions))
+	}
+	if got := decisions[0].Tool; got != "load_skill" {
+		t.Fatalf("loaded tool = %q, want %q", got, "load_skill")
+	}
+	if got := decisions[0].Action; got != wantAction {
+		t.Fatalf("loaded action = %q, want %q", got, wantAction)
+	}
+}
+
+func TestFilePermissionStore_LoadAcceptsLegacyLowercaseSnakeCaseTool(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "permissions.json")
+	legacy := `{
+  "permissions": {
+    "allow": [
+      "load_skill({\"name\":\"failure-agent\"})"
+    ]
+  }
+}`
+	if err := os.WriteFile(path, []byte(legacy), 0644); err != nil {
+		t.Fatalf("WriteFile() err = %v", err)
+	}
+
+	store, err := NewFilePermissionStore(path)
+	if err != nil {
+		t.Fatalf("NewFilePermissionStore() err = %v", err)
+	}
+	decisions, err := store.LoadDecisions()
+	if err != nil {
+		t.Fatalf("LoadDecisions() err = %v", err)
+	}
+	if len(decisions) != 1 {
+		t.Fatalf("loaded decisions = %d, want 1", len(decisions))
+	}
+	if got := decisions[0].Tool; got != "load_skill" {
+		t.Fatalf("loaded tool = %q, want %q", got, "load_skill")
+	}
+}

@@ -355,6 +355,7 @@ func decodeDecisions(data []byte) ([]PermissionDecision, error) {
 	if !hasPermissionsObject(settings) {
 		return nil, fmt.Errorf("invalid settings format: missing \"permissions\" object")
 	}
+	normalizeLegacySettingsToolCase(&settings)
 
 	return decisionsFromSettings(settings)
 }
@@ -457,6 +458,61 @@ func validateRuleToolCase(raw, bucket string, idx int) error {
 		return fmt.Errorf("permissions.%s[%d]: %q: Tool names must start with uppercase. Use %q", bucket, idx, tool, suggestion)
 	}
 	return nil
+}
+
+func normalizeLegacySettingsToolCase(settings *permissionSettingsFile) {
+	if settings == nil || settings.Permissions == nil {
+		return
+	}
+	normalizeBucket := func(rules []string) {
+		for i, rule := range rules {
+			rules[i] = normalizeLegacyToolRule(rule)
+		}
+	}
+	normalizeBucket(settings.Permissions.Allow)
+	normalizeBucket(settings.Permissions.Ask)
+	normalizeBucket(settings.Permissions.Deny)
+}
+
+func normalizeLegacyToolRule(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return raw
+	}
+
+	open := strings.Index(raw, "(")
+	tool := raw
+	suffix := ""
+	if open >= 0 {
+		tool = strings.TrimSpace(raw[:open])
+		suffix = raw[open:]
+	}
+	if !shouldNormalizeLegacyToolLiteral(tool) {
+		return raw
+	}
+	return uppercaseToolLiteral(tool) + suffix
+}
+
+func shouldNormalizeLegacyToolLiteral(tool string) bool {
+	tool = strings.TrimSpace(tool)
+	if tool == "" {
+		return false
+	}
+	lower := strings.ToLower(tool)
+	if strings.HasPrefix(lower, "mcp__") {
+		return false
+	}
+	r, size := utf8.DecodeRuneInString(tool)
+	if r == utf8.RuneError && size == 0 {
+		return false
+	}
+	if !unicode.IsLower(r) {
+		return false
+	}
+	// Older session state persisted custom tool names like "load_skill"
+	// verbatim. Normalize those snake/kebab-case names on load so resume can
+	// restore legacy session permissions without surfacing a settings error.
+	return strings.ContainsAny(tool, "_-")
 }
 
 func settingsFromDecisions(decisions []PermissionDecision) permissionSettingsFile {
@@ -564,6 +620,21 @@ func canonicalRuleTool(tool string) string {
 	case "agent":
 		return "Agent"
 	default:
-		return strings.TrimSpace(tool)
+		return uppercaseToolLiteral(tool)
 	}
+}
+
+func uppercaseToolLiteral(tool string) string {
+	tool = strings.TrimSpace(tool)
+	if tool == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(tool), "mcp__") {
+		return tool
+	}
+	r, size := utf8.DecodeRuneInString(tool)
+	if r == utf8.RuneError && size == 0 {
+		return tool
+	}
+	return strings.ToUpper(string(r)) + tool[size:]
 }
