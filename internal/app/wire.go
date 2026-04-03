@@ -44,6 +44,7 @@ type Application struct {
 	Engine                  *loop.Engine
 	EventCh                 chan model.Event
 	llmReady                bool
+	llmDebugDumper          *llm.DebugDumper
 	WorkDir                 string
 	RepoURL                 string
 	Config                  *configs.Config
@@ -106,6 +107,7 @@ type BootstrapConfig struct {
 	URL             string
 	Model           string
 	Key             string
+	Debug           bool
 	Resume          bool
 	ResumeSessionID string
 	Replay          bool
@@ -271,9 +273,15 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		ctxManager.SetSystemPrompt(systemPrompt)
 	}
 
+	var llmDebugDumper *llm.DebugDumper
+	if cfg.Debug && runtimeSession != nil {
+		llmDebugDumper = llm.NewDebugDumper(filepath.Dir(runtimeSession.Path()))
+	}
+
 	engineCfg := newEngineConfig(config, systemPrompt)
 	engine := loop.NewEngine(engineCfg, provider, toolRegistry)
 	engine.SetContextManager(ctxManager)
+	engine.SetLLMDebugDumper(llmDebugDumper)
 	engine.SetTrajectoryRecorder(newTrajectoryRecorder(runtimeSession, ctxManager))
 
 	permService := permission.NewDefaultPermissionService(config.Permissions)
@@ -303,6 +311,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		WorkDir:                 workDir,
 		RepoURL:                 "github.com/vigo999/mindspore-code",
 		Config:                  config,
+		llmDebugDumper:          llmDebugDumper,
 		provider:                provider,
 		toolRegistry:            toolRegistry,
 		ctxManager:              ctxManager,
@@ -419,6 +428,7 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 		}
 	}
 	newEngine.SetContextManager(a.ctxManager)
+	newEngine.SetLLMDebugDumper(a.llmDebugDumper)
 	newEngine.SetPermissionService(a.permService)
 	newEngine.SetTrajectoryRecorder(newTrajectoryRecorder(a.session, a.ctxManager))
 

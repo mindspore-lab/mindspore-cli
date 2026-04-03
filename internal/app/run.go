@@ -538,6 +538,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	if len(args) > 0 && args[0] == "replay" {
 		fs := flag.NewFlagSet("mindspore-code replay", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
+		debug := fs.Bool("debug", false, "Dump raw LLM requests/responses into the session directory")
 		if err := fs.Parse(args[1:]); err != nil {
 			return BootstrapConfig{}, err
 		}
@@ -549,6 +550,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 			Replay:          true,
 			ReplaySessionID: target,
 			ReplaySpeed:     speed,
+			Debug:           *debug,
 		}, nil
 	}
 
@@ -558,6 +560,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 		url := fs.String("url", "", "LLM API base URL")
 		modelFlag := fs.String("model", "", "Model name")
 		apiKey := fs.String("api-key", "", "API key")
+		debug := fs.Bool("debug", false, "Dump raw LLM requests/responses into the session directory")
 		if err := fs.Parse(args[1:]); err != nil {
 			return BootstrapConfig{}, err
 		}
@@ -569,6 +572,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 			URL:    *url,
 			Model:  *modelFlag,
 			Key:    *apiKey,
+			Debug:  *debug,
 			Resume: true,
 		}
 		if len(rest) == 1 {
@@ -582,6 +586,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	url := fs.String("url", "", "LLM API base URL")
 	modelFlag := fs.String("model", "", "Model name")
 	apiKey := fs.String("api-key", "", "API key")
+	debug := fs.Bool("debug", false, "Dump raw LLM requests/responses into the session directory")
 
 	if err := fs.Parse(args); err != nil {
 		return BootstrapConfig{}, err
@@ -594,6 +599,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 		URL:   *url,
 		Model: *modelFlag,
 		Key:   *apiKey,
+		Debug: *debug,
 	}, nil
 }
 

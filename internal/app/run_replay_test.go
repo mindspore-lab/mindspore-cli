@@ -264,6 +264,31 @@ func TestParseBootstrapConfigReplaySpeedOnly(t *testing.T) {
 	}
 }
 
+func TestParseBootstrapConfigDebug(t *testing.T) {
+	cfg, err := parseBootstrapConfig([]string{"--debug"})
+	if err != nil {
+		t.Fatalf("parse debug config: %v", err)
+	}
+	if !cfg.Debug {
+		t.Fatal("expected debug mode to be enabled")
+	}
+}
+
+func TestParseBootstrapConfigResumeDebug(t *testing.T) {
+	cfg, err := parseBootstrapConfig([]string{"resume", "--debug", "sess_123"})
+	if err != nil {
+		t.Fatalf("parse resume debug config: %v", err)
+	}
+	if !cfg.Resume {
+		t.Fatal("expected resume mode")
+	}
+	if !cfg.Debug {
+		t.Fatal("expected debug mode to be enabled")
+	}
+	if cfg.ResumeSessionID != "sess_123" {
+		t.Fatalf("resume session id = %q, want %q", cfg.ResumeSessionID, "sess_123")
+	}
+}
 
 func TestLooksLikeTrajectoryPath(t *testing.T) {
 	tests := []struct {

@@ -27,12 +27,13 @@ type EngineConfig struct {
 
 // Engine runs the ReAct loop: LLM → tool call → LLM → done.
 type Engine struct {
-	config     EngineConfig
-	provider   llm.Provider
-	tools      *tools.Registry
-	ctxManager *ctxmanager.Manager
-	permission permission.PermissionService
-	recorder   *TrajectoryRecorder
+	config      EngineConfig
+	provider    llm.Provider
+	tools       *tools.Registry
+	ctxManager  *ctxmanager.Manager
+	permission  permission.PermissionService
+	recorder    *TrajectoryRecorder
+	debugDumper *llm.DebugDumper
 }
 
 // TrajectoryRecorder records runtime conversation events for persistence.
@@ -93,6 +94,11 @@ func (e *Engine) SetPermissionService(ps permission.PermissionService) {
 // SetTrajectoryRecorder records runtime conversation events for persistence.
 func (e *Engine) SetTrajectoryRecorder(recorder *TrajectoryRecorder) {
 	e.recorder = recorder
+}
+
+// SetLLMDebugDumper enables raw request/response dumping for LLM calls.
+func (e *Engine) SetLLMDebugDumper(dumper *llm.DebugDumper) {
+	e.debugDumper = dumper
 }
 
 // ToolNames returns the names of registered tools.
@@ -231,6 +237,9 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 
 	if ex.usesResponsesChain() && ex.responsesPreviousID != "" {
 		llmCtx = llm.WithPreviousResponseID(llmCtx, ex.responsesPreviousID)
+	}
+	if ex.engine.debugDumper != nil {
+		llmCtx = llm.WithDebugDumper(llmCtx, ex.engine.debugDumper)
 	}
 
 	resp, err := ex.streamCompletion(llmCtx, req)
