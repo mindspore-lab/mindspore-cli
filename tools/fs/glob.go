@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vigo999/mindspore-cli/integrations/llm"
-	"github.com/vigo999/mindspore-cli/tools"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
 // GlobTool finds files matching a glob pattern.

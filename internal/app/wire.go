@@ -11,25 +11,25 @@ import (
 	"sync/atomic"
 	"time"
 
-	agentctx "github.com/vigo999/mindspore-cli/agent/context"
-	"github.com/vigo999/mindspore-cli/agent/loop"
-	"github.com/vigo999/mindspore-cli/agent/session"
-	"github.com/vigo999/mindspore-cli/configs"
-	"github.com/vigo999/mindspore-cli/integrations/llm"
-	"github.com/vigo999/mindspore-cli/integrations/skills"
-	"github.com/vigo999/mindspore-cli/internal/bugs"
-	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
-	projectpkg "github.com/vigo999/mindspore-cli/internal/project"
-	itrain "github.com/vigo999/mindspore-cli/internal/train"
-	"github.com/vigo999/mindspore-cli/internal/version"
-	"github.com/vigo999/mindspore-cli/permission"
-	rshell "github.com/vigo999/mindspore-cli/runtime/shell"
-	"github.com/vigo999/mindspore-cli/tools"
-	"github.com/vigo999/mindspore-cli/tools/fs"
-	"github.com/vigo999/mindspore-cli/tools/shell"
-	skillstool "github.com/vigo999/mindspore-cli/tools/skills"
-	"github.com/vigo999/mindspore-cli/ui/model"
-	wtrain "github.com/vigo999/mindspore-cli/workflow/train"
+	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
+	"github.com/mindspore-lab/mindspore-cli/agent/loop"
+	"github.com/mindspore-lab/mindspore-cli/agent/session"
+	"github.com/mindspore-lab/mindspore-cli/configs"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
+	"github.com/mindspore-lab/mindspore-cli/internal/bugs"
+	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
+	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
+	itrain "github.com/mindspore-lab/mindspore-cli/internal/train"
+	"github.com/mindspore-lab/mindspore-cli/internal/version"
+	"github.com/mindspore-lab/mindspore-cli/permission"
+	rshell "github.com/mindspore-lab/mindspore-cli/runtime/shell"
+	"github.com/mindspore-lab/mindspore-cli/tools"
+	"github.com/mindspore-lab/mindspore-cli/tools/fs"
+	"github.com/mindspore-lab/mindspore-cli/tools/shell"
+	skillstool "github.com/mindspore-lab/mindspore-cli/tools/skills"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	wtrain "github.com/mindspore-lab/mindspore-cli/workflow/train"
 )
 
 var errAPIKeyNotFound = errors.New("api key not found")
@@ -318,7 +318,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		Engine:                  engine,
 		EventCh:                 eventCh,
 		WorkDir:                 workDir,
-		RepoURL:                 "github.com/vigo999/mindspore-cli",
+		RepoURL:                 "github.com/mindspore-lab/mindspore-cli",
 		Config:                  config,
 		llmDebugDumper:          llmDebugDumper,
 		provider:                provider,

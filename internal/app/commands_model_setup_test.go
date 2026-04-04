@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vigo999/mindspore-cli/configs"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/configs"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 func TestCmdModelSetup_VerifiesUserAndConfiguresModel(t *testing.T) {

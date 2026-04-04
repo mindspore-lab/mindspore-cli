@@ -6,8 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 func TestIssueViewUsesDedicatedSurfaceAndShowsComposerInDetail(t *testing.T) {

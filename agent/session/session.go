@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/vigo999/mindspore-cli/integrations/llm"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 const (

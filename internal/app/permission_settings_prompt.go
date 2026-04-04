@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 type permissionSettingsIssue struct {

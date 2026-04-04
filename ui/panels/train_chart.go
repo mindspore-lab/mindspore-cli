@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 // ── Compact sparkline (for metrics panel) ───────────────────

@@ -1,6 +1,6 @@
 package model
 
-import issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
+import issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
 
 const (
 	IssueIndexOpen  EventType = "IssueIndexOpen"

@@ -3,8 +3,8 @@ package target
 import (
 	"context"
 
-	"github.com/vigo999/mindspore-cli/internal/train"
-	"github.com/vigo999/mindspore-cli/runtime/probes"
+	"github.com/mindspore-lab/mindspore-cli/internal/train"
+	"github.com/mindspore-lab/mindspore-cli/runtime/probes"
 )
 
 // DeviceProbe checks accelerator device on the remote target.

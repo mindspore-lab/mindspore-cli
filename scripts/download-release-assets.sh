@@ -24,7 +24,7 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
-BASE_URL="https://github.com/vigo999/mindspore-cli/releases/download/${VERSION}"
+BASE_URL="https://github.com/mindspore-lab/mindspore-cli/releases/download/${VERSION}"
 
 assets=(
   "manifest.json"

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/vigo999/mindspore-cli/integrations/llm"
-	"github.com/vigo999/mindspore-cli/tools"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
 // GrepTool searches for patterns in files.

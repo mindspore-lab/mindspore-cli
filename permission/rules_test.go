@@ -3,7 +3,7 @@ package permission
 import (
 	"testing"
 
-	"github.com/vigo999/mindspore-cli/configs"
+	"github.com/mindspore-lab/mindspore-cli/configs"
 )
 
 func TestParseRule_BasicAndSpecifier(t *testing.T) {

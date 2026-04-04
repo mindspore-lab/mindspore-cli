@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	agentctx "github.com/vigo999/mindspore-cli/agent/context"
-	"github.com/vigo999/mindspore-cli/agent/loop"
-	"github.com/vigo999/mindspore-cli/agent/session"
-	"github.com/vigo999/mindspore-cli/integrations/llm"
-	"github.com/vigo999/mindspore-cli/tools"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
+	"github.com/mindspore-lab/mindspore-cli/agent/loop"
+	"github.com/mindspore-lab/mindspore-cli/agent/session"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/tools"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 type singleReplyProvider struct {

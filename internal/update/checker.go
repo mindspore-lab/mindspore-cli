@@ -203,7 +203,7 @@ func parseSemver(v string) semverVersion {
 // Returns empty string on any failure (non-fatal).
 func FetchReleaseNotes(ctx context.Context, version string) string {
 	version = strings.TrimPrefix(version, "v")
-	url := fmt.Sprintf("https://api.github.com/repos/vigo999/mindspore-cli/releases/tags/v%s", version)
+	url := fmt.Sprintf("https://api.github.com/repos/mindspore-lab/mindspore-cli/releases/tags/v%s", version)
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

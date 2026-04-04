@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-cli/internal/bugs"
+	"github.com/mindspore-lab/mindspore-cli/internal/bugs"
 )
 
 // Style vars are populated by InitStyles() in styles.go.

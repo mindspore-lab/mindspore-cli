@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	app "github.com/vigo999/mindspore-cli/internal/app"
+	app "github.com/mindspore-lab/mindspore-cli/internal/app"
 )
 
 func main() {

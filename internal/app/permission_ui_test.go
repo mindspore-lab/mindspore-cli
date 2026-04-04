@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 func TestPermissionPromptUI_RequestPermissionAndApproveSession(t *testing.T) {

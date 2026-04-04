@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	projectpkg "github.com/vigo999/mindspore-cli/internal/project"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 var runProjectGit = func(workDir string, args ...string) (string, error) {

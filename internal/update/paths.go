@@ -8,7 +8,7 @@ import (
 
 const (
 	defaultMirrorManifestURL = "http://47.115.175.134/mscli/releases/latest/manifest.json"
-	defaultGitHubManifestURL = "https://github.com/vigo999/mindspore-cli/releases/latest/download/manifest.json"
+	defaultGitHubManifestURL = "https://github.com/mindspore-lab/mindspore-cli/releases/latest/download/manifest.json"
 )
 
 // InstallDir returns ~/.mscli/bin.

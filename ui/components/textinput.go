@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	rw "github.com/mattn/go-runewidth"
 	"github.com/rivo/uniseg"
-	// uirender "github.com/vigo999/mindspore-cli/ui/render"
-	"github.com/vigo999/mindspore-cli/ui/slash"
+	// uirender "github.com/mindspore-lab/mindspore-cli/ui/render"
+	"github.com/mindspore-lab/mindspore-cli/ui/slash"
 )
 
 // Style vars are populated by InitStyles() in styles.go.

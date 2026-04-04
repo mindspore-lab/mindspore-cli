@@ -64,7 +64,7 @@ for platform in "${PLATFORMS[@]}"; do
   fi
   echo "  -> ${output}"
   GOOS="${GOOS}" GOARCH="${GOARCH}" go build \
-    -ldflags "-X github.com/vigo999/mindspore-cli/internal/version.Version=${PLAIN_VERSION}" \
+    -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${PLAIN_VERSION}" \
     -o "${BUILD_DIR}/${output}" \
     ./cmd/mscli/
 done
@@ -78,7 +78,7 @@ fi
 
 echo "  -> ${SERVER_OUTPUT}"
 GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build \
-  -ldflags "-X github.com/vigo999/mindspore-cli/internal/version.Version=${PLAIN_VERSION}" \
+  -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${PLAIN_VERSION}" \
   -o "${BUILD_DIR}/${SERVER_OUTPUT}" \
   ./cmd/mscli-server/
 

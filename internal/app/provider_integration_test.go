@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 )
 
 func TestWire_OpenAICompletionDefaultRouting(t *testing.T) {

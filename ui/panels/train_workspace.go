@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-cli/ui/model"
-	"github.com/vigo999/mindspore-cli/ui/theme"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/ui/theme"
 )
 
 // panelTitleStyle and panelBodyStyle are layout-only (not themed).

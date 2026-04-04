@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vigo999/mindspore-cli/internal/train"
-	"github.com/vigo999/mindspore-cli/runtime/probes"
+	"github.com/mindspore-lab/mindspore-cli/internal/train"
+	"github.com/mindspore-lab/mindspore-cli/runtime/probes"
 )
 
 // AlgoProbe checks local repository path, train script, and config hints.

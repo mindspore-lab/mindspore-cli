@@ -2,7 +2,7 @@ package panels
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-cli/ui/theme"
+	"github.com/mindspore-lab/mindspore-cli/ui/theme"
 )
 
 // badge builds a bold badge style with the given foreground/background and standard padding.

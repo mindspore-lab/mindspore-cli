@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GITHUB_REPO="${MSCLI_GITHUB_REPO:-vigo999/mindspore-cli}"
+GITHUB_REPO="${MSCLI_GITHUB_REPO:-mindspore-lab/mindspore-cli}"
 MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-http://47.115.175.134/mscli/releases}"
 MIRROR_MANIFEST_URL="${MSCLI_MIRROR_MANIFEST_URL:-${MIRROR_BASE_URL%/}/latest/manifest.json}"
 INSTALL_DIR="$HOME/.mscli/bin"

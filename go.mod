@@ -1,4 +1,4 @@
-module github.com/vigo999/mindspore-cli
+module github.com/mindspore-lab/mindspore-cli
 
 go 1.24.2
 

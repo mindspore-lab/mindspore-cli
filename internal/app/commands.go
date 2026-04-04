@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-cli/integrations/llm"
-	"github.com/vigo999/mindspore-cli/internal/bugs"
-	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
-	projectpkg "github.com/vigo999/mindspore-cli/internal/project"
-	"github.com/vigo999/mindspore-cli/permission"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/internal/bugs"
+	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
+	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
+	"github.com/mindspore-lab/mindspore-cli/permission"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 func (a *Application) handleCommand(input string) {

@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 func TestCmdExitShowsGoodbyeOnly(t *testing.T) {

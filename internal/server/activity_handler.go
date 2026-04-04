@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/vigo999/mindspore-cli/internal/bugs"
+	"github.com/mindspore-lab/mindspore-cli/internal/bugs"
 )
 
 func HandleListActivity(store *Store) http.HandlerFunc {

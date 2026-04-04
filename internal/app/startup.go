@@ -1,9 +1,9 @@
 package app
 
 import (
-	"github.com/vigo999/mindspore-cli/agent/loop"
-	"github.com/vigo999/mindspore-cli/integrations/skills"
-	"github.com/vigo999/mindspore-cli/ui/slash"
+	"github.com/mindspore-lab/mindspore-cli/agent/loop"
+	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
+	"github.com/mindspore-lab/mindspore-cli/ui/slash"
 )
 
 const bootReadyToken = "__boot_ready__"

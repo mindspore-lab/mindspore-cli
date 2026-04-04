@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-cli/integrations/skills"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/integrations/skills"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 const localSkillsDisplayDir = "~/.mscli/skills/"

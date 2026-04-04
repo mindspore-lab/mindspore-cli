@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
+	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
 )
 
 type addIssueNoteRequest struct {

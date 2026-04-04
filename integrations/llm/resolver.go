@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-cli/configs"
+	"github.com/mindspore-lab/mindspore-cli/configs"
 )
 
 const (

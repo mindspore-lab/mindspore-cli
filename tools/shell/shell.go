@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-cli/integrations/llm"
-	rshell "github.com/vigo999/mindspore-cli/runtime/shell"
-	"github.com/vigo999/mindspore-cli/tools"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	rshell "github.com/mindspore-lab/mindspore-cli/runtime/shell"
+	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
 // ShellTool wraps shell execution as an LLM-callable Tool.

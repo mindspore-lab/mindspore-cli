@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vigo999/mindspore-cli/agent/session"
+	"github.com/mindspore-lab/mindspore-cli/agent/session"
 )
 
 func TestExitResumeHintSkippedWithoutLiveLLMActivity(t *testing.T) {

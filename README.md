@@ -24,7 +24,7 @@ curl -fsSL http://47.115.175.134/mscli/install.sh | bash
 Or build from source (Go 1.24.2+):
 
 ```bash
-git clone https://github.com/vigo999/mindspore-cli.git
+git clone https://github.com/mindspore-lab/mindspore-cli.git
 cd mindspore-cli && go build -o mscli ./cmd/mscli && ./mscli
 ```
 

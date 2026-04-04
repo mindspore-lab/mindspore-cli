@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-cli/internal/bugs"
-	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
-	projectpkg "github.com/vigo999/mindspore-cli/internal/project"
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/internal/bugs"
+	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
+	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 type credentials struct {

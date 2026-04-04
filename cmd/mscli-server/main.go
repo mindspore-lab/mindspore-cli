@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/vigo999/mindspore-cli/configs"
-	"github.com/vigo999/mindspore-cli/internal/server"
+	"github.com/mindspore-lab/mindspore-cli/configs"
+	"github.com/mindspore-lab/mindspore-cli/internal/server"
 )
 
 func main() {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"runtime"
 
-	"github.com/vigo999/mindspore-cli/internal/train"
-	"github.com/vigo999/mindspore-cli/runtime/probes"
+	"github.com/mindspore-lab/mindspore-cli/internal/train"
+	"github.com/mindspore-lab/mindspore-cli/runtime/probes"
 )
 
 // OSProbe checks local OS, shell, python, and go basics.

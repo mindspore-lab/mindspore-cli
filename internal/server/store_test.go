@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
-	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
+	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
 )
 
 func TestStoreCreateBugPersistsTags(t *testing.T) {

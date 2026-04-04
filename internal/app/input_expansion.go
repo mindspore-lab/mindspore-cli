@@ -7,7 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/vigo999/mindspore-cli/internal/workspacefile"
+	"github.com/mindspore-lab/mindspore-cli/internal/workspacefile"
 )
 
 var atFilePathPattern = regexp.MustCompile(`^[A-Za-z0-9._/\\-]+$`)

@@ -19,13 +19,13 @@ export PATH="$HOME/.mscli/bin:$PATH"
 For internal or authenticated GitHub installs, this also exists:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vigo999/mindspore-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mindspore-lab/mindspore-cli/main/scripts/install.sh | bash
 ```
 
 ### Option B: Build from source
 
 ```bash
-git clone https://github.com/vigo999/mindspore-cli.git
+git clone https://github.com/mindspore-lab/mindspore-cli.git
 cd mindspore-cli
 go build -o mscli ./cmd/mscli
 go build -o mscli-server ./cmd/mscli-server

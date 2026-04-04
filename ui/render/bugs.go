@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-cli/internal/bugs"
+	"github.com/mindspore-lab/mindspore-cli/internal/bugs"
 )
 
 func visPad(s string, w int) string {

@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vigo999/mindspore-cli/agent/loop"
-	"github.com/vigo999/mindspore-cli/agent/session"
-	"github.com/vigo999/mindspore-cli/configs"
-	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/agent/loop"
+	"github.com/mindspore-lab/mindspore-cli/agent/session"
+	"github.com/mindspore-lab/mindspore-cli/configs"
+	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 )
 
 func TestInitProviderAnthropic(t *testing.T) {

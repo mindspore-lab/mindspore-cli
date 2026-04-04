@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
 type permissionDecision struct {

@@ -32,7 +32,7 @@ for platform in "${PLATFORMS[@]}"; do
     output="${output}.exe"
   fi
   echo "  -> $output"
-  GOOS="$GOOS" GOARCH="$GOARCH" go build -ldflags "-X github.com/vigo999/mindspore-cli/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${output}" ./cmd/mscli/
+  GOOS="$GOOS" GOARCH="$GOARCH" go build -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${output}" ./cmd/mscli/
 done
 
 SERVER_GOOS="$(go env GOOS)"
@@ -43,7 +43,7 @@ if [ "${SERVER_GOOS}" = "windows" ]; then
 fi
 
 echo "  -> ${SERVER_OUTPUT}"
-GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build -ldflags "-X github.com/vigo999/mindspore-cli/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${SERVER_OUTPUT}" ./cmd/mscli-server/
+GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${SERVER_OUTPUT}" ./cmd/mscli-server/
 
 echo ""
 echo "Built binaries:"
@@ -55,7 +55,7 @@ cat > "${BUILD_DIR}/manifest.json" <<MANIFEST
 {
   "latest": "${PLAIN_VERSION}",
   "min_allowed": "",
-  "download_base": "https://github.com/vigo999/mindspore-cli/releases/download"
+  "download_base": "https://github.com/mindspore-lab/mindspore-cli/releases/download"
 }
 MANIFEST
 echo "Generated manifest.json"
@@ -67,4 +67,4 @@ gh release create "$VERSION" "$BUILD_DIR"/* \
   --notes "$NOTES"
 
 echo ""
-echo "Done! https://github.com/vigo999/mindspore-cli/releases/tag/$VERSION"
+echo "Done! https://github.com/mindspore-lab/mindspore-cli/releases/tag/$VERSION"
