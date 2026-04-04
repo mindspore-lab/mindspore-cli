@@ -78,7 +78,7 @@ Which type of problem are you seeing?
 3. Performance is worse than expected
 ```
 
-This is a thin deterministic router in mscode, not an LLM routing call. The
+This is a thin deterministic router in mscli, not an LLM routing call. The
 three skills share the same workflow structure but differ in evidence
 collection and factory card queries.
 

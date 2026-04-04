@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GITHUB_REPO="${MSCODE_GITHUB_REPO:-vigo999/mindspore-code}"
-MIRROR_BASE_URL="${MSCODE_MIRROR_BASE_URL:-http://47.115.175.134/mscode/releases}"
-MIRROR_MANIFEST_URL="${MSCODE_MIRROR_MANIFEST_URL:-${MIRROR_BASE_URL%/}/latest/manifest.json}"
-INSTALL_DIR="$HOME/.mscode/bin"
-BINARY_NAME="mscode"
-INSTALL_SOURCE="${MSCODE_INSTALL_SOURCE:-auto}"
-REQUESTED_VERSION="${MSCODE_VERSION:-}"
-PROBE_BYTES="${MSCODE_INSTALL_PROBE_BYTES:-262144}"
-PROBE_TIMEOUT="${MSCODE_INSTALL_PROBE_TIMEOUT:-8}"
-CONNECT_TIMEOUT="${MSCODE_INSTALL_CONNECT_TIMEOUT:-5}"
+GITHUB_REPO="${MSCLI_GITHUB_REPO:-vigo999/mindspore-code}"
+MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-http://47.115.175.134/mscli/releases}"
+MIRROR_MANIFEST_URL="${MSCLI_MIRROR_MANIFEST_URL:-${MIRROR_BASE_URL%/}/latest/manifest.json}"
+INSTALL_DIR="$HOME/.mscli/bin"
+BINARY_NAME="mscli"
+INSTALL_SOURCE="${MSCLI_INSTALL_SOURCE:-auto}"
+REQUESTED_VERSION="${MSCLI_VERSION:-}"
+PROBE_BYTES="${MSCLI_INSTALL_PROBE_BYTES:-262144}"
+PROBE_TIMEOUT="${MSCLI_INSTALL_PROBE_TIMEOUT:-8}"
+CONNECT_TIMEOUT="${MSCLI_INSTALL_CONNECT_TIMEOUT:-5}"
 GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
 
 # Detect OS.
@@ -131,7 +131,7 @@ resolve_latest() {
       latest="$(latest_from_github 2>/dev/null || true)"
       ;;
     *)
-      echo "Error: unsupported MSCODE_INSTALL_SOURCE=${INSTALL_SOURCE} (expected auto|github|mirror)" >&2
+      echo "Error: unsupported MSCLI_INSTALL_SOURCE=${INSTALL_SOURCE} (expected auto|github|mirror)" >&2
       exit 1
       ;;
   esac
@@ -240,7 +240,7 @@ fi
 
 echo "Latest release: ${LATEST}"
 
-ASSET="mscode-${OS}-${ARCH}"
+ASSET="mscli-${OS}-${ARCH}"
 GITHUB_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST}/${ASSET}"
 MIRROR_URL="${MIRROR_BASE_URL%/}/${LATEST}/${ASSET}"
 
@@ -276,7 +276,7 @@ curl -fSL -o "${INSTALL_DIR}/${BINARY_NAME}" "$URL" </dev/null
 chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
 echo ""
-echo "Installed mscode ${LATEST} to ${INSTALL_DIR}/${BINARY_NAME}"
+echo "Installed mscli ${LATEST} to ${INSTALL_DIR}/${BINARY_NAME}"
 
 # Auto-add to PATH.
 PATH_LINE="export PATH=\"${INSTALL_DIR}:\$PATH\""
@@ -302,7 +302,7 @@ if [ -f "$PROFILE" ] && grep -qF "$INSTALL_DIR" "$PROFILE" 2>/dev/null; then
 else
   echo "$PATH_LINE" >> "$PROFILE"
   echo ""
-  echo "Added mscode to PATH in ${PROFILE}"
+  echo "Added mscli to PATH in ${PROFILE}"
 fi
 echo ""
-echo "Run: source ${PROFILE} && mscode"
+echo "Run: source ${PROFILE} && mscli"

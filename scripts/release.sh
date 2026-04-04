@@ -27,23 +27,23 @@ echo "Building $VERSION for ${#PLATFORMS[@]} platforms..."
 for platform in "${PLATFORMS[@]}"; do
   GOOS="${platform%/*}"
   GOARCH="${platform#*/}"
-  output="mscode-${GOOS}-${GOARCH}"
+  output="mscli-${GOOS}-${GOARCH}"
   if [ "$GOOS" = "windows" ]; then
     output="${output}.exe"
   fi
   echo "  -> $output"
-  GOOS="$GOOS" GOARCH="$GOARCH" go build -ldflags "-X github.com/vigo999/mindspore-code/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${output}" ./cmd/mscode/
+  GOOS="$GOOS" GOARCH="$GOARCH" go build -ldflags "-X github.com/vigo999/mindspore-code/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${output}" ./cmd/mscli/
 done
 
 SERVER_GOOS="$(go env GOOS)"
 SERVER_GOARCH="$(go env GOARCH)"
-SERVER_OUTPUT="mscode-server-${SERVER_GOOS}-${SERVER_GOARCH}"
+SERVER_OUTPUT="mscli-server-${SERVER_GOOS}-${SERVER_GOARCH}"
 if [ "${SERVER_GOOS}" = "windows" ]; then
   SERVER_OUTPUT="${SERVER_OUTPUT}.exe"
 fi
 
 echo "  -> ${SERVER_OUTPUT}"
-GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build -ldflags "-X github.com/vigo999/mindspore-code/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${SERVER_OUTPUT}" ./cmd/mscode-server/
+GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build -ldflags "-X github.com/vigo999/mindspore-code/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${SERVER_OUTPUT}" ./cmd/mscli-server/
 
 echo ""
 echo "Built binaries:"

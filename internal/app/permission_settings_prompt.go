@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 type permissionSettingsIssue struct {
@@ -44,7 +44,7 @@ func permissionSettingsIssueBody(issue *permissionSettingsIssue) string {
 	path := strings.TrimSpace(issue.FilePath)
 	detail := strings.TrimSpace(issue.Detail)
 	if path == "" {
-		path = ".mscode/permissions.json"
+		path = ".mscli/permissions.json"
 	}
 	if detail == "" {
 		detail = "invalid settings"

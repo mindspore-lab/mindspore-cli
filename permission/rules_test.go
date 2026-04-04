@@ -3,7 +3,7 @@ package permission
 import (
 	"testing"
 
-	"github.com/vigo999/mindspore-code/configs"
+	"github.com/vigo999/mindspore-cli/configs"
 )
 
 func TestParseRule_BasicAndSpecifier(t *testing.T) {
@@ -105,13 +105,13 @@ func TestRuleEvaluation_ReadPathAbsoluteAndHome(t *testing.T) {
 	svc := NewDefaultPermissionService(configs.PermissionsConfig{
 		DefaultLevel: "ask",
 		Deny: []string{
-			"Read(//tmp/mscode-secret.txt)",
+			"Read(//tmp/mscli-secret.txt)",
 			"Read(~/private/*)",
 		},
 	})
 
-	if got := svc.CheckPath("/tmp/mscode-secret.txt"); got != PermissionDeny {
-		t.Fatalf("CheckPath(/tmp/mscode-secret.txt) = %s, want deny", got)
+	if got := svc.CheckPath("/tmp/mscli-secret.txt"); got != PermissionDeny {
+		t.Fatalf("CheckPath(/tmp/mscli-secret.txt) = %s, want deny", got)
 	}
 }
 

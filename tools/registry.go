@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/vigo999/mindspore-code/integrations/llm"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
 )
 
 // Registry manages all available tools.

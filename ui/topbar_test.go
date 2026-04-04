@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestViewOmitsPersistentTopBarAndViewportFill(t *testing.T) {
-	app := New(nil, nil, "MindSpore Code. test", ".", "", "demo-model", 4096)
+	app := New(nil, nil, "MindSpore CLI. test", ".", "", "demo-model", 4096)
 	app.bootActive = false
 	app.state = app.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: "history line"})
 
@@ -17,7 +17,7 @@ func TestViewOmitsPersistentTopBarAndViewportFill(t *testing.T) {
 	app = next.(App)
 
 	view := app.View()
-	if strings.Contains(view, "MindSpore Code. test") {
+	if strings.Contains(view, "MindSpore CLI. test") {
 		t.Fatalf("expected inline view to omit persistent top bar, got:\n%s", view)
 	}
 	if strings.Contains(view, "history line") {
@@ -29,9 +29,9 @@ func TestViewOmitsPersistentTopBarAndViewportFill(t *testing.T) {
 }
 
 func TestRenderBannerIncludesMetadata(t *testing.T) {
-	banner := RenderBanner("MindSpore Code. test", "/tmp/project", "github.com/vigo999/mindspore-code", "demo-model", 4096)
+	banner := RenderBanner("MindSpore CLI. test", "/tmp/project", "github.com/vigo999/mindspore-cli", "demo-model", 4096)
 	for _, want := range []string{
-		"MindSpore Code",
+		"MindSpore CLI",
 		"demo-model",
 		"/tmp/project",
 	} {

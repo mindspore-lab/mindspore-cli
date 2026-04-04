@@ -6,9 +6,9 @@ import (
 )
 
 func TestDetectModelMode_EnvWins(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "sk-test")
-	t.Setenv("MSCODE_MODEL", "gpt-4o")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "sk-test")
+	t.Setenv("MSCLI_MODEL", "gpt-4o")
 
 	mode, _ := detectModelMode()
 	if mode != modelModeOwnEnv {
@@ -17,9 +17,9 @@ func TestDetectModelMode_EnvWins(t *testing.T) {
 }
 
 func TestDetectModelMode_SavedToken(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "")
-	t.Setenv("MSCODE_MODEL", "")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_MODEL", "")
 
 	dir := t.TempDir()
 	origPath := appConfigPathOverride
@@ -27,7 +27,7 @@ func TestDetectModelMode_SavedToken(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	if err := saveAppConfig(&appConfig{
-		ModelMode:     modelModeMSCODEProvided,
+		ModelMode:     modelModeMSCLIProvided,
 		ModelPresetID: "kimi-k2.5-free",
 		ModelToken:    "sk-saved",
 	}); err != nil {
@@ -35,8 +35,8 @@ func TestDetectModelMode_SavedToken(t *testing.T) {
 	}
 
 	mode, cfg := detectModelMode()
-	if mode != modelModeMSCODEProvided {
-		t.Errorf("expected %q, got %q", modelModeMSCODEProvided, mode)
+	if mode != modelModeMSCLIProvided {
+		t.Errorf("expected %q, got %q", modelModeMSCLIProvided, mode)
 	}
 	if cfg == nil || cfg.ModelToken != "sk-saved" {
 		t.Error("expected returned config to contain saved token")
@@ -44,9 +44,9 @@ func TestDetectModelMode_SavedToken(t *testing.T) {
 }
 
 func TestDetectModelMode_NothingConfigured(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "")
-	t.Setenv("MSCODE_MODEL", "")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_MODEL", "")
 
 	dir := t.TempDir()
 	origPath := appConfigPathOverride
@@ -60,9 +60,9 @@ func TestDetectModelMode_NothingConfigured(t *testing.T) {
 }
 
 func TestDetectModelMode_BothEnvAndSavedToken_EnvWins(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "sk-env-key")
-	t.Setenv("MSCODE_MODEL", "gpt-4o")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "sk-env-key")
+	t.Setenv("MSCLI_MODEL", "gpt-4o")
 
 	dir := t.TempDir()
 	origPath := appConfigPathOverride
@@ -70,7 +70,7 @@ func TestDetectModelMode_BothEnvAndSavedToken_EnvWins(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	saveAppConfig(&appConfig{
-		ModelMode:     modelModeMSCODEProvided,
+		ModelMode:     modelModeMSCLIProvided,
 		ModelPresetID: "kimi-k2.5-free",
 		ModelToken:    "sk-saved-token",
 	})

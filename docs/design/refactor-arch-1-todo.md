@@ -3,7 +3,7 @@
 ## Completed
 
 - [x] Build `agent/planner/` (planner, step, parser, prompt, validator, 9 tests)
-- [x] Resolve `app/` vs `internal/app/` — moved all logic to `internal/app/`, created `cmd/mscode/main.go`, deleted `app/`
+- [x] Resolve `app/` vs `internal/app/` — moved all logic to `internal/app/`, created `cmd/mscli/main.go`, deleted `app/`
 - [x] Build `agent/orchestrator/` — mode dispatch (standard/plan, 4 tests)
 - [x] Slim down `engine.go` — pure ReAct loop (662→295 lines), removed plan/review, deleted `loop/permission.go`
 - [x] Delete `agent/plan/` (5 files, ~1,600 lines)

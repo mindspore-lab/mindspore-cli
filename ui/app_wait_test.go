@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestEnterStartsThinkingWaitImmediately(t *testing.T) {

@@ -1,19 +1,19 @@
 # Bug System Usage Guide
 
-A shared bug tracking system for mscode teams. Covers installation, server setup, and all slash commands.
+A shared bug tracking system for mscli teams. Covers installation, server setup, and all slash commands.
 
-## 1. Install mscode
+## 1. Install mscli
 
 ### Option A: Install script (recommended)
 
 ```bash
-curl -fsSL http://47.115.175.134/mscode/install.sh | bash
+curl -fsSL http://47.115.175.134/mscli/install.sh | bash
 ```
 
-This downloads the latest release to `~/.mscode/bin/mscode`. Add to PATH:
+This downloads the latest release to `~/.mscli/bin/mscli`. Add to PATH:
 
 ```bash
-export PATH="$HOME/.mscode/bin:$PATH"
+export PATH="$HOME/.mscli/bin:$PATH"
 ```
 
 For internal or authenticated GitHub installs, this also exists:
@@ -27,8 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/vigo999/mindspore-code/main/scripts
 ```bash
 git clone https://github.com/vigo999/mindspore-code.git
 cd mindspore-code
-go build -o mscode ./cmd/mscode
-go build -o mscode-server ./cmd/mscode-server
+go build -o mscli ./cmd/mscli
+go build -o mscli-server ./cmd/mscli-server
 ```
 
 ## 2. Server Setup
@@ -45,17 +45,17 @@ server:
 
 storage:
   driver: sqlite
-  dsn: /opt/mscode/issues.db
+  dsn: /opt/mscli/issues.db
 
 auth:
   tokens:
-    - token: mscode_token_alice
+    - token: mscli_token_alice
       user: alice
       role: member
-    - token: mscode_token_bob
+    - token: mscli_token_bob
       user: bob
       role: member
-    - token: mscode_token_travis
+    - token: mscli_token_travis
       user: travis
       role: admin
 ```
@@ -67,7 +67,7 @@ auth:
 ### 2.2 Start the server
 
 ```bash
-./mscode-server --config /path/to/server.yaml
+./mscli-server --config /path/to/server.yaml
 ```
 
 The server creates the SQLite tables on first start. Verify with:
@@ -82,7 +82,7 @@ curl http://localhost:8080/healthz
 Before using bug commands in the TUI, log in once:
 
 ```
-/login http://localhost:8080 mscode_token_alice
+/login http://localhost:8080 mscli_token_alice
 ```
 
 Output:
@@ -91,7 +91,7 @@ Output:
 logged in as alice (member)
 ```
 
-Credentials are saved to `~/.mscode/credentials.json`. Subsequent sessions reuse them automatically.
+Credentials are saved to `~/.mscli/credentials.json`. Subsequent sessions reuse them automatically.
 
 ## 4. Bug Commands
 
@@ -188,30 +188,30 @@ All endpoints except `/healthz` require `Authorization: Bearer <token>`.
 
 ```bash
 # create bug
-curl -X POST -H "Authorization: Bearer mscode_token_alice" \
+curl -X POST -H "Authorization: Bearer mscli_token_alice" \
   -H "Content-Type: application/json" \
   -d '{"title":"gradient explosion on large batch"}' \
   http://localhost:8080/bugs
 
 # list all bugs
-curl -H "Authorization: Bearer mscode_token_alice" http://localhost:8080/bugs
+curl -H "Authorization: Bearer mscli_token_alice" http://localhost:8080/bugs
 
 # claim bug 1
-curl -X POST -H "Authorization: Bearer mscode_token_bob" \
+curl -X POST -H "Authorization: Bearer mscli_token_bob" \
   http://localhost:8080/bugs/1/claim
 
 # add note
-curl -X POST -H "Authorization: Bearer mscode_token_bob" \
+curl -X POST -H "Authorization: Bearer mscli_token_bob" \
   -H "Content-Type: application/json" \
   -d '{"content":"reproduced with batch_size=256"}' \
   http://localhost:8080/bugs/1/notes
 
 # view activity
-curl -H "Authorization: Bearer mscode_token_alice" \
+curl -H "Authorization: Bearer mscli_token_alice" \
   http://localhost:8080/bugs/1/activity
 
 # dock summary
-curl -H "Authorization: Bearer mscode_token_alice" http://localhost:8080/dock
+curl -H "Authorization: Bearer mscli_token_alice" http://localhost:8080/dock
 ```
 
 ## 6. Data Model
@@ -234,7 +234,7 @@ TUI (/login, /report, /bugs, /claim, /dock)
   → internal/app/bugs.go (command dispatch)
     → internal/issues/service.go (domain facade)
       → internal/issues/remote_store.go (HTTP client)
-        → mscode-server (HTTP API)
+        → mscli-server (HTTP API)
           → internal/server/store.go (SQLite)
 ```
 

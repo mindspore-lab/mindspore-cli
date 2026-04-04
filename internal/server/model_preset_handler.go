@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/vigo999/mindspore-code/configs"
+	"github.com/vigo999/mindspore-cli/configs"
 )
 
 func HandleGetModelPresetCredential(presets []configs.ModelPresetCredential) http.HandlerFunc {

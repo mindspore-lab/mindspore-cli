@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vigo999/mindspore-code/permission"
+	"github.com/vigo999/mindspore-cli/permission"
 )
 
 type scopedPermissionSettingsFile struct {
@@ -80,13 +80,13 @@ func (a *Application) savePermissionRuleToScope(rule string, level permission.Pe
 func resolvePermissionScopePath(workDir, scope string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(scope)) {
 	case "", "project":
-		return filepath.Join(workDir, ".mscode", "permissions.json"), nil
+		return filepath.Join(workDir, ".mscli", "permissions.json"), nil
 	case "user":
 		home, err := os.UserHomeDir()
 		if err != nil || strings.TrimSpace(home) == "" {
 			return "", fmt.Errorf("resolve user settings path: %w", err)
 		}
-		return filepath.Join(home, ".mscode", "permissions.json"), nil
+		return filepath.Join(home, ".mscli", "permissions.json"), nil
 	default:
 		return "", fmt.Errorf("invalid scope %q", scope)
 	}
@@ -165,9 +165,9 @@ func scopedPermissionFiles(workDir string) []scopedPermissionFileSpec {
 	files := make([]scopedPermissionFileSpec, 0, 2)
 	home, _ := os.UserHomeDir()
 	if strings.TrimSpace(home) != "" {
-		files = append(files, scopedPermissionFileSpec{path: filepath.Join(home, ".mscode", "permissions.json")})
+		files = append(files, scopedPermissionFileSpec{path: filepath.Join(home, ".mscli", "permissions.json")})
 	}
-	files = append(files, scopedPermissionFileSpec{path: filepath.Join(workDir, ".mscode", "permissions.json")})
+	files = append(files, scopedPermissionFileSpec{path: filepath.Join(workDir, ".mscli", "permissions.json")})
 	return files
 }
 

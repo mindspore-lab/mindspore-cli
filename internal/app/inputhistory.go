@@ -28,7 +28,7 @@ func inputHistoryFilePath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
 	}
-	return filepath.Join(home, ".mscode", "history.jsonl"), nil
+	return filepath.Join(home, ".mscli", "history.jsonl"), nil
 }
 
 func loadInputHistoryForWorkdir(workDir string) ([]string, error) {

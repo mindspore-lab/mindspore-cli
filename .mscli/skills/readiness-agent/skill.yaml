@@ -1,0 +1,119 @@
+schema_version: "1.1.0"
+name: "readiness-agent"
+display_name: "Readiness Agent"
+description: "Check whether a local single-machine workspace is ready to train or run inference now, identify what is missing before execution, and optionally apply safe user-space readiness fixes instead of treating the request as post-run failure diagnosis."
+version: "0.2.0"
+
+entry:
+  type: "manual"
+  path: "SKILL.md"
+
+role: "agent"
+
+composes: []
+
+factory:
+  card_types:
+    - "operator"
+    - "trick"
+    - "model"
+    - "report"
+
+inputs:
+  - name: "working_dir"
+    type: "path"
+    required: false
+    description: "Workspace root or code folder to certify. Defaults to the current shell path."
+  - name: "target"
+    type: "enum"
+    required: false
+    default: "auto"
+    choices: ["training", "inference", "auto"]
+    description: "Intended task target. Auto infers the target from evidence and must downgrade to WARN if ambiguity remains."
+  - name: "framework_hint"
+    type: "enum"
+    required: false
+    default: "auto"
+    choices: ["mindspore", "pta", "mixed", "auto"]
+    description: "Explicit framework preference. Use when the user already knows the target should follow the MindSpore, PTA, or mixed path."
+  - name: "cann_path"
+    type: "path"
+    required: false
+    description: "Explicit CANN root or set_env.sh path. When provided, readiness uses it before bounded search."
+  - name: "mode"
+    type: "enum"
+    required: false
+    default: "check"
+    choices: ["check", "fix"]
+    description: "Execution strategy only. Check validates without mutation, and fix enables safe user-space remediation."
+  - name: "entry_script"
+    type: "path"
+    required: false
+    description: "Explicit entry script when already known."
+  - name: "selected_python"
+    type: "path"
+    required: false
+    description: "Explicit Python interpreter to use for the workspace readiness workflow."
+  - name: "config_path"
+    type: "path"
+    required: false
+    description: "Explicit training or inference config path when already known."
+  - name: "model_path"
+    type: "path"
+    required: false
+    description: "Explicit model directory or model artifact path when already known."
+  - name: "model_hub_id"
+    type: "string"
+    required: false
+    description: "Explicit Hugging Face model repo ID when readiness should materialize a local model asset snapshot."
+  - name: "dataset_path"
+    type: "path"
+    required: false
+    description: "Explicit dataset path when the intended target requires it."
+  - name: "dataset_hub_id"
+    type: "string"
+    required: false
+    description: "Explicit Hugging Face dataset repo ID when readiness should materialize a local dataset asset snapshot."
+  - name: "dataset_split"
+    type: "string"
+    required: false
+    description: "Optional dataset split to download from a remote dataset source before local readiness revalidation."
+  - name: "checkpoint_path"
+    type: "path"
+    required: false
+    description: "Explicit checkpoint path when resume or checkpoint-backed execution is intended."
+  - name: "task_smoke_cmd"
+    type: "string"
+    required: false
+    description: "Optional explicit smoke command for stronger target validation."
+  - name: "allow_network"
+    type: "boolean"
+    required: false
+    default: false
+    description: "Allows network-dependent remediation such as confirmed model download or remote compatibility lookup when the workflow permits it."
+
+outputs:
+  report_schema: "skills/_shared/contract/report.schema.json"
+  out_dir_layout: "runs/<run_id>/readiness-output/"
+
+permissions:
+  network: "optional"
+  filesystem: "workspace-write"
+
+dependencies:
+  tools:
+    - "bash"
+    - "find"
+    - "rg"
+  python: []
+
+tags:
+  - "environment"
+  - "readiness"
+  - "training"
+  - "inference"
+  - "preflight"
+  - "certification"
+  - "mindspore"
+  - "torch_npu"
+  - "ascend"

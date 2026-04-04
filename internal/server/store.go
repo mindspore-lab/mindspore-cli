@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-code/internal/bugs"
-	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
-	"github.com/vigo999/mindspore-code/internal/project"
+	"github.com/vigo999/mindspore-cli/internal/bugs"
+	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
+	"github.com/vigo999/mindspore-cli/internal/project"
 )
 
 type Store struct {

@@ -28,86 +28,86 @@ func LoadWithEnv() (*Config, error) {
 }
 
 // ApplyEnvOverrides applies environment variable overrides to the config.
-// Unified MSCODE_* overrides are applied on top of built-in defaults.
+// Unified MSCLI_* overrides are applied on top of built-in defaults.
 func ApplyEnvOverrides(cfg *Config) {
 	// Model settings
-	if v := strings.TrimSpace(os.Getenv("MSCODE_MODEL")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("MSCLI_MODEL")); v != "" {
 		cfg.Model.Model = v
 	}
-	if v := strings.TrimSpace(os.Getenv("MSCODE_API_KEY")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("MSCLI_API_KEY")); v != "" {
 		cfg.Model.Key = v
 	}
-	if v := strings.TrimSpace(os.Getenv("MSCODE_BASE_URL")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("MSCLI_BASE_URL")); v != "" {
 		cfg.Model.URL = v
 	}
-	if v := strings.TrimSpace(os.Getenv("MSCODE_PROVIDER")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("MSCLI_PROVIDER")); v != "" {
 		cfg.Model.Provider = v
 	}
-	if v := os.Getenv("MSCODE_TEMPERATURE"); v != "" {
+	if v := os.Getenv("MSCLI_TEMPERATURE"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			cfg.Request.Temperature = &f
 		}
 	}
-	if v := os.Getenv("MSCODE_MAX_TOKENS"); v != "" {
+	if v := os.Getenv("MSCLI_MAX_TOKENS"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			cfg.Request.MaxTokens = &i
 		}
 	}
-	if v := os.Getenv("MSCODE_MAX_ITERATIONS"); v != "" {
+	if v := os.Getenv("MSCLI_MAX_ITERATIONS"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			cfg.Request.MaxIterations = &i
 		}
 	}
-	if v := os.Getenv("MSCODE_TIMEOUT"); v != "" {
+	if v := os.Getenv("MSCLI_TIMEOUT"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			cfg.Model.TimeoutSec = i
 		}
 	}
 
 	// UI settings
-	if v := os.Getenv("MSCODE_UI_ENABLED"); v != "" {
+	if v := os.Getenv("MSCLI_UI_ENABLED"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			cfg.UI.Enabled = b
 		}
 	}
-	if v := os.Getenv("MSCODE_THEME"); v != "" {
+	if v := os.Getenv("MSCLI_THEME"); v != "" {
 		cfg.UI.Theme = v
 	}
 
 	// Permissions
-	if v := os.Getenv("MSCODE_PERMISSIONS_SKIP"); v != "" {
+	if v := os.Getenv("MSCLI_PERMISSIONS_SKIP"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			cfg.Permissions.SkipRequests = b
 		}
 	}
-	if v := os.Getenv("MSCODE_PERMISSIONS_DEFAULT"); v != "" {
+	if v := os.Getenv("MSCLI_PERMISSIONS_DEFAULT"); v != "" {
 		cfg.Permissions.DefaultLevel = v
 	}
 
 	// Context settings
-	if v := os.Getenv("MSCODE_CONTEXT_WINDOW"); v != "" {
+	if v := os.Getenv("MSCLI_CONTEXT_WINDOW"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			cfg.Context.Window = i
 		}
 	}
-	if v := os.Getenv("MSCODE_CONTEXT_RESERVE"); v != "" {
+	if v := os.Getenv("MSCLI_CONTEXT_RESERVE"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			cfg.Context.ReserveTokens = i
 		}
 	}
 
 	// Issues server
-	if v := strings.TrimSpace(os.Getenv("MSCODE_SERVER_URL")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("MSCLI_SERVER_URL")); v != "" {
 		cfg.Server.URL = v
 	}
 
 	// Memory settings
-	if v := os.Getenv("MSCODE_MEMORY_ENABLED"); v != "" {
+	if v := os.Getenv("MSCLI_MEMORY_ENABLED"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			cfg.Memory.Enabled = b
 		}
 	}
-	if v := os.Getenv("MSCODE_MEMORY_PATH"); v != "" {
+	if v := os.Getenv("MSCLI_MEMORY_PATH"); v != "" {
 		cfg.Memory.StorePath = v
 	}
 }

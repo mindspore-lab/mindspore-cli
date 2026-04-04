@@ -1,0 +1,66 @@
+schema_version: "1.1.0"
+name: "algorithm-agent"
+display_name: "Algorithm Agent"
+version: "0.3.0"
+description: "Top-level algorithm feature agent that analyzes a feature request or released reference implementation, selects the safest integration route including specialized routes such as mHC integration or Attention Residuals integration, plans the minimal patch, and prepares the workspace for readiness validation."
+type: "manual"
+path: "SKILL.md"
+network: "none"
+filesystem: "workspace-write"
+
+entry:
+  type: manual
+
+inputs:
+  - name: "working_dir"
+    type: string
+    required: false
+    description: Local workspace root containing the target codebase.
+  - name: "source_text"
+    type: string
+    required: false
+    description: Paper excerpt, user request, or feature description.
+  - name: "reference_code_path"
+    type: string
+    required: false
+    description: Optional released-code path or local reference implementation.
+  - name: "target_workspace"
+    type: string
+    required: false
+    description: Local codebase to adapt.
+  - name: "target_model"
+    type: string
+    required: false
+    description: Target model or baseline name when already known.
+  - name: "route_preference"
+    type: string
+    required: false
+    description: Optional route override when the user already knows the feature family.
+    choices: ["generic-feature", "mhc", "attnres"]
+
+outputs:
+  - name: "feature_spec"
+    type: object
+    description: Structured feature analysis result.
+  - name: "integration_plan"
+    type: object
+    description: Planned integration points, route-specific constraints, and patch scope.
+  - name: "patch_summary"
+    type: object
+    description: Summary of generated code and config changes.
+  - name: "readiness_handoff"
+    type: object
+    description: Suggested readiness validation handoff.
+
+report_schema:
+  feature_spec:
+    required_fields: ["feature_summary", "source_type", "feature_category", "integration_route", "route_evidence"]
+  integration_plan:
+    required_fields: ["target_path", "edit_scope", "baseline_invariants", "route_specific_constraints", "route_specific_validations"]
+  patch_summary:
+    required_fields: ["touched_files", "config_deltas", "runtime_behavior_changes"]
+  readiness_handoff:
+    required_fields: ["route", "open_questions", "recommended_checks"]
+
+out_dir_layout:
+  notes: "Keep route-specific notes under references/<route>/ and keep generated summaries in the main workspace unless the user asks for artifact files."

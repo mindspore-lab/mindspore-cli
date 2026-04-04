@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	rshell "github.com/vigo999/mindspore-code/runtime/shell"
-	"github.com/vigo999/mindspore-code/tools"
+	rshell "github.com/vigo999/mindspore-cli/runtime/shell"
+	"github.com/vigo999/mindspore-cli/tools"
 )
 
 func TestShellToolExecute_DoesNotDuplicateCommandOrExit0InContent(t *testing.T) {

@@ -9,10 +9,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vigo999/mindspore-code/agent/loop"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/tools"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/agent/loop"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/tools"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 type blockingStreamProvider struct {

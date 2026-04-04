@@ -241,7 +241,7 @@ type SelectionOption struct {
 type SetupScreen int
 
 const (
-	SetupScreenModeSelect   SetupScreen = iota // "mscode-provided" vs "your own model"
+	SetupScreenModeSelect   SetupScreen = iota // "mscli-provided" vs "your own model"
 	SetupScreenPresetPicker                     // pick from preset list
 	SetupScreenTokenInput                       // enter token for selected preset
 	SetupScreenEnvInfo                          // show env var examples
@@ -250,13 +250,13 @@ const (
 // SetupPopup holds the full state of the multi-step model setup popup.
 type SetupPopup struct {
 	Screen         SetupScreen
-	ModeSelected   int    // 0 = mscode-provided, 1 = your own model
+	ModeSelected   int    // 0 = mscli-provided, 1 = your own model
 	PresetOptions  []SelectionOption
 	PresetSelected int
 	SelectedPreset SelectionOption // set when user picks a preset
 	TokenValue     string
 	TokenError     string // inline error message
-	CurrentMode    string // "mscode-provided", "own", or "" — for (current) badge
+	CurrentMode    string // "mscli-provided", "own", or "" — for (current) badge
 	CurrentPreset  string // preset ID currently active — for (current) badge
 	CanEscape      bool   // false on first boot (no config to fall back to)
 }

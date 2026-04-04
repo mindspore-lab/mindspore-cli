@@ -17,22 +17,22 @@ if [[ "${VERSION}" != v* ]]; then
   exit 1
 fi
 
-DIST_DIR="${MSCODE_DIST_DIR:-${REPO_ROOT}/dist}"
-MIRROR_ROOT="${MSCODE_MIRROR_ROOT:-/opt/downloads/mscode/releases}"
+DIST_DIR="${MSCLI_DIST_DIR:-${REPO_ROOT}/dist}"
+MIRROR_ROOT="${MSCLI_MIRROR_ROOT:-/opt/downloads/mscli/releases}"
 TARGET_DIR="${MIRROR_ROOT}/${VERSION}"
 LATEST_LINK="${MIRROR_ROOT}/latest"
 PUBLIC_ROOT="$(dirname "${MIRROR_ROOT}")"
-INSTALL_SCRIPT_SOURCE="${MSCODE_INSTALL_SCRIPT_SOURCE:-${REPO_ROOT}/scripts/install.sh}"
+INSTALL_SCRIPT_SOURCE="${MSCLI_INSTALL_SCRIPT_SOURCE:-${REPO_ROOT}/scripts/install.sh}"
 INSTALL_SCRIPT_PATH="${PUBLIC_ROOT}/install.sh"
 
 required_files=(
   "manifest.json"
-  "mscode-linux-amd64"
-  "mscode-linux-arm64"
-  "mscode-darwin-amd64"
-  "mscode-darwin-arm64"
-  "mscode-windows-amd64.exe"
-  "mscode-server-linux-amd64"
+  "mscli-linux-amd64"
+  "mscli-linux-arm64"
+  "mscli-darwin-amd64"
+  "mscli-darwin-arm64"
+  "mscli-windows-amd64.exe"
+  "mscli-server-linux-amd64"
 )
 
 for file in "${required_files[@]}"; do

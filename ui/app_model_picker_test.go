@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestSetupPopupOpenAndNavigate(t *testing.T) {
@@ -35,11 +35,11 @@ func TestSetupPopupOpenAndNavigate(t *testing.T) {
 	}
 
 	view := app.View()
-	if !strings.Contains(view, "mscode-provided") {
+	if !strings.Contains(view, "mscli-provided") {
 		t.Fatalf("expected mode select screen in view, got:\n%s", view)
 	}
 
-	// Press enter to go to preset picker (mode 0 = mscode-provided)
+	// Press enter to go to preset picker (mode 0 = mscli-provided)
 	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	app = next.(App)
 	if app.setupPopup.Screen != model.SetupScreenPresetPicker {
@@ -122,7 +122,7 @@ func TestInlineModeSetupPopupUsesTemporaryFullscreenView(t *testing.T) {
 	if !app.modalAltScreen {
 		t.Fatal("expected inline mode setup popup to mark temporary alt-screen active")
 	}
-	if view := app.View(); !strings.Contains(view, "mscode-provided") {
+	if view := app.View(); !strings.Contains(view, "mscli-provided") {
 		t.Fatalf("expected inline setup popup to be visible, got:\n%s", view)
 	}
 
@@ -163,7 +163,7 @@ func TestModelSetupPopupSuppressesThinkingIndicatorWithoutClearingState(t *testi
 		t.Fatal("expected popup open to preserve underlying thinking state")
 	}
 	view := app.View()
-	if !strings.Contains(view, "mscode-provided") {
+	if !strings.Contains(view, "mscli-provided") {
 		t.Fatalf("expected model setup popup in view, got:\n%s", view)
 	}
 	if strings.Contains(view, "Working...") {

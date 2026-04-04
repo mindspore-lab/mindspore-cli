@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-code/configs"
+	"github.com/vigo999/mindspore-cli/configs"
 )
 
 type modelCredentialStrategy string
 
 const (
 	credentialStrategyStatic       modelCredentialStrategy = "static"
-	credentialStrategyMSCODEServer modelCredentialStrategy = "mscode-server"
+	credentialStrategyMSCLIServer modelCredentialStrategy = "mscli-server"
 )
 
 type modelCredentialSpec struct {
@@ -45,7 +45,7 @@ var builtinModelPresets = []builtinModelPreset{
 		Model:    "kimi-k2.5",
 		Aliases:  []string{"kimi-k2.5", "kimi-k2.5 [free]"},
 		Credential: modelCredentialSpec{
-			Strategy: credentialStrategyMSCODEServer,
+			Strategy: credentialStrategyMSCLIServer,
 			Path:     "/model-presets/kimi-k2.5-free/credential",
 		},
 	},
@@ -57,7 +57,7 @@ var builtinModelPresets = []builtinModelPreset{
 		Model:    "deepseek-chat",
 		Aliases:  []string{"deepseek-v3", "deepseek-chat", "deepseek"},
 		Credential: modelCredentialSpec{
-			Strategy: credentialStrategyMSCODEServer,
+			Strategy: credentialStrategyMSCLIServer,
 			Path:     "/model-presets/deepseek-v3/credential",
 		},
 	},
@@ -109,7 +109,7 @@ func fetchPresetAPIKey(preset builtinModelPreset) (string, error) {
 	switch preset.Credential.Strategy {
 	case credentialStrategyStatic:
 		return strings.TrimSpace(preset.Credential.StaticKey), nil
-	case credentialStrategyMSCODEServer:
+	case credentialStrategyMSCLIServer:
 		cred, err := loadCredentials()
 		if err != nil || strings.TrimSpace(cred.Token) == "" || strings.TrimSpace(cred.ServerURL) == "" {
 			return "", fmt.Errorf("not logged in")
@@ -153,7 +153,7 @@ func (a *Application) resolveModelPresetAPIKey(ctx context.Context, preset built
 			return "", fmt.Errorf("preset %s static credential is empty", preset.ID)
 		}
 		return strings.TrimSpace(preset.Credential.StaticKey), nil
-	case credentialStrategyMSCODEServer:
+	case credentialStrategyMSCLIServer:
 		return a.fetchPresetAPIKeyFromServer(ctx, preset)
 	default:
 		return "", fmt.Errorf("unsupported credential strategy %q", preset.Credential.Strategy)

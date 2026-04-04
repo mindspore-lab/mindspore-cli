@@ -1,0 +1,59 @@
+schema_version: "1.1.0"
+name: "model-agent"
+display_name: "Model Migrate"
+description: "Top-level model migration agent that analyzes a source model or repo, selects the correct migration route, executes the migration flow, and verifies the result for MindSpore-oriented targets."
+version: "0.2.0"
+
+entry:
+  type: "manual"
+  path: "SKILL.md"
+
+role: "agent"
+
+composes: []
+
+factory:
+  card_types:
+    - "model"
+    - "report"
+
+inputs:
+  - name: "working_dir"
+    type: "path"
+    required: false
+    description: "Workspace root or cloned source repo. Defaults to the current shell path."
+  - name: "source_repo"
+    type: "string"
+    required: false
+    description: "Optional source repo URL or identifier."
+  - name: "route_preference"
+    type: "enum"
+    required: false
+    choices: ["hf-transformers", "hf-diffusers", "generic-pytorch-repo"]
+    description: "Explicit migration route when the user has already decided."
+  - name: "migration_goal"
+    type: "string"
+    required: false
+    description: "Expected migration outcome such as runnable port, deeper parity, or migration plus tests."
+
+outputs:
+  report_schema: "skills/_shared/contract/report.schema.json"
+  out_dir_layout: "runs/<run_id>/out/"
+
+permissions:
+  network: "none"
+  filesystem: "workspace-write"
+
+dependencies:
+  tools:
+    - "bash"
+    - "find"
+    - "rg"
+  python: []
+
+tags:
+  - "migration"
+  - "mindspore"
+  - "pytorch"
+  - "transformers"
+  - "diffusers"

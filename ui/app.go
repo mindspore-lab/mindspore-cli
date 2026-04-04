@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-code/ui/components"
-	"github.com/vigo999/mindspore-code/ui/model"
-	"github.com/vigo999/mindspore-code/ui/panels"
-	"github.com/vigo999/mindspore-code/ui/theme"
+	"github.com/vigo999/mindspore-cli/ui/components"
+	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/panels"
+	"github.com/vigo999/mindspore-cli/ui/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -3678,8 +3678,8 @@ func renderPermissionsDialog(v *permissionsViewState) string {
 			normalStyle.Render("  " + desc),
 			"",
 			normalStyle.Render("Where should this rule be saved?"),
-			opt1Prefix + opt1Style.Render("1. Project settings          Saved in .mscode/permissions.json"),
-			opt2Prefix + opt2Style.Render("2. User settings             Saved in ~/.mscode/permissions.json"),
+			opt1Prefix + opt1Style.Render("1. Project settings          Saved in .mscli/permissions.json"),
+			opt2Prefix + opt2Style.Render("2. User settings             Saved in ~/.mscli/permissions.json"),
 			"",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true).Render("Enter to confirm · Esc to cancel"),
 		}

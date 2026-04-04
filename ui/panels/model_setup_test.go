@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestRenderSetupPopupModeSelect(t *testing.T) {
@@ -14,8 +14,8 @@ func TestRenderSetupPopupModeSelect(t *testing.T) {
 		CanEscape:    true,
 	}
 	result := RenderSetupPopup(popup)
-	if !strings.Contains(result, "mscode-provided") {
-		t.Error("expected 'mscode-provided' in output")
+	if !strings.Contains(result, "mscli-provided") {
+		t.Error("expected 'mscli-provided' in output")
 	}
 	if !strings.Contains(result, "your own model") {
 		t.Error("expected 'your own model' in output")
@@ -67,10 +67,10 @@ func TestRenderSetupPopupEnvInfo(t *testing.T) {
 		CanEscape: true,
 	}
 	result := RenderSetupPopup(popup)
-	if !strings.Contains(result, "MSCODE_PROVIDER") {
+	if !strings.Contains(result, "MSCLI_PROVIDER") {
 		t.Error("expected env var example in output")
 	}
-	if !strings.Contains(result, "MSCODE_API_KEY") {
-		t.Error("expected MSCODE_API_KEY in output")
+	if !strings.Contains(result, "MSCLI_API_KEY") {
+		t.Error("expected MSCLI_API_KEY in output")
 	}
 }

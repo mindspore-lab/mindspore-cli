@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/vigo999/mindspore-code/integrations/llm"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
 )
 
 // Tokenizer 提供 Token 估算功能

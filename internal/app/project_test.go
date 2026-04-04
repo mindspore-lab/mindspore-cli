@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/internal/project"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/internal/project"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 var projectANSIPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -130,7 +130,7 @@ func TestCmdProjectStreamsFormattedSnapshot(t *testing.T) {
 	}
 
 	store := newMockProjectStore()
-	store.snapshot.Overview = project.Overview{Phase: "refactor", Owner: "travis", Repo: "github.com/vigo999/mindspore-code", Branch: "refactor-arch-4.2"}
+	store.snapshot.Overview = project.Overview{Phase: "refactor", Owner: "travis", Repo: "github.com/vigo999/mindspore-cli", Branch: "refactor-arch-4.2"}
 	store.tasks = []project.Task{
 		{ID: 1, Section: "tasks", Title: "project status command", Status: "done", Progress: 100, Owner: "travis"},
 		{ID: 2, Section: "tasks", Title: "status schema draft", Status: "doing", Progress: 60, Owner: "alice"},
@@ -152,7 +152,7 @@ func TestCmdProjectStreamsFormattedSnapshot(t *testing.T) {
 	for _, want := range []string{
 		"phase: refactor",
 		"owner: travis",
-		"repo: github.com/vigo999/mindspore-code",
+		"repo: github.com/vigo999/mindspore-cli",
 		"branch: refactor-arch-4.2",
 		"1 staged",
 		"ahead 5",
@@ -234,7 +234,7 @@ func TestRenderTaskLinesWrapsLongDescription(t *testing.T) {
 		Status:   "todo",
 		Progress: 0,
 		Owner:    "vigo",
-		Tags:     "mscode,session",
+		Tags:     "mscli,session",
 	}})
 
 	got := strings.Join(lines, "\n")

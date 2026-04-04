@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	skillslib "github.com/vigo999/mindspore-code/integrations/skills"
-	"github.com/vigo999/mindspore-code/tools"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	skillslib "github.com/vigo999/mindspore-cli/integrations/skills"
+	"github.com/vigo999/mindspore-cli/tools"
 )
 
 // LoadSkillTool implements tools.Tool and loads skill instructions on demand.

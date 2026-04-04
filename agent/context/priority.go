@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-code/integrations/llm"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
 )
 
 // Priority 消息优先级

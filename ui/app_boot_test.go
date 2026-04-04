@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestInitStartsDeferredChecksDuringBoot(t *testing.T) {

@@ -28,12 +28,12 @@ BASE_URL="https://github.com/vigo999/mindspore-code/releases/download/${VERSION}
 
 assets=(
   "manifest.json"
-  "mscode-linux-amd64"
-  "mscode-linux-arm64"
-  "mscode-darwin-amd64"
-  "mscode-darwin-arm64"
-  "mscode-windows-amd64.exe"
-  "mscode-server-linux-amd64"
+  "mscli-linux-amd64"
+  "mscli-linux-arm64"
+  "mscli-darwin-amd64"
+  "mscli-darwin-arm64"
+  "mscli-windows-amd64.exe"
+  "mscli-server-linux-amd64"
 )
 
 mkdir -p "${OUTPUT_DIR}"

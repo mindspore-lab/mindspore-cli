@@ -35,7 +35,7 @@ func (c *anthropicCodec) encodeRequest(req *CompletionRequest, stream bool) (ant
 	system, messages := c.encodeMessages(req.Messages)
 	maxTokens := req.MaxTokens
 	if maxTokens == nil {
-		// Anthropic requests require max_tokens even when mscode has no explicit override.
+		// Anthropic requests require max_tokens even when mscli has no explicit override.
 		defaultMaxTokens := anthropicDefaultMaxTokens
 		maxTokens = &defaultMaxTokens
 	}

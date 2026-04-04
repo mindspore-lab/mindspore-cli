@@ -1,0 +1,110 @@
+[
+  {
+    "query": "my mindspore pretraining job on 8x Ascend runs correctly but step time is awful. can you profile it first, figure out whether allreduce or host launch is dominating, then tell me the first optimization to try?",
+    "should_trigger": true
+  },
+  {
+    "query": "Inference latency on Ascend doubled after a recent MindSpore refactor. I need a profiler-first diagnosis path to tell whether graph build, kernel time, or host launch gaps are the main bottleneck, and I want the answer framed around `msprof` data.",
+    "should_trigger": true
+  },
+  {
+    "query": "This model no longer fits in memory after I changed the batch size. It still runs for smaller batches. Help me use profiling data to find the memory-heavy operator and compare before vs after once I change something.",
+    "should_trigger": true
+  },
+  {
+    "query": "distributed training is stable but throughput is low and the cards are idle a lot. use a structured performance workflow for MindSpore and tell me whether communication or input pipeline stalls are the main problem",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a MindSpore trace already and want help classifying the main time-consuming stage, choosing one optimization, and rerunning to confirm the gain.",
+    "should_trigger": true
+  },
+  {
+    "query": "My dataloader is slow in a MindSpore training run and device utilization is low. I need a profiler-led optimization plan rather than generic advice.",
+    "should_trigger": true
+  },
+  {
+    "query": "training on Ascend doesn't crash, but each step has a huge idle gap between kernels and throughput is half of what we expected. walk me through a trace-based perf diagnosis for MindSpore",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you help me optimize a torch_npu inference service on Ascend? p95 latency is too high and I want to know whether the issue is Python overhead, graph recompilation, or a few slow operators from the `msprof` trace.",
+    "should_trigger": true
+  },
+  {
+    "query": "The model runs, but optimizer/update time suddenly dominates after we enabled distributed training in MindSpore. I need a profiler-first bottleneck analysis and one targeted fix.",
+    "should_trigger": true
+  },
+  {
+    "query": "We collected a trace from a MindSpore image training job and memory spikes around a few operators are capping batch size. Help me pinpoint the memory-heavy stage and validate an optimization.",
+    "should_trigger": true
+  },
+  {
+    "query": "After enabling distributed optimizer sharding in MindSpore, the step tail became much longer and the update phase now dominates the timeline. I already have a profiler trace and need help deciding whether the main issue is gradient communication, synchronization, or optimizer compute, then I want one fix and a before-after validation plan.",
+    "should_trigger": true
+  },
+  {
+    "query": "I have an Ascend `msprof` trace from torch_npu inference and peak memory jumps around a small set of operators, which forces batch size down. Help me identify the memory-heavy stage from the trace and validate whether recomputation or layout changes actually reduce the peak.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need an automated way to collect MindSpore profiler data on Ascend, but I do not want to edit my original training script. Can you generate a `-perf.py` copy strategy and tell me what profiler hooks to add?",
+    "should_trigger": true
+  },
+  {
+    "query": "Before we start profiling this Ascend training slowdown, list the existing performance features we can try from the factory knowledge base and let me choose one to trial first.",
+    "should_trigger": true
+  },
+  {
+    "query": "Show me the known performance features for this MindSpore Ascend run, rerun once after I pick one, and then ask whether I want to switch to profiler-based bottleneck diagnosis.",
+    "should_trigger": true
+  },
+  {
+    "query": "For torch_npu on Ascend, I want to duplicate train.py into train-perf.py and only profile through the copy. Walk me through the right collection flow.",
+    "should_trigger": true
+  },
+  {
+    "query": "My MindSpore script only calls model.train(...) and I want you to auto-inject profiler hooks into a copied train-perf.py without seeing the real loop.",
+    "should_trigger": true
+  },
+  {
+    "query": "MindSpore accuracy dropped after migration from PyTorch even though the job completes. I need to compare step1 loss and find the first divergence point.",
+    "should_trigger": false
+  },
+  {
+    "query": "my training crashes with an unsupported operator on Ascend and sometimes throws ERR codes. please diagnose the failure",
+    "should_trigger": false
+  },
+  {
+    "query": "Can you help me install MindSpore and check whether my machine has the right drivers and dependencies?",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to implement a missing custom operator for GPU in MindSpore. Which builder workflow should I use?",
+    "should_trigger": false
+  },
+  {
+    "query": "The model is too slow in PyTorch on CUDA. Give me general deep learning perf tips.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need a setup checklist for remote Ascend training before I start performance tuning.",
+    "should_trigger": false
+  },
+  {
+    "query": "MindSpore export works, but the final evaluation metric is lower than the previous good run. I need an accuracy diagnosis plan, not performance tuning.",
+    "should_trigger": false
+  },
+  {
+    "query": "torch_npu throws a CANN error code during backward on Ascend. Please isolate the root cause and tell me whether it's framework, backend, or script misuse.",
+    "should_trigger": false
+  },
+  {
+    "query": "Help me migrate this Hugging Face transformers model to mindone.transformers and generate a minimal test.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to analyze the API call chain behind mint.add and figure out where the operator is wired in MindSpore.",
+    "should_trigger": false
+  }
+]

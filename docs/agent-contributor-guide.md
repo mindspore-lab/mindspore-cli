@@ -1,6 +1,6 @@
 # AI Contributor Guide
 
-This guide contains repository rules that should apply to all AI coding agents working in `mscode`.
+This guide contains repository rules that should apply to all AI coding agents working in `mscli`.
 
 Agent-specific files at the repo root, such as `AGENTS.md` and `CLAUDE.md`, should stay thin and point here for shared project policy.
 
@@ -31,8 +31,8 @@ go vet ./...
 Useful entrypoint commands:
 
 ```bash
-go build -o mscode ./cmd/mscode
-go run ./cmd/mscode
+go build -o mscli ./cmd/mscli
+go run ./cmd/mscli
 ```
 
 ## Code Style
@@ -41,7 +41,7 @@ go run ./cmd/mscode
 - Keep error messages lowercase and without trailing punctuation.
 - Wrap errors with context using `fmt.Errorf("context: %w", err)`.
 - Prefer extending existing types and flows over creating parallel abstractions.
-- Keep `cmd/mscode` thin and push behavior into the owning package.
+- Keep `cmd/mscli` thin and push behavior into the owning package.
 - Prefer returning `error` over `panic` except for truly unrecoverable states.
 
 ## Current Repository Shape
@@ -50,7 +50,7 @@ This summary matches the current tree in this checkout.
 
 ```text
 mindspore-code/
-  cmd/mscode/              process entrypoint
+  cmd/mscli/              process entrypoint
   internal/app/            bootstrap, wiring, commands, startup, train flow, prompt recall persistence
   internal/project/        roadmap and weekly helpers
   internal/train/          training types and target abstraction
@@ -88,12 +88,12 @@ mindspore-code/
 The current primary runtime path is:
 
 ```text
-cmd/mscode -> internal/app -> agent/loop -> tools -> runtime/shell
+cmd/mscli -> internal/app -> agent/loop -> tools -> runtime/shell
 ```
 
 Important current details:
 
-- `cmd/mscode/main.go` only delegates to `internal/app.Run(...)`.
+- `cmd/mscli/main.go` only delegates to `internal/app.Run(...)`.
 - `internal/app` is the composition root and owns wiring plus event conversion.
 - `internal/app` dispatches free-text tasks directly into `agent/loop.Engine`.
 - `tools/` exposes LLM-callable tool surfaces; `runtime/shell/` owns stateful command execution.
@@ -103,7 +103,7 @@ Important current details:
 Keep dependencies flowing downward only. Avoid upward or circular imports.
 
 ```text
-cmd/mscode -> internal/app -> agent, workflow, ui
+cmd/mscli -> internal/app -> agent, workflow, ui
 agent -> permission, integrations, configs
 workflow -> internal/train, runtime/probes, configs
 workflow/train -> internal/train, runtime/probes (NOT ui/model)
@@ -118,7 +118,7 @@ ui -> configs
 
 Package rules:
 
-- `cmd/mscode/` should call `internal/app` only.
+- `cmd/mscli/` should call `internal/app` only.
 - `internal/app/` is the wiring layer and should not become a reusable dependency for the rest of the repo.
 - `internal/app/` owns persisted prompt recall wiring and storage. Do not reuse that history for resume or transcript reconstruction.
 - `internal/app/train.go` maps train lane events to UI state updates — it is the only place that bridges `workflow/train` and `ui/model`.

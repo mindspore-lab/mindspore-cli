@@ -9,8 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-code/internal/update"
-	"github.com/vigo999/mindspore-code/internal/version"
+	"github.com/vigo999/mindspore-cli/internal/update"
+	"github.com/vigo999/mindspore-cli/internal/version"
 )
 
 var updatePromptSelectedStyle = lipgloss.NewStyle().
@@ -84,7 +84,7 @@ func (m *updatePrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chosen = true
 			if m.cursor == 0 {
 				m.choice = updateChoiceUpdate
-				m.message = fmt.Sprintf("  Downloading mscode %s...", m.result.LatestVersion)
+				m.message = fmt.Sprintf("  Downloading mscli %s...", m.result.LatestVersion)
 				return m, doUpdate(m.result, m.program)
 			}
 			// Skip (only reachable for non-forced)
@@ -104,7 +104,7 @@ func (m *updatePrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = fmt.Sprintf("  %v\n  Continuing with current version...", msg.err)
 			m.choice = updateChoiceSkip
 		} else {
-			m.message = fmt.Sprintf("  Updated to %s. Please restart mscode.", m.result.LatestVersion)
+			m.message = fmt.Sprintf("  Updated to %s. Please restart mscli.", m.result.LatestVersion)
 			m.choice = updateChoiceUpdate
 		}
 		return m, tea.Quit
@@ -262,7 +262,7 @@ func cleanUpdateTmp() {
 	}
 	now := time.Now()
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), "mscode-update-") {
+		if !strings.HasPrefix(e.Name(), "mscli-update-") {
 			continue
 		}
 		info, err := e.Info()

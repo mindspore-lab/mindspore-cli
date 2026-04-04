@@ -7,18 +7,18 @@ import (
 )
 
 const (
-	modelModeMSCODEProvided = "mscode-provided"
+	modelModeMSCLIProvided = "mscli-provided"
 	modelModeOwn            = "own"
 	modelModeOwnEnv         = "own-env"
 	modelSetupToken         = "__model_setup"
 )
 
-// appConfig holds persistent local settings stored in ~/.mscode/config.json.
+// appConfig holds persistent local settings stored in ~/.mscli/config.json.
 // Separate from credentials.json (issue server auth) and configs/ (YAML + env).
 type appConfig struct {
-	ModelMode     string `json:"model_mode,omitempty"`      // "mscode-provided" or "own" or ""
+	ModelMode     string `json:"model_mode,omitempty"`      // "mscli-provided" or "own" or ""
 	ModelPresetID string `json:"model_preset_id,omitempty"` // e.g. "kimi-k2.5-free"
-	ModelToken    string `json:"model_token,omitempty"`     // API token for mscode-provided models
+	ModelToken    string `json:"model_token,omitempty"`     // API token for mscli-provided models
 }
 
 // appConfigPathOverride allows tests to redirect the config path.
@@ -29,7 +29,7 @@ func appConfigPath() string {
 		return appConfigPathOverride
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".mscode", "config.json")
+	return filepath.Join(home, ".mscli", "config.json")
 }
 
 func loadAppConfig() (*appConfig, error) {

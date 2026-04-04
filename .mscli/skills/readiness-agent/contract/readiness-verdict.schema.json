@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindspore-skills.dev/schema/readiness-verdict-1.0.0.json",
+  "title": "Readiness Agent Verdict",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "skill",
+    "status",
+    "can_run",
+    "target",
+    "summary",
+    "blockers",
+    "warnings",
+    "next_action",
+    "execution_target",
+    "evidence_level",
+    "task_smoke_state",
+    "dependency_closure",
+    "checks",
+    "blockers_detailed",
+    "warnings_detailed",
+    "fix_applied",
+    "revalidated",
+    "revalidation_required_scopes",
+    "revalidation_covered_scopes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "readiness-agent/0.1"
+    },
+    "skill": {
+      "type": "string",
+      "const": "readiness-agent"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["READY", "WARN", "BLOCKED"]
+    },
+    "can_run": {
+      "type": "boolean"
+    },
+    "target": {
+      "type": "string",
+      "enum": ["training", "inference"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "execution_target": {
+      "type": "object"
+    },
+    "evidence_level": {
+      "type": "string",
+      "enum": ["structural", "import", "runtime_smoke", "task_smoke"]
+    },
+    "task_smoke_state": {
+      "type": "string",
+      "enum": ["not_requested", "passed", "failed", "skipped", "missing_result", "unknown"]
+    },
+    "dependency_closure": {
+      "type": "object"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "blockers_detailed": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "warnings_detailed": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "fix_applied": {
+      "type": "object"
+    },
+    "revalidated": {
+      "type": "boolean"
+    },
+    "revalidation_required_scopes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "revalidation_covered_scopes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

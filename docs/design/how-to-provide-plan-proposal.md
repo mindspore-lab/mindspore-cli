@@ -279,4 +279,4 @@ The recommended model is:
 - let the app and UI handle approval
 - continue execution after approval
 
-This gives `mscode` a practical plan review feature while staying aligned with a standard modern agent loop.
+This gives `mscli` a practical plan review feature while staying aligned with a standard modern agent loop.

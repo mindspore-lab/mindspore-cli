@@ -2,7 +2,7 @@
 
 Date: 2026-03-19
 Status: Draft Approved by User (Conversation)
-Scope: mscode provider architecture and protocol-path support
+Scope: mscli provider architecture and protocol-path support
 
 ## 1. Goal
 
@@ -49,8 +49,8 @@ Under `model`:
 
 Request-shaping overrides are env-only:
 
-- `MSCODE_TEMPERATURE`
-- `MSCODE_MAX_TOKENS`
+- `MSCLI_TEMPERATURE`
+- `MSCLI_MAX_TOKENS`
 
 When those env vars are unset, the provider request omits the corresponding fields, except the Anthropic Messages path, which falls back to `max_tokens=64000`.
 
@@ -62,14 +62,14 @@ Default in config:
 
 Provider resolution priority:
 
-1. `MSCODE_PROVIDER`
+1. `MSCLI_PROVIDER`
 2. `model.provider`
 3. default `openai-completion`
 
 API key resolution (by resolved provider):
 
 - `openai-completion` / `openai-responses`:
-  1. `MSCODE_API_KEY`
+  1. `MSCLI_API_KEY`
   2. `OPENAI_API_KEY`
   3. `model.key`
 
@@ -113,7 +113,7 @@ Provider defaults:
 
 Base URL precedence (applies to all providers):
 
-1. `MSCODE_BASE_URL`
+1. `MSCLI_BASE_URL`
 2. provider-specific env override:
 - `OPENAI_BASE_URL` for `openai-completion` and `openai-responses`
 - `ANTHROPIC_BASE_URL` for `anthropic`

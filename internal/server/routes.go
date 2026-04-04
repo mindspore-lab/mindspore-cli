@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/vigo999/mindspore-code/configs"
+	"github.com/vigo999/mindspore-cli/configs"
 )
 
 func NewMux(store *Store, tokens []configs.TokenEntry, modelPresets []configs.ModelPresetCredential) *http.ServeMux {

@@ -7,28 +7,28 @@ import (
 )
 
 const (
-	defaultMirrorManifestURL = "http://47.115.175.134/mscode/releases/latest/manifest.json"
-	defaultGitHubManifestURL = "https://github.com/vigo999/mindspore-code/releases/latest/download/manifest.json"
+	defaultMirrorManifestURL = "http://47.115.175.134/mscli/releases/latest/manifest.json"
+	defaultGitHubManifestURL = "https://github.com/vigo999/mindspore-cli/releases/latest/download/manifest.json"
 )
 
-// InstallDir returns ~/.mscode/bin.
+// InstallDir returns ~/.mscli/bin.
 func InstallDir() string {
 	return filepath.Join(ConfigDir(), "bin")
 }
 
 // BinaryPath returns the expected binary path.
 func BinaryPath() string {
-	name := "mscode"
+	name := "mscli"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	return filepath.Join(InstallDir(), name)
 }
 
-// ConfigDir returns ~/.mscode.
+// ConfigDir returns ~/.mscli.
 func ConfigDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".mscode")
+	return filepath.Join(home, ".mscli")
 }
 
 // ManifestURL returns the first manifest URL candidate.
@@ -41,9 +41,9 @@ func ManifestURL() string {
 }
 
 // ManifestURLs returns manifest URL candidates in lookup order.
-// If MSCODE_MANIFEST_URL is set, it is used exclusively.
+// If MSCLI_MANIFEST_URL is set, it is used exclusively.
 func ManifestURLs() []string {
-	if u := os.Getenv("MSCODE_MANIFEST_URL"); u != "" {
+	if u := os.Getenv("MSCLI_MANIFEST_URL"); u != "" {
 		return []string{u}
 	}
 	return []string{defaultMirrorManifestURL, defaultGitHubManifestURL}

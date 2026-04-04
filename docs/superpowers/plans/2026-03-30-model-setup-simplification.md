@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the complex model/provider selection flow with a two-path startup: mscode-provided model (token input) vs your-own-model (env vars), with auto-detection that skips the popup when config already exists.
+**Goal:** Replace the complex model/provider selection flow with a two-path startup: mscli-provided model (token input) vs your-own-model (env vars), with auto-detection that skips the popup when config already exists.
 
-**Architecture:** New `config.json` file at `~/.mscode/config.json` stores model mode, preset ID, and model token. Startup detection in `Wire()` checks env vars first, then `config.json`, and only emits a setup popup event when neither is configured. The existing `SelectionPopup` is extended with a multi-step flow (mode selection -> preset picker -> token input / env info). `/model` command opens the same popup.
+**Architecture:** New `config.json` file at `~/.mscli/config.json` stores model mode, preset ID, and model token. Startup detection in `Wire()` checks env vars first, then `config.json`, and only emits a setup popup event when neither is configured. The existing `SelectionPopup` is extended with a multi-step flow (mode selection -> preset picker -> token input / env info). `/model` command opens the same popup.
 
 **Tech Stack:** Go, Bubble Tea TUI, existing `configs`, `llm`, `ui/model`, `ui/panels` packages.
 
@@ -16,7 +16,7 @@
 - Create: `internal/app/appconfig.go`
 - Test: `internal/app/appconfig_test.go`
 
-This task adds load/save functions for `~/.mscode/config.json` which stores the model mode and mscode-provided token. Separate from `credentials.json` (issue server auth) and `configs/` (YAML defaults + env overrides).
+This task adds load/save functions for `~/.mscli/config.json` which stores the model mode and mscli-provided token. Separate from `credentials.json` (issue server auth) and `configs/` (YAML defaults + env overrides).
 
 - [ ] **Step 1: Write the failing test for `loadAppConfig` and `saveAppConfig`**
 
@@ -37,7 +37,7 @@ func TestAppConfigRoundTrip(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	cfg := &appConfig{
-		ModelMode:     "mscode-provided",
+		ModelMode:     "mscli-provided",
 		ModelPresetID: "kimi-k2.5-free",
 		ModelToken:    "sk-test-token-123",
 	}
@@ -93,12 +93,12 @@ import (
 	"path/filepath"
 )
 
-// appConfig holds persistent local settings stored in ~/.mscode/config.json.
+// appConfig holds persistent local settings stored in ~/.mscli/config.json.
 // Separate from credentials.json (issue server auth) and configs/ (YAML + env).
 type appConfig struct {
-	ModelMode     string `json:"model_mode,omitempty"`      // "mscode-provided" or "own" or ""
+	ModelMode     string `json:"model_mode,omitempty"`      // "mscli-provided" or "own" or ""
 	ModelPresetID string `json:"model_preset_id,omitempty"` // e.g. "kimi-k2.5-free"
-	ModelToken    string `json:"model_token,omitempty"`     // API token for mscode-provided models
+	ModelToken    string `json:"model_token,omitempty"`     // API token for mscli-provided models
 }
 
 // appConfigPathOverride allows tests to redirect the config path.
@@ -109,7 +109,7 @@ func appConfigPath() string {
 		return appConfigPathOverride
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".mscode", "config.json")
+	return filepath.Join(home, ".mscli", "config.json")
 }
 
 func loadAppConfig() (*appConfig, error) {
@@ -351,7 +351,7 @@ Add to `ui/model/train.go` (after the existing `SelectionPopup`):
 type SetupScreen int
 
 const (
-	SetupScreenModeSelect   SetupScreen = iota // "mscode-provided" vs "your own model"
+	SetupScreenModeSelect   SetupScreen = iota // "mscli-provided" vs "your own model"
 	SetupScreenPresetPicker                     // pick from preset list
 	SetupScreenTokenInput                       // enter token for selected preset
 	SetupScreenEnvInfo                          // show env var examples
@@ -360,13 +360,13 @@ const (
 // SetupPopup holds the full state of the multi-step model setup popup.
 type SetupPopup struct {
 	Screen         SetupScreen
-	ModeSelected   int    // 0 = mscode-provided, 1 = your own model
+	ModeSelected   int    // 0 = mscli-provided, 1 = your own model
 	PresetOptions  []SelectionOption
 	PresetSelected int
 	SelectedPreset SelectionOption // set when user picks a preset
 	TokenValue     string
 	TokenError     string // inline error message
-	CurrentMode    string // "mscode-provided", "own", or "" — for (current) badge
+	CurrentMode    string // "mscli-provided", "own", or "" — for (current) badge
 	CurrentPreset  string // preset ID currently active — for (current) badge
 	CanEscape      bool   // false on first boot (no config to fall back to)
 }
@@ -451,8 +451,8 @@ func TestRenderSetupPopupModeSelect(t *testing.T) {
 		CanEscape:    true,
 	}
 	result := RenderSetupPopup(popup)
-	if !strings.Contains(result, "mscode-provided") {
-		t.Error("expected 'mscode-provided' in output")
+	if !strings.Contains(result, "mscli-provided") {
+		t.Error("expected 'mscli-provided' in output")
 	}
 	if !strings.Contains(result, "your own model") {
 		t.Error("expected 'your own model' in output")
@@ -500,11 +500,11 @@ func TestRenderSetupPopupEnvInfo(t *testing.T) {
 		CanEscape: true,
 	}
 	result := RenderSetupPopup(popup)
-	if !strings.Contains(result, "MSCODE_PROVIDER") {
+	if !strings.Contains(result, "MSCLI_PROVIDER") {
 		t.Error("expected env var example in output")
 	}
-	if !strings.Contains(result, "MSCODE_API_KEY") {
-		t.Error("expected MSCODE_API_KEY in output")
+	if !strings.Contains(result, "MSCLI_API_KEY") {
+		t.Error("expected MSCLI_API_KEY in output")
 	}
 }
 ```
@@ -562,7 +562,7 @@ func renderModeSelect(popup *model.SetupPopup) string {
 		label string
 		mode  string
 	}{
-		{"mscode-provided model", "mscode-provided"},
+		{"mscli-provided model", "mscli-provided"},
 		{"your own model", "own"},
 	}
 
@@ -600,7 +600,7 @@ func renderModeSelect(popup *model.SetupPopup) string {
 }
 
 func renderPresetPicker(popup *model.SetupPopup) string {
-	maxW := len("mscode-provided")
+	maxW := len("mscli-provided")
 	for _, opt := range popup.PresetOptions {
 		if w := 2 + len(opt.Label) + 12; w > maxW {
 			maxW = w
@@ -608,7 +608,7 @@ func renderPresetPicker(popup *model.SetupPopup) string {
 	}
 
 	var lines []string
-	lines = append(lines, setupTitleStyle.Width(maxW).Render("mscode-provided"))
+	lines = append(lines, setupTitleStyle.Width(maxW).Render("mscli-provided"))
 	lines = append(lines, "")
 	for i, opt := range popup.PresetOptions {
 		marker := "  "
@@ -667,12 +667,12 @@ func renderEnvInfo(popup *model.SetupPopup) string {
 	lines = append(lines, "")
 	lines = append(lines, setupLabelStyle.Render("Set environment variables:"))
 	lines = append(lines, "")
-	lines = append(lines, setupNormalStyle.Render("  export MSCODE_PROVIDER=openai-completion"))
-	lines = append(lines, setupNormalStyle.Render("  export MSCODE_BASE_URL=https://api.openai.com/v1"))
-	lines = append(lines, setupNormalStyle.Render("  export MSCODE_API_KEY=sk-..."))
-	lines = append(lines, setupNormalStyle.Render("  export MSCODE_MODEL=gpt-5.4"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_PROVIDER=openai-completion"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_BASE_URL=https://api.openai.com/v1"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_API_KEY=sk-..."))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_MODEL=gpt-5.4"))
 	lines = append(lines, "")
-	lines = append(lines, setupHintStyle.Render("Then restart mscode."))
+	lines = append(lines, setupHintStyle.Render("Then restart mscli."))
 	lines = append(lines, "")
 	lines = append(lines, setupHintStyle.Render("esc back"))
 
@@ -956,8 +956,8 @@ func TestCmdModelSetup_SavesConfigAndSwitchesPreset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadAppConfig: %v", err)
 	}
-	if cfg.ModelMode != "mscode-provided" {
-		t.Errorf("ModelMode = %q, want 'mscode-provided'", cfg.ModelMode)
+	if cfg.ModelMode != "mscli-provided" {
+		t.Errorf("ModelMode = %q, want 'mscli-provided'", cfg.ModelMode)
 	}
 	if cfg.ModelPresetID != "kimi-k2.5-free" {
 		t.Errorf("ModelPresetID = %q, want 'kimi-k2.5-free'", cfg.ModelPresetID)
@@ -1056,7 +1056,7 @@ func (a *Application) cmdModelSetup(args []string) {
 
 	// Save to config.json
 	if err := saveAppConfig(&appConfig{
-		ModelMode:     "mscode-provided",
+		ModelMode:     "mscli-provided",
 		ModelPresetID: preset.ID,
 		ModelToken:    token,
 	}); err != nil {
@@ -1143,9 +1143,9 @@ import (
 )
 
 func TestDetectModelMode_EnvWins(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "sk-test")
-	t.Setenv("MSCODE_MODEL", "gpt-4o")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "sk-test")
+	t.Setenv("MSCLI_MODEL", "gpt-4o")
 
 	mode := detectModelMode()
 	if mode != "own-env" {
@@ -1155,9 +1155,9 @@ func TestDetectModelMode_EnvWins(t *testing.T) {
 
 func TestDetectModelMode_SavedToken(t *testing.T) {
 	// Clear env
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "")
-	t.Setenv("MSCODE_MODEL", "")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_MODEL", "")
 
 	dir := t.TempDir()
 	origPath := appConfigPathOverride
@@ -1165,7 +1165,7 @@ func TestDetectModelMode_SavedToken(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	if err := saveAppConfig(&appConfig{
-		ModelMode:     "mscode-provided",
+		ModelMode:     "mscli-provided",
 		ModelPresetID: "kimi-k2.5-free",
 		ModelToken:    "sk-saved",
 	}); err != nil {
@@ -1173,15 +1173,15 @@ func TestDetectModelMode_SavedToken(t *testing.T) {
 	}
 
 	mode := detectModelMode()
-	if mode != "mscode-provided" {
-		t.Errorf("expected 'mscode-provided', got %q", mode)
+	if mode != "mscli-provided" {
+		t.Errorf("expected 'mscli-provided', got %q", mode)
 	}
 }
 
 func TestDetectModelMode_NothingConfigured(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "")
-	t.Setenv("MSCODE_MODEL", "")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_MODEL", "")
 
 	dir := t.TempDir()
 	origPath := appConfigPathOverride
@@ -1206,12 +1206,12 @@ Add to `internal/app/wire.go`:
 
 ```go
 // detectModelMode checks whether model config is already available.
-// Returns "own-env" if env vars are complete, "mscode-provided" if a saved
+// Returns "own-env" if env vars are complete, "mscli-provided" if a saved
 // token exists, or "" if neither is configured.
 func detectModelMode() string {
-	provider := strings.TrimSpace(os.Getenv("MSCODE_PROVIDER"))
-	apiKey := strings.TrimSpace(os.Getenv("MSCODE_API_KEY"))
-	model := strings.TrimSpace(os.Getenv("MSCODE_MODEL"))
+	provider := strings.TrimSpace(os.Getenv("MSCLI_PROVIDER"))
+	apiKey := strings.TrimSpace(os.Getenv("MSCLI_API_KEY"))
+	model := strings.TrimSpace(os.Getenv("MSCLI_MODEL"))
 	if provider != "" && apiKey != "" && model != "" {
 		return "own-env"
 	}
@@ -1220,10 +1220,10 @@ func detectModelMode() string {
 	if err != nil {
 		return ""
 	}
-	if cfg.ModelMode == "mscode-provided" &&
+	if cfg.ModelMode == "mscli-provided" &&
 		strings.TrimSpace(cfg.ModelPresetID) != "" &&
 		strings.TrimSpace(cfg.ModelToken) != "" {
-		return "mscode-provided"
+		return "mscli-provided"
 	}
 	return ""
 }
@@ -1238,7 +1238,7 @@ var needsSetupPopup bool
 if !llmReady {
     mode := detectModelMode()
     switch mode {
-    case "mscode-provided":
+    case "mscli-provided":
         appCfg, _ := loadAppConfig()
         if preset, ok := resolveBuiltinModelPreset(appCfg.ModelPresetID); ok {
             config.Model.URL = preset.BaseURL
@@ -1291,7 +1291,7 @@ func (a *Application) emitModelSetupPopup(canEscape bool) {
 	currentMode := ""
 	currentPreset := ""
 	if a.activeModelPresetID != "" {
-		currentMode = "mscode-provided"
+		currentMode = "mscli-provided"
 		currentPreset = a.activeModelPresetID
 	} else if a.llmReady {
 		currentMode = "own"
@@ -1445,7 +1445,7 @@ In `cmdHelp()` in `internal/app/commands.go`, update the model commands section:
 ```go
 // Replace the Model Commands section with:
 Model Commands:
-  /model                  Open model setup (mscode-provided or your own)
+  /model                  Open model setup (mscli-provided or your own)
   /model kimi-k2.5-free   Switch to built-in preset directly
   /model gpt-4o           Switch model (keeps current provider)
   /model openai-completion:gpt-4o  Switch provider and model
@@ -1509,9 +1509,9 @@ import (
 )
 
 func TestStartup_NoConfig_EmitsSetupPopup(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "")
-	t.Setenv("MSCODE_MODEL", "")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_MODEL", "")
 
 	dir := t.TempDir()
 	origPath := appConfigPathOverride
@@ -1525,9 +1525,9 @@ func TestStartup_NoConfig_EmitsSetupPopup(t *testing.T) {
 }
 
 func TestStartup_EnvComplete_SkipsPopup(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "sk-test-key")
-	t.Setenv("MSCODE_MODEL", "gpt-4o")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "sk-test-key")
+	t.Setenv("MSCLI_MODEL", "gpt-4o")
 
 	mode := detectModelMode()
 	if mode != "own-env" {
@@ -1536,9 +1536,9 @@ func TestStartup_EnvComplete_SkipsPopup(t *testing.T) {
 }
 
 func TestStartup_SavedToken_SkipsPopup(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "")
-	t.Setenv("MSCODE_MODEL", "")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_MODEL", "")
 
 	dir := t.TempDir()
 	origPath := appConfigPathOverride
@@ -1546,21 +1546,21 @@ func TestStartup_SavedToken_SkipsPopup(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	saveAppConfig(&appConfig{
-		ModelMode:     "mscode-provided",
+		ModelMode:     "mscli-provided",
 		ModelPresetID: "kimi-k2.5-free",
 		ModelToken:    "sk-saved-token",
 	})
 
 	mode := detectModelMode()
-	if mode != "mscode-provided" {
-		t.Errorf("expected 'mscode-provided', got %q", mode)
+	if mode != "mscli-provided" {
+		t.Errorf("expected 'mscli-provided', got %q", mode)
 	}
 }
 
 func TestStartup_BothEnvAndSavedToken_EnvWins(t *testing.T) {
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "sk-env-key")
-	t.Setenv("MSCODE_MODEL", "gpt-4o")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "sk-env-key")
+	t.Setenv("MSCLI_MODEL", "gpt-4o")
 
 	dir := t.TempDir()
 	origPath := appConfigPathOverride
@@ -1568,7 +1568,7 @@ func TestStartup_BothEnvAndSavedToken_EnvWins(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	saveAppConfig(&appConfig{
-		ModelMode:     "mscode-provided",
+		ModelMode:     "mscli-provided",
 		ModelPresetID: "kimi-k2.5-free",
 		ModelToken:    "sk-saved-token",
 	})
@@ -1631,8 +1631,8 @@ func TestModelCommand_OpensSetupPopup(t *testing.T) {
 	if !popup.CanEscape {
 		t.Error("expected CanEscape=true from /model")
 	}
-	if popup.CurrentMode != "mscode-provided" {
-		t.Errorf("expected current mode 'mscode-provided', got %q", popup.CurrentMode)
+	if popup.CurrentMode != "mscli-provided" {
+		t.Errorf("expected current mode 'mscli-provided', got %q", popup.CurrentMode)
 	}
 	if popup.CurrentPreset != "kimi-k2.5-free" {
 		t.Errorf("expected current preset 'kimi-k2.5-free', got %q", popup.CurrentPreset)
@@ -1683,7 +1683,7 @@ Expected: All tests pass. No compilation errors.
 
 - [ ] **Step 3: Run vet and build**
 
-Run: `go vet ./... && go build ./cmd/mscode/ && go build ./cmd/mscode-server/`
+Run: `go vet ./... && go build ./cmd/mscli/ && go build ./cmd/mscli-server/`
 Expected: Clean.
 
 - [ ] **Step 4: Commit**

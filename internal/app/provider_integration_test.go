@@ -5,16 +5,16 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/integrations/llm"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
 )
 
 func TestWire_OpenAICompletionDefaultRouting(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "mscode-token")
-	t.Setenv("MSCODE_BASE_URL", "https://example.test/v1")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "mscli-token")
+	t.Setenv("MSCLI_BASE_URL", "https://example.test/v1")
 
 	var gotPath string
 	origBuildProvider := buildProvider

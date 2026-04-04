@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
-	"github.com/vigo999/mindspore-code/ui/model"
+	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func (a *Application) cmdIssueReportInput(input string) {

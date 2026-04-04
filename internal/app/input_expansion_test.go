@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	ctxmanager "github.com/vigo999/mindspore-code/agent/context"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/integrations/skills"
-	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
-	"github.com/vigo999/mindspore-code/internal/project"
-	"github.com/vigo999/mindspore-code/ui/model"
+	ctxmanager "github.com/vigo999/mindspore-cli/agent/context"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/integrations/skills"
+	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
+	"github.com/vigo999/mindspore-cli/internal/project"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestExpandInputTextExpandsStandaloneTokensAndEscapes(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/agent/session"
+	"github.com/vigo999/mindspore-cli/agent/session"
 )
 
 func TestExitResumeHintSkippedWithoutLiveLLMActivity(t *testing.T) {
@@ -48,7 +48,7 @@ func TestExitResumeHintShowsSessionIDAfterLiveLLMActivity(t *testing.T) {
 	}
 
 	got := app.exitResumeHint()
-	if !strings.Contains(got, "mscode resume "+runtimeSession.ID()) {
+	if !strings.Contains(got, "mscli resume "+runtimeSession.ID()) {
 		t.Fatalf("expected resume hint with session id, got %q", got)
 	}
 }

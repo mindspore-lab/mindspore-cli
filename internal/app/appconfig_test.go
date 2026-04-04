@@ -13,7 +13,7 @@ func TestAppConfigRoundTrip(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	cfg := &appConfig{
-		ModelMode:     "mscode-provided",
+		ModelMode:     "mscli-provided",
 		ModelPresetID: "kimi-k2.5-free",
 		ModelToken:    "sk-test-token-123",
 	}

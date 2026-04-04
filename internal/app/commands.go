@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/internal/bugs"
-	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
-	projectpkg "github.com/vigo999/mindspore-code/internal/project"
-	"github.com/vigo999/mindspore-code/permission"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/internal/bugs"
+	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
+	projectpkg "github.com/vigo999/mindspore-cli/internal/project"
+	"github.com/vigo999/mindspore-cli/permission"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func (a *Application) handleCommand(input string) {
@@ -312,7 +312,7 @@ func (a *Application) cmdModelSetup(args []string) {
 	if serverURL == "" {
 		a.EventCh <- model.Event{
 			Type:    model.ModelSetupTokenError,
-			Message: "server URL not set. export MSCODE_SERVER_URL first.",
+			Message: "server URL not set. export MSCLI_SERVER_URL first.",
 		}
 		return
 	}
@@ -374,7 +374,7 @@ func (a *Application) cmdModelSetup(args []string) {
 
 	// Step 5: Save model mode to config.json (token is in credentials.json).
 	if err := saveAppConfig(&appConfig{
-		ModelMode:     modelModeMSCODEProvided,
+		ModelMode:     modelModeMSCLIProvided,
 		ModelPresetID: preset.ID,
 		ModelToken:    token,
 	}); err != nil {
@@ -395,7 +395,7 @@ func (a *Application) cmdModelSetup(args []string) {
 	}
 }
 
-// verifyUserToken verifies a user token against the mscode server.
+// verifyUserToken verifies a user token against the mscli server.
 func (a *Application) verifyUserToken(ctx context.Context, serverURL, token string) (user, role string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+"/me", nil)
 	if err != nil {
@@ -910,7 +910,7 @@ func (a *Application) cmdHelp() {
 	helpText := `Available commands:
 
   /skill [name] [request] Load and run a skill; omit request to start immediately
-  /skill-add <path|git-url|owner/repo>  Add skills into ~/.mscode/skills
+  /skill-add <path|git-url|owner/repo>  Add skills into ~/.mscli/skills
   /train <model> <method> Start train workflow (e.g. /train qwen3 lora)
   /train <action>         Control active train HUD (start, stop, analyze, apply fix, retry, view diff, exit)
   /project [status]        Show project status snapshot (server + git status)
@@ -936,7 +936,7 @@ func (a *Application) cmdHelp() {
   /help                   Show this help message
 
 Model Commands:
-  /model                  Open model setup (mscode-provided or your own)
+  /model                  Open model setup (mscli-provided or your own)
   /model kimi-k2.5-free   Switch to built-in preset directly
   /model deepseek-v3      Switch to built-in preset directly
   /model gpt-4o           Switch model (keeps current provider)
@@ -970,15 +970,15 @@ Keybindings:
   Invalid @file references fail the whole input
 
 Environment Variables:
-  MSCODE_PROVIDER          Provider (openai-completion/openai-responses/anthropic)
-  MSCODE_BASE_URL          Base URL
-  MSCODE_MODEL             Default model
-  MSCODE_API_KEY           API key
-  MSCODE_TEMPERATURE       Optional request temperature override
-  MSCODE_MAX_TOKENS        Optional request output token override
-  MSCODE_MAX_ITERATIONS    Optional agent loop iteration cap (default 100, 0 = unlimited)
-  MSCODE_CONTEXT_WINDOW    Context window tokens
-  MSCODE_TIMEOUT           Request timeout seconds`
+  MSCLI_PROVIDER          Provider (openai-completion/openai-responses/anthropic)
+  MSCLI_BASE_URL          Base URL
+  MSCLI_MODEL             Default model
+  MSCLI_API_KEY           API key
+  MSCLI_TEMPERATURE       Optional request temperature override
+  MSCLI_MAX_TOKENS        Optional request output token override
+  MSCLI_MAX_ITERATIONS    Optional agent loop iteration cap (default 100, 0 = unlimited)
+  MSCLI_CONTEXT_WINDOW    Context window tokens
+  MSCLI_TIMEOUT           Request timeout seconds`
 
 	a.EventCh <- model.Event{Type: model.AgentReply, Message: helpText}
 }

@@ -22,15 +22,15 @@ func TestLoadWithEnv_UsesDefaultsAndEnvOverrides(t *testing.T) {
 	projectDir := t.TempDir()
 	t.Chdir(projectDir)
 
-	t.Setenv("MSCODE_PROVIDER", "anthropic")
-	t.Setenv("MSCODE_MODEL", "env-model")
-	t.Setenv("MSCODE_API_KEY", "env-key")
-	t.Setenv("MSCODE_BASE_URL", "https://env.example")
-	t.Setenv("MSCODE_TEMPERATURE", "0.2")
-	t.Setenv("MSCODE_MAX_TOKENS", "4096")
-	t.Setenv("MSCODE_MAX_ITERATIONS", "7")
-	t.Setenv("MSCODE_CONTEXT_WINDOW", "16000")
-	t.Setenv("MSCODE_UI_ENABLED", "false")
+	t.Setenv("MSCLI_PROVIDER", "anthropic")
+	t.Setenv("MSCLI_MODEL", "env-model")
+	t.Setenv("MSCLI_API_KEY", "env-key")
+	t.Setenv("MSCLI_BASE_URL", "https://env.example")
+	t.Setenv("MSCLI_TEMPERATURE", "0.2")
+	t.Setenv("MSCLI_MAX_TOKENS", "4096")
+	t.Setenv("MSCLI_MAX_ITERATIONS", "7")
+	t.Setenv("MSCLI_CONTEXT_WINDOW", "16000")
+	t.Setenv("MSCLI_UI_ENABLED", "false")
 
 	cfg, err := LoadWithEnv()
 	if err != nil {
@@ -84,7 +84,7 @@ func TestLoadWithEnv_IgnoresConfigFiles(t *testing.T) {
 	projectDir := t.TempDir()
 	t.Chdir(projectDir)
 
-	userPath := filepath.Join(home, ".mscode", "config.yaml")
+	userPath := filepath.Join(home, ".mscli", "config.yaml")
 	if err := os.MkdirAll(filepath.Dir(userPath), 0755); err != nil {
 		t.Fatalf("mkdir user config dir: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestLoadWithEnv_IgnoresConfigFiles(t *testing.T) {
 		t.Fatalf("write user config: %v", err)
 	}
 
-	projectPath := filepath.Join(projectDir, ".mscode", "config.yaml")
+	projectPath := filepath.Join(projectDir, ".mscli", "config.yaml")
 	if err := os.MkdirAll(filepath.Dir(projectPath), 0755); err != nil {
 		t.Fatalf("mkdir project dir: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestLoadWithEnv_IgnoresConfigFiles(t *testing.T) {
 	}
 }
 
-func TestApplyEnvOverrides_OnlyMSCODEVariables(t *testing.T) {
+func TestApplyEnvOverrides_OnlyMSCLIVariables(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("OPENAI_MODEL", "openai-model")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
@@ -128,19 +128,19 @@ func TestApplyEnvOverrides_OnlyMSCODEVariables(t *testing.T) {
 	ApplyEnvOverrides(cfg)
 
 	if got, want := cfg.Model.Model, ""; got != want {
-		t.Fatalf("model after non-MSCODE env overrides = %q, want %q", got, want)
+		t.Fatalf("model after non-MSCLI env overrides = %q, want %q", got, want)
 	}
 	if got, want := cfg.Model.Key, ""; got != want {
-		t.Fatalf("key after non-MSCODE env overrides = %q, want %q", got, want)
+		t.Fatalf("key after non-MSCLI env overrides = %q, want %q", got, want)
 	}
 	if got, want := cfg.Model.URL, "https://api.openai.com/v1"; got != want {
-		t.Fatalf("url after non-MSCODE env overrides = %q, want %q", got, want)
+		t.Fatalf("url after non-MSCLI env overrides = %q, want %q", got, want)
 	}
 }
 
 func TestLoadWithEnv_RejectsUnsupportedProviderFromEnv(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("MSCODE_PROVIDER", "unsupported")
+	t.Setenv("MSCLI_PROVIDER", "unsupported")
 	_, err := LoadWithEnv()
 	if err == nil {
 		t.Fatal("LoadWithEnv() error = nil, want validation error for unsupported provider")
@@ -149,7 +149,7 @@ func TestLoadWithEnv_RejectsUnsupportedProviderFromEnv(t *testing.T) {
 
 func TestLoadWithEnv_RejectsNegativeMaxIterationsFromEnv(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("MSCODE_MAX_ITERATIONS", "-1")
+	t.Setenv("MSCLI_MAX_ITERATIONS", "-1")
 
 	_, err := LoadWithEnv()
 	if err == nil {
@@ -159,7 +159,7 @@ func TestLoadWithEnv_RejectsNegativeMaxIterationsFromEnv(t *testing.T) {
 
 func TestLoadWithEnv_IgnoresWhitespaceOnlyModelEnv(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("MSCODE_MODEL", "   ")
+	t.Setenv("MSCLI_MODEL", "   ")
 
 	cfg, err := LoadWithEnv()
 	if err != nil {
@@ -178,7 +178,7 @@ func TestLoadWithEnv_AutoTokenLimitsForEnvModelOverride(t *testing.T) {
 	projectDir := t.TempDir()
 	t.Chdir(projectDir)
 
-	t.Setenv("MSCODE_MODEL", "gpt-5.4")
+	t.Setenv("MSCLI_MODEL", "gpt-5.4")
 
 	cfg, err := LoadWithEnv()
 	if err != nil {
@@ -194,22 +194,22 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 
 	for _, key := range []string{
-		"MSCODE_PROVIDER",
-		"MSCODE_API_KEY",
-		"MSCODE_BASE_URL",
-		"MSCODE_MODEL",
-		"MSCODE_TEMPERATURE",
-		"MSCODE_MAX_TOKENS",
-		"MSCODE_MAX_ITERATIONS",
-		"MSCODE_TIMEOUT",
-		"MSCODE_CONTEXT_WINDOW",
-		"MSCODE_CONTEXT_RESERVE",
-		"MSCODE_UI_ENABLED",
-		"MSCODE_PERMISSIONS_SKIP",
-		"MSCODE_PERMISSIONS_DEFAULT",
-		"MSCODE_MEMORY_ENABLED",
-		"MSCODE_MEMORY_PATH",
-		"MSCODE_SERVER_URL",
+		"MSCLI_PROVIDER",
+		"MSCLI_API_KEY",
+		"MSCLI_BASE_URL",
+		"MSCLI_MODEL",
+		"MSCLI_TEMPERATURE",
+		"MSCLI_MAX_TOKENS",
+		"MSCLI_MAX_ITERATIONS",
+		"MSCLI_TIMEOUT",
+		"MSCLI_CONTEXT_WINDOW",
+		"MSCLI_CONTEXT_RESERVE",
+		"MSCLI_UI_ENABLED",
+		"MSCLI_PERMISSIONS_SKIP",
+		"MSCLI_PERMISSIONS_DEFAULT",
+		"MSCLI_MEMORY_ENABLED",
+		"MSCLI_MEMORY_PATH",
+		"MSCLI_SERVER_URL",
 		"OPENAI_API_KEY",
 		"OPENAI_MODEL",
 		"OPENAI_BASE_URL",

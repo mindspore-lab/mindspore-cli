@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	agentctx "github.com/vigo999/mindspore-code/agent/context"
-	"github.com/vigo999/mindspore-code/agent/session"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/ui/model"
+	agentctx "github.com/vigo999/mindspore-cli/agent/context"
+	"github.com/vigo999/mindspore-cli/agent/session"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestReplayHistoryEmitsUsageSnapshotAfterBacklog(t *testing.T) {

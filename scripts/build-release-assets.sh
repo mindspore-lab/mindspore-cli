@@ -37,8 +37,8 @@ PLATFORMS=(
 )
 
 [ -f "${SCRIPT_DIR}/mirror.conf" ] && source "${SCRIPT_DIR}/mirror.conf"
-MIRROR_ROOT="${MSCODE_MIRROR_ROOT:-/opt/downloads/mscode/releases}"
-MIRROR_BASE_URL="${MSCODE_MIRROR_BASE_URL:-http://47.115.175.134/mscode/releases}"
+MIRROR_ROOT="${MSCLI_MIRROR_ROOT:-/opt/downloads/mscli/releases}"
+MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-http://47.115.175.134/mscli/releases}"
 TARGET_DIR="${MIRROR_ROOT}/${VERSION}"
 LATEST_LINK="${MIRROR_ROOT}/latest"
 PUBLIC_ROOT="$(dirname "${MIRROR_ROOT}")"
@@ -58,7 +58,7 @@ cd "${REPO_ROOT}"
 for platform in "${PLATFORMS[@]}"; do
   GOOS="${platform%/*}"
   GOARCH="${platform#*/}"
-  output="mscode-${GOOS}-${GOARCH}"
+  output="mscli-${GOOS}-${GOARCH}"
   if [ "${GOOS}" = "windows" ]; then
     output="${output}.exe"
   fi
@@ -66,12 +66,12 @@ for platform in "${PLATFORMS[@]}"; do
   GOOS="${GOOS}" GOARCH="${GOARCH}" go build \
     -ldflags "-X github.com/vigo999/mindspore-code/internal/version.Version=${PLAIN_VERSION}" \
     -o "${BUILD_DIR}/${output}" \
-    ./cmd/mscode/
+    ./cmd/mscli/
 done
 
 SERVER_GOOS="$(go env GOOS)"
 SERVER_GOARCH="$(go env GOARCH)"
-SERVER_OUTPUT="mscode-server-${SERVER_GOOS}-${SERVER_GOARCH}"
+SERVER_OUTPUT="mscli-server-${SERVER_GOOS}-${SERVER_GOARCH}"
 if [ "${SERVER_GOOS}" = "windows" ]; then
   SERVER_OUTPUT="${SERVER_OUTPUT}.exe"
 fi
@@ -80,7 +80,7 @@ echo "  -> ${SERVER_OUTPUT}"
 GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build \
   -ldflags "-X github.com/vigo999/mindspore-code/internal/version.Version=${PLAIN_VERSION}" \
   -o "${BUILD_DIR}/${SERVER_OUTPUT}" \
-  ./cmd/mscode-server/
+  ./cmd/mscli-server/
 
 cat > "${BUILD_DIR}/manifest.json" <<MANIFEST
 {

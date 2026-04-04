@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	agentctx "github.com/vigo999/mindspore-code/agent/context"
-	"github.com/vigo999/mindspore-code/agent/loop"
-	"github.com/vigo999/mindspore-code/agent/session"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/tools"
-	"github.com/vigo999/mindspore-code/ui/model"
+	agentctx "github.com/vigo999/mindspore-cli/agent/context"
+	"github.com/vigo999/mindspore-cli/agent/loop"
+	"github.com/vigo999/mindspore-cli/agent/session"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/tools"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 type singleReplyProvider struct {
@@ -169,7 +169,7 @@ func TestRunTaskPersistsSessionAfterLiveLLMReply(t *testing.T) {
 	if !strings.Contains(string(trajectory), `"type":"assistant"`) {
 		t.Fatalf("expected trajectory to contain assistant record, got %s", string(trajectory))
 	}
-	if got := app.exitResumeHint(); !strings.Contains(got, "mscode resume "+runtimeSession.ID()) {
+	if got := app.exitResumeHint(); !strings.Contains(got, "mscli resume "+runtimeSession.ID()) {
 		t.Fatalf("expected resume hint with session id after live llm reply, got %q", got)
 	}
 }

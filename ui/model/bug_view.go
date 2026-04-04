@@ -1,6 +1,6 @@
 package model
 
-import "github.com/vigo999/mindspore-code/internal/bugs"
+import "github.com/vigo999/mindspore-cli/internal/bugs"
 
 // Bug-specific UI event types.
 const (

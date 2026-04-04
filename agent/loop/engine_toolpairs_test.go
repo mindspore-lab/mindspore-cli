@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	ctxmanager "github.com/vigo999/mindspore-code/agent/context"
-	"github.com/vigo999/mindspore-code/integrations/llm"
+	ctxmanager "github.com/vigo999/mindspore-cli/agent/context"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
 )
 
 type responsesCaptureProvider struct {

@@ -73,23 +73,23 @@ func TestResolveSafePathAllowsConfiguredHomeDirectories(t *testing.T) {
 	}{
 		{
 			name:  "tilde skills root",
-			input: "~/.mscode/skills",
-			want:  filepath.Join(homeDir, ".mscode", "skills"),
+			input: "~/.mscli/skills",
+			want:  filepath.Join(homeDir, ".mscli", "skills"),
 		},
 		{
 			name:  "tilde skills descendant",
-			input: "~/.mscode/skills/demo/SKILL.md",
-			want:  filepath.Join(homeDir, ".mscode", "skills", "demo", "SKILL.md"),
+			input: "~/.mscli/skills/demo/SKILL.md",
+			want:  filepath.Join(homeDir, ".mscli", "skills", "demo", "SKILL.md"),
 		},
 		{
 			name:  "absolute shared skills root",
-			input: filepath.Join(homeDir, ".mscode", "mindspore-skills"),
-			want:  filepath.Join(homeDir, ".mscode", "mindspore-skills"),
+			input: filepath.Join(homeDir, ".mscli", "mindspore-skills"),
+			want:  filepath.Join(homeDir, ".mscli", "mindspore-skills"),
 		},
 		{
 			name:  "absolute shared skills descendant",
-			input: filepath.Join(homeDir, ".mscode", "mindspore-skills", "skills", "demo", "SKILL.md"),
-			want:  filepath.Join(homeDir, ".mscode", "mindspore-skills", "skills", "demo", "SKILL.md"),
+			input: filepath.Join(homeDir, ".mscli", "mindspore-skills", "skills", "demo", "SKILL.md"),
+			want:  filepath.Join(homeDir, ".mscli", "mindspore-skills", "skills", "demo", "SKILL.md"),
 		},
 	}
 

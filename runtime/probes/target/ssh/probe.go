@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vigo999/mindspore-code/internal/train"
-	"github.com/vigo999/mindspore-code/runtime/probes"
+	"github.com/vigo999/mindspore-cli/internal/train"
+	"github.com/vigo999/mindspore-cli/runtime/probes"
 )
 
 // Probe checks SSH connectivity to the remote target.

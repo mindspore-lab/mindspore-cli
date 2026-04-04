@@ -1,0 +1,71 @@
+schema_version: "1.1.0"
+name: "operator-agent"
+display_name: "Op Agent"
+description: "Build framework operators through either custom-access integration or native-framework integration, then verify the result and deliver a plugin, extension, or newly built wheel."
+version: "0.3.0"
+
+entry:
+  type: "manual"
+  path: "SKILL.md"
+
+role: "agent"
+
+composes: []
+
+factory:
+  card_types:
+    - "operator"
+    - "report"
+
+inputs:
+  - name: "working_dir"
+    type: "path"
+    required: false
+    description: "Workspace root for operator implementation. Defaults to the current shell path."
+  - name: "framework"
+    type: "enum"
+    required: false
+    choices: ["torch", "mindspore"]
+    description: "Target framework when already known."
+  - name: "operator_name"
+    type: "string"
+    required: true
+    description: "Operator or API name to implement."
+  - name: "backend"
+    type: "enum"
+    required: false
+    choices: ["cpu", "gpu", "npu"]
+    description: "Target backend when already known."
+  - name: "method_preference"
+    type: "enum"
+    required: false
+    choices: ["custom-access", "native-framework"]
+    description: "Explicit implementation method when the user has already decided."
+  - name: "delivery_goal"
+    type: "string"
+    required: false
+    description: "Expected output such as demo, plugin, framework integration, or new wheel."
+
+outputs:
+  report_schema: "skills/_shared/contract/report.schema.json"
+  out_dir_layout: "runs/<run_id>/out/"
+
+permissions:
+  network: "none"
+  filesystem: "workspace-write"
+
+dependencies:
+  tools:
+    - "bash"
+    - "find"
+    - "rg"
+  python: []
+
+tags:
+  - "operator"
+  - "builder"
+  - "torch"
+  - "mindspore"
+  - "custom-op"
+  - "framework"
+  - "aclnn"

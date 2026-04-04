@@ -6,8 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vigo999/mindspore-code/internal/bugs"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/internal/bugs"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestBugViewUsesDedicatedSurfaceAndEscReturnsToList(t *testing.T) {

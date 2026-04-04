@@ -9,7 +9,7 @@ import (
 )
 
 func TestManifestURLsDefaultOrder(t *testing.T) {
-	t.Setenv("MSCODE_MANIFEST_URL", "")
+	t.Setenv("MSCLI_MANIFEST_URL", "")
 
 	got := ManifestURLs()
 	if len(got) != 2 {
@@ -24,7 +24,7 @@ func TestManifestURLsDefaultOrder(t *testing.T) {
 }
 
 func TestManifestURLsEnvOverride(t *testing.T) {
-	t.Setenv("MSCODE_MANIFEST_URL", "http://example.test/manifest.json")
+	t.Setenv("MSCLI_MANIFEST_URL", "http://example.test/manifest.json")
 
 	got := ManifestURLs()
 	if len(got) != 1 {
@@ -38,7 +38,7 @@ func TestManifestURLsEnvOverride(t *testing.T) {
 func TestFetchManifestFallsBackToNextURL(t *testing.T) {
 	success := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"latest":"0.5.0-beta.2","min_allowed":"","download_base":"http://mirror.example/mscode/releases"}`))
+		_, _ = w.Write([]byte(`{"latest":"0.5.0-beta.2","min_allowed":"","download_base":"http://mirror.example/mscli/releases"}`))
 	}))
 	defer success.Close()
 
@@ -52,7 +52,7 @@ func TestFetchManifestFallsBackToNextURL(t *testing.T) {
 	if got.Latest != "0.5.0-beta.2" {
 		t.Fatalf("manifest latest = %q, want %q", got.Latest, "0.5.0-beta.2")
 	}
-	if got.DownloadBase != "http://mirror.example/mscode/releases" {
+	if got.DownloadBase != "http://mirror.example/mscli/releases" {
 		t.Fatalf("manifest download_base = %q", got.DownloadBase)
 	}
 }
@@ -83,11 +83,11 @@ func TestCompareSemverPrereleaseOrdering(t *testing.T) {
 func TestCheckDetectsPrereleaseUpdate(t *testing.T) {
 	success := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"latest":"0.5.0-beta.3","min_allowed":"","download_base":"http://mirror.example/mscode/releases"}`))
+		_, _ = w.Write([]byte(`{"latest":"0.5.0-beta.3","min_allowed":"","download_base":"http://mirror.example/mscli/releases"}`))
 	}))
 	defer success.Close()
 
-	t.Setenv("MSCODE_MANIFEST_URL", success.URL)
+	t.Setenv("MSCLI_MANIFEST_URL", success.URL)
 
 	result, err := Check(context.Background(), "0.5.0-beta.2")
 	if err != nil {
@@ -102,7 +102,7 @@ func TestCheckDetectsPrereleaseUpdate(t *testing.T) {
 	if result.LatestVersion != "0.5.0-beta.3" {
 		t.Fatalf("Check() LatestVersion = %q", result.LatestVersion)
 	}
-	if result.DownloadURL != "http://mirror.example/mscode/releases/v0.5.0-beta.3/mscode-"+runtime.GOOS+"-"+runtime.GOARCH {
+	if result.DownloadURL != "http://mirror.example/mscli/releases/v0.5.0-beta.3/mscli-"+runtime.GOOS+"-"+runtime.GOARCH {
 		t.Fatalf("Check() DownloadURL = %q", result.DownloadURL)
 	}
 }

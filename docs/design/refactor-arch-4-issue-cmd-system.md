@@ -17,7 +17,7 @@ TUI client → internal/issues (domain) → remote_store (HTTP) → server → S
 
 | File | Purpose |
 |---|---|
-| `cmd/mscode-server/main.go` | Read config, open SQLite, init store, register routes, start HTTP |
+| `cmd/mscli-server/main.go` | Read config, open SQLite, init store, register routes, start HTTP |
 | `configs/server_config.go` | ServerConfig struct + YAML loader |
 | external `server.yaml` | Server config file (addr, dsn, auth tokens) |
 | `internal/server/store.go` | SQLite schema init + CRUD (7 methods) |
@@ -43,7 +43,7 @@ TUI client → internal/issues (domain) → remote_store (HTTP) → server → S
 
 | File | Purpose |
 |---|---|
-| `internal/app/auth.go` | /login handler, save token to ~/.mscode/credentials |
+| `internal/app/auth.go` | /login handler, save token to ~/.mscli/credentials |
 | `internal/app/bugs.go` | /report, /bugs, /bug, /claim, /dock handlers + rendering |
 
 ## Edited Files (4)
@@ -97,7 +97,7 @@ No new deps. Uses: net/http (stdlib), mattn/go-sqlite3 (existing), lipgloss (exi
 1. internal/issues/model.go
 2. configs/server_config.go + external server.yaml
 3. internal/server/ (store → middleware → handlers → routes)
-4. cmd/mscode-server/main.go
+4. cmd/mscli-server/main.go
 5. internal/issues/ (store interface → service → remote_store)
 6. internal/app/ (auth.go → bugs.go → edit commands.go + wire.go)
 7. ui/slash/commands.go edits

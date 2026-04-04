@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	bugpkg "github.com/vigo999/mindspore-code/internal/bugs"
-	"github.com/vigo999/mindspore-code/ui/model"
+	bugpkg "github.com/vigo999/mindspore-cli/internal/bugs"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 type fakeBugStore struct {

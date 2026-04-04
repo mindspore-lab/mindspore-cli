@@ -210,7 +210,7 @@ func (r *Registry) registerDefaults() {
 
 	r.Register(Command{
 		Name:        "/skill-add",
-		Description: "Add local or remote skills into ~/.mscode/skills",
+		Description: "Add local or remote skills into ~/.mscli/skills",
 		Usage:       "/skill-add <path|git-url|owner/repo>",
 	})
 

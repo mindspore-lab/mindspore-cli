@@ -212,8 +212,8 @@ Key prompt engineering techniques for invoke ratio:
 
 | component | repo | what it contains |
 |-----------|------|------------------|
-| `/diagnose`, `/fix` command routing | mscode | keyword classification, skill loading |
+| `/diagnose`, `/fix` command routing | mscli | keyword classification, skill loading |
 | Diagnosis skill SKILL.md + skill.yaml | ms-skills | prompt instructions, metadata |
 | `known_issue`, `operator`, feature cards | ms-factory (incubating) | knowledge assets queried by skills |
-| Factory query tooling | mscode (`internal/factory/`) | Go API for card search/get/list |
+| Factory query tooling | mscli (`internal/factory/`) | Go API for card search/get/list |
 | Factory query tool bridge | ms-skills (`_shared/tools/`) | Python wrapper (deferred) |

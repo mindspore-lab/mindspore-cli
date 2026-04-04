@@ -235,7 +235,7 @@ func FetchReleaseNotes(ctx context.Context, version string) string {
 
 func buildDownloadURL(base, version string) string {
 	version = strings.TrimPrefix(version, "v")
-	name := fmt.Sprintf("mscode-%s-%s", runtime.GOOS, runtime.GOARCH)
+	name := fmt.Sprintf("mscli-%s-%s", runtime.GOOS, runtime.GOARCH)
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}

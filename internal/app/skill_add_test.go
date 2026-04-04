@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/integrations/skills"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/integrations/skills"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestCmdSkillAddInputCopiesLocalSkillAndListsAvailableSkills(t *testing.T) {
@@ -27,12 +27,12 @@ func TestCmdSkillAddInputCopiesLocalSkillAndListsAvailableSkills(t *testing.T) {
 		EventCh:       make(chan model.Event, 16),
 		WorkDir:       sourceRoot,
 		skillsHomeDir: home,
-		skillLoader:   skills.NewLoader(filepath.Join(home, ".mscode", "skills")),
+		skillLoader:   skills.NewLoader(filepath.Join(home, ".mscli", "skills")),
 	}
 
 	app.cmdSkillAddInput(sourceDir)
 
-	destSkillFile := filepath.Join(home, ".mscode", "skills", "demo-skill", "SKILL.md")
+	destSkillFile := filepath.Join(home, ".mscli", "skills", "demo-skill", "SKILL.md")
 	if _, err := os.Stat(destSkillFile); err != nil {
 		t.Fatalf("expected copied skill at %s: %v", destSkillFile, err)
 	}
@@ -45,7 +45,7 @@ func TestCmdSkillAddInputCopiesLocalSkillAndListsAvailableSkills(t *testing.T) {
 	if got, want := adding.ToolName, "Skill add"; got != want {
 		t.Fatalf("tool name = %q, want %q", got, want)
 	}
-	if got, want := adding.Summary, "adding demo-skill to ~/.mscode/skills/"; got != want {
+	if got, want := adding.Summary, "adding demo-skill to ~/.mscli/skills/"; got != want {
 		t.Fatalf("summary = %q, want %q", got, want)
 	}
 
@@ -89,15 +89,15 @@ func TestCmdSkillAddInputRecursivelyFindsNestedSkillMarkdownFiles(t *testing.T) 
 		EventCh:       make(chan model.Event, 16),
 		WorkDir:       sourceRoot,
 		skillsHomeDir: home,
-		skillLoader:   skills.NewLoader(filepath.Join(home, ".mscode", "skills")),
+		skillLoader:   skills.NewLoader(filepath.Join(home, ".mscli", "skills")),
 	}
 
 	app.cmdSkillAddInput(sourceRoot)
 
-	if _, err := os.Stat(filepath.Join(home, ".mscode", "skills", "alpha", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".mscli", "skills", "alpha", "SKILL.md")); err != nil {
 		t.Fatalf("expected copied alpha skill: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".mscode", "skills", "beta", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".mscli", "skills", "beta", "SKILL.md")); err != nil {
 		t.Fatalf("expected copied beta skill: %v", err)
 	}
 	if _, err := app.skillLoader.Load("alpha"); err != nil {
@@ -111,7 +111,7 @@ func TestCmdSkillAddInputRecursivelyFindsNestedSkillMarkdownFiles(t *testing.T) 
 	if got, want := adding.ToolName, "Skill add"; got != want {
 		t.Fatalf("tool name = %q, want %q", got, want)
 	}
-	if got, want := adding.Summary, "adding "+filepath.Base(sourceRoot)+" to ~/.mscode/skills/"; got != want {
+	if got, want := adding.Summary, "adding "+filepath.Base(sourceRoot)+" to ~/.mscli/skills/"; got != want {
 		t.Fatalf("summary = %q, want %q", got, want)
 	}
 

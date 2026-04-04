@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/configs"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/configs"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestCmdModelSetup_VerifiesUserAndConfiguresModel(t *testing.T) {
@@ -76,8 +76,8 @@ func TestCmdModelSetup_VerifiesUserAndConfiguresModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadAppConfig: %v", err)
 	}
-	if acfg.ModelMode != modelModeMSCODEProvided {
-		t.Errorf("ModelMode = %q, want %q", acfg.ModelMode, modelModeMSCODEProvided)
+	if acfg.ModelMode != modelModeMSCLIProvided {
+		t.Errorf("ModelMode = %q, want %q", acfg.ModelMode, modelModeMSCLIProvided)
 	}
 	if acfg.ModelPresetID != "kimi-k2.5-free" {
 		t.Errorf("ModelPresetID = %q, want 'kimi-k2.5-free'", acfg.ModelPresetID)

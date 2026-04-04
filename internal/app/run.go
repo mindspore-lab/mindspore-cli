@@ -12,16 +12,16 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vigo999/mindspore-code/agent/loop"
-	"github.com/vigo999/mindspore-code/agent/session"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/internal/version"
-	"github.com/vigo999/mindspore-code/ui"
-	"github.com/vigo999/mindspore-code/ui/components"
-	"github.com/vigo999/mindspore-code/ui/model"
-	"github.com/vigo999/mindspore-code/ui/panels"
-	"github.com/vigo999/mindspore-code/ui/render"
-	"github.com/vigo999/mindspore-code/ui/theme"
+	"github.com/vigo999/mindspore-cli/agent/loop"
+	"github.com/vigo999/mindspore-cli/agent/session"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/internal/version"
+	"github.com/vigo999/mindspore-cli/ui"
+	"github.com/vigo999/mindspore-cli/ui/components"
+	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/panels"
+	"github.com/vigo999/mindspore-cli/ui/render"
+	"github.com/vigo999/mindspore-cli/ui/theme"
 )
 
 const provideAPIKeyFirstMsg = "LLM unavailable: provide api key first, or /login and switch to free model."
@@ -531,7 +531,7 @@ func (a *Application) exitResumeHint() string {
 	if sessionID == "" {
 		return ""
 	}
-	return fmt.Sprintf("Resume this session with: mscode resume %s", sessionID)
+	return fmt.Sprintf("Resume this session with: mscli resume %s", sessionID)
 }
 
 func (a *Application) recordUnavailableTurn(userInput, assistantReply string) error {
@@ -595,7 +595,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	}
 
 	if len(args) > 0 && args[0] == "resume" {
-		fs := flag.NewFlagSet("mscode resume", flag.ContinueOnError)
+		fs := flag.NewFlagSet("mscli resume", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
 		url := fs.String("url", "", "LLM API base URL")
 		modelFlag := fs.String("model", "", "Model name")
@@ -606,7 +606,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 		}
 		rest := fs.Args()
 		if len(rest) > 1 {
-			return BootstrapConfig{}, fmt.Errorf("usage: mscode resume [sess_xxx]")
+			return BootstrapConfig{}, fmt.Errorf("usage: mscli resume [sess_xxx]")
 		}
 		cfg := BootstrapConfig{
 			URL:    *url,
@@ -621,7 +621,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 		return cfg, nil
 	}
 
-	fs := flag.NewFlagSet("mscode", flag.ContinueOnError)
+	fs := flag.NewFlagSet("mscli", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	url := fs.String("url", "", "LLM API base URL")
 	modelFlag := fs.String("model", "", "Model name")

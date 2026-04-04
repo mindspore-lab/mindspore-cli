@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vigo999/mindspore-code/configs"
-	itrain "github.com/vigo999/mindspore-code/internal/train"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/configs"
+	itrain "github.com/vigo999/mindspore-cli/internal/train"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 // TestTrainPhase1Flow exercises the Phase 1 train lane:

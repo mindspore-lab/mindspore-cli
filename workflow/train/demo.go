@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	itrain "github.com/vigo999/mindspore-code/internal/train"
+	itrain "github.com/vigo999/mindspore-cli/internal/train"
 )
 
 // demoSpeed controls the delay multiplier for demo playback.

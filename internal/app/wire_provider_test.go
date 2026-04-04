@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/agent/loop"
-	"github.com/vigo999/mindspore-code/agent/session"
-	"github.com/vigo999/mindspore-code/configs"
-	"github.com/vigo999/mindspore-code/integrations/llm"
+	"github.com/vigo999/mindspore-cli/agent/loop"
+	"github.com/vigo999/mindspore-cli/agent/session"
+	"github.com/vigo999/mindspore-cli/configs"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
 )
 
 func TestInitProviderAnthropic(t *testing.T) {
@@ -34,7 +34,7 @@ func TestInitProviderAnthropic(t *testing.T) {
 }
 
 func TestInitProviderOpenAICompletionDefault(t *testing.T) {
-	provider, err := initProvider(configs.ModelConfig{Model: "gpt-4o-mini", Key: "mscode-token"}, providerResolveNoOverrides())
+	provider, err := initProvider(configs.ModelConfig{Model: "gpt-4o-mini", Key: "mscli-token"}, providerResolveNoOverrides())
 	if err != nil {
 		t.Fatalf("initProvider() error = %v", err)
 	}
@@ -60,9 +60,9 @@ func TestWireBootstrapKeyAndURLOverrideEnvDuringProviderInit(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "env-key")
-	t.Setenv("MSCODE_BASE_URL", "http://127.0.0.1:1")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "env-key")
+	t.Setenv("MSCLI_BASE_URL", "http://127.0.0.1:1")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("OPENAI_BASE_URL", "")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
@@ -118,9 +118,9 @@ func TestWireBootstrapKeyAndURLOverrideEnvDuringProviderInit(t *testing.T) {
 func TestWireFreshSessionDoesNotCreateSessionDirBeforeLiveLLMActivity(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "")
-	t.Setenv("MSCODE_BASE_URL", "")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_BASE_URL", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("OPENAI_BASE_URL", "")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
@@ -147,9 +147,9 @@ func TestWireFreshSessionDoesNotCreateSessionDirBeforeLiveLLMActivity(t *testing
 func TestWireResumeAcceptsLegacyLoadSkillSessionPermissions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("MSCODE_PROVIDER", "")
-	t.Setenv("MSCODE_API_KEY", "")
-	t.Setenv("MSCODE_BASE_URL", "")
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_BASE_URL", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("OPENAI_BASE_URL", "")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
@@ -291,13 +291,13 @@ func (p *scriptedAppStreamProvider) AvailableModels() []llm.ModelInfo {
 	return nil
 }
 
-func TestWirePassesMSCODEMaxTokensToModelRequests(t *testing.T) {
+func TestWirePassesMSCLIMaxTokensToModelRequests(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("MSCODE_PROVIDER", "anthropic")
-	t.Setenv("MSCODE_API_KEY", "anthropic-token")
-	t.Setenv("MSCODE_MODEL", "claude-sonnet-4-5")
-	t.Setenv("MSCODE_MAX_TOKENS", "2048")
+	t.Setenv("MSCLI_PROVIDER", "anthropic")
+	t.Setenv("MSCLI_API_KEY", "anthropic-token")
+	t.Setenv("MSCLI_MODEL", "claude-sonnet-4-5")
+	t.Setenv("MSCLI_MAX_TOKENS", "2048")
 
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
@@ -339,9 +339,9 @@ func TestWirePassesMSCODEMaxTokensToModelRequests(t *testing.T) {
 func TestWireOmitsRequestOverridesWhenEnvUnset(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "token")
-	t.Setenv("MSCODE_MODEL", "gpt-4o-mini")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "token")
+	t.Setenv("MSCLI_MODEL", "gpt-4o-mini")
 
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
@@ -377,13 +377,13 @@ func TestWireOmitsRequestOverridesWhenEnvUnset(t *testing.T) {
 	}
 }
 
-func TestWirePassesMSCODETemperatureToModelRequests(t *testing.T) {
+func TestWirePassesMSCLITemperatureToModelRequests(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "token")
-	t.Setenv("MSCODE_MODEL", "gpt-4o-mini")
-	t.Setenv("MSCODE_TEMPERATURE", "0.25")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "token")
+	t.Setenv("MSCLI_MODEL", "gpt-4o-mini")
+	t.Setenv("MSCLI_TEMPERATURE", "0.25")
 
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
@@ -419,14 +419,14 @@ func TestWirePassesMSCODETemperatureToModelRequests(t *testing.T) {
 	}
 }
 
-func TestWireAndSetProviderRespectMSCODEMaxIterations(t *testing.T) {
+func TestWireAndSetProviderRespectMSCLIMaxIterations(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("MSCODE_PROVIDER", "openai-completion")
-	t.Setenv("MSCODE_API_KEY", "token")
-	t.Setenv("MSCODE_MODEL", "gpt-4o-mini")
-	t.Setenv("MSCODE_MAX_ITERATIONS", "1")
-	t.Setenv("MSCODE_PERMISSIONS_SKIP", "true")
+	t.Setenv("MSCLI_PROVIDER", "openai-completion")
+	t.Setenv("MSCLI_API_KEY", "token")
+	t.Setenv("MSCLI_MODEL", "gpt-4o-mini")
+	t.Setenv("MSCLI_MAX_ITERATIONS", "1")
+	t.Setenv("MSCLI_PERMISSIONS_SKIP", "true")
 
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)

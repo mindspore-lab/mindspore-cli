@@ -2,7 +2,7 @@ package render
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-code/ui/theme"
+	"github.com/vigo999/mindspore-cli/ui/theme"
 )
 
 // InitStyles rebuilds all package-level style vars from theme.Current.

@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/configs"
+	"github.com/vigo999/mindspore-cli/configs"
 )
 
 func TestModelPresetCredentialEndpoint(t *testing.T) {

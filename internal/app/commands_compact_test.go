@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	agentctx "github.com/vigo999/mindspore-code/agent/context"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/ui/model"
+	agentctx "github.com/vigo999/mindspore-cli/agent/context"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestCmdCompactCompactsContextAndEmitsTokenUpdate(t *testing.T) {

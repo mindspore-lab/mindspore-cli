@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
+	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
 )
 
 // issueRowSelectedStyle is populated by InitStyles() in styles.go.

@@ -3,7 +3,7 @@ package loop
 import (
 	"time"
 
-	"github.com/vigo999/mindspore-code/integrations/llm"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
 )
 
 // Task represents a user task.

@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-code/ui/model"
-	"github.com/vigo999/mindspore-code/ui/panels"
-	"github.com/vigo999/mindspore-code/ui/theme"
+	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/panels"
+	"github.com/vigo999/mindspore-cli/ui/theme"
 )
 
 var (
@@ -60,14 +60,14 @@ func (a *App) maybePrintBanner() tea.Cmd {
 // RenderBanner renders the one-shot banner shown after boot in inline mode.
 func RenderBanner(version, workDir, repoURL, modelName string, ctxMax int) string {
 	ver := strings.TrimSpace(version)
-	// Strip product name prefix (e.g. "MindSpore Code. v0.5.0" → "v0.5.0")
-	for _, prefix := range []string{"MindSpore Code. ", "MindSpore CLI. "} {
+	// Strip product name prefix (e.g. "MindSpore CLI. v0.5.0" → "v0.5.0")
+	for _, prefix := range []string{"MindSpore CLI. ", "MindSpore CLI. "} {
 		ver = strings.TrimPrefix(ver, prefix)
 	}
 	if ver == "" {
 		ver = "dev"
 	}
-	title := bannerTitleStyle.Render("MindSpore Code") + " " + bannerValueStyle.Render("("+ver+")")
+	title := bannerTitleStyle.Render("MindSpore CLI") + " " + bannerValueStyle.Render("("+ver+")")
 
 	rows := []string{
 		bannerRow("model", valueOrString(strings.TrimSpace(modelName), "unknown")),

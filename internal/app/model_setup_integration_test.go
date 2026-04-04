@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vigo999/mindspore-code/configs"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/configs"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 func TestModelCommand_OpensSetupPopupWithState(t *testing.T) {
@@ -32,8 +32,8 @@ func TestModelCommand_OpensSetupPopupWithState(t *testing.T) {
 	if !popup.CanEscape {
 		t.Error("expected CanEscape=true from /model")
 	}
-	if popup.CurrentMode != modelModeMSCODEProvided {
-		t.Errorf("expected current mode %q, got %q", modelModeMSCODEProvided, popup.CurrentMode)
+	if popup.CurrentMode != modelModeMSCLIProvided {
+		t.Errorf("expected current mode %q, got %q", modelModeMSCLIProvided, popup.CurrentMode)
 	}
 	if popup.CurrentPreset != "kimi-k2.5-free" {
 		t.Errorf("expected current preset 'kimi-k2.5-free', got %q", popup.CurrentPreset)

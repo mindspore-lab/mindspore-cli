@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-code/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/model"
 )
 
 // Style vars are populated by InitStyles() in styles.go.
@@ -37,7 +37,7 @@ func RenderSetupPopup(popup *model.SetupPopup) string {
 }
 
 const (
-	modeMSCODEProvided = "mscode-provided"
+	modeMSCLIProvided = "mscli-provided"
 	modeModeOwn        = "own"
 )
 
@@ -46,7 +46,7 @@ func renderModeSelect(popup *model.SetupPopup) string {
 		label string
 		mode  string
 	}{
-		{"mscode-provided model", modeMSCODEProvided},
+		{"mscli-provided model", modeMSCLIProvided},
 		{"your own model", modeModeOwn},
 	}
 
@@ -84,7 +84,7 @@ func renderModeSelect(popup *model.SetupPopup) string {
 }
 
 func renderPresetPicker(popup *model.SetupPopup) string {
-	maxW := len("mscode-provided")
+	maxW := len("mscli-provided")
 	for _, opt := range popup.PresetOptions {
 		if w := 2 + len(opt.Label) + 12; w > maxW {
 			maxW = w
@@ -92,7 +92,7 @@ func renderPresetPicker(popup *model.SetupPopup) string {
 	}
 
 	var lines []string
-	lines = append(lines, setupTitleStyle.Width(maxW).Render("mscode-provided"))
+	lines = append(lines, setupTitleStyle.Width(maxW).Render("mscli-provided"))
 	lines = append(lines, "")
 	for i, opt := range popup.PresetOptions {
 		marker := "  "
@@ -166,12 +166,12 @@ func renderEnvInfo(popup *model.SetupPopup) string {
 	lines = append(lines, "")
 	lines = append(lines, setupLabelStyle.Render("Set environment variables:"))
 	lines = append(lines, "")
-	lines = append(lines, setupNormalStyle.Render("  export MSCODE_PROVIDER=openai-completion"))
-	lines = append(lines, setupNormalStyle.Render("  export MSCODE_BASE_URL=https://api.openai.com/v1"))
-	lines = append(lines, setupNormalStyle.Render("  export MSCODE_API_KEY=sk-..."))
-	lines = append(lines, setupNormalStyle.Render("  export MSCODE_MODEL=gpt-5.4"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_PROVIDER=openai-completion"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_BASE_URL=https://api.openai.com/v1"))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_API_KEY=sk-..."))
+	lines = append(lines, setupNormalStyle.Render("  export MSCLI_MODEL=gpt-5.4"))
 	lines = append(lines, "")
-	lines = append(lines, setupHintStyle.Render("Then restart mscode."))
+	lines = append(lines, setupHintStyle.Render("Then restart mscli."))
 	lines = append(lines, "")
 	lines = append(lines, setupHintStyle.Render("esc back"))
 

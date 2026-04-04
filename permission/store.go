@@ -32,7 +32,7 @@ type permissionRuleBuckets struct {
 // NewFilePermissionStore 创建文件权限存储
 func NewFilePermissionStore(path string) (*FilePermissionStore, error) {
 	if path == "" {
-		path = ".mscode/permissions.json"
+		path = ".mscli/permissions.json"
 	}
 
 	// 确保目录存在
@@ -230,7 +230,7 @@ type PermissionStoreConfig struct {
 func DefaultPermissionStoreConfig() PermissionStoreConfig {
 	return PermissionStoreConfig{
 		Type:   "file",
-		Path:   ".mscode/permissions.state.json",
+		Path:   ".mscli/permissions.state.json",
 		MaxAge: 7 * 24 * time.Hour, // 7 days
 	}
 }

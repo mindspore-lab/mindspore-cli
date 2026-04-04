@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	ctxmanager "github.com/vigo999/mindspore-code/agent/context"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/permission"
-	"github.com/vigo999/mindspore-code/tools"
+	ctxmanager "github.com/vigo999/mindspore-cli/agent/context"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/permission"
+	"github.com/vigo999/mindspore-cli/tools"
 )
 
 // EngineConfig holds engine configuration.

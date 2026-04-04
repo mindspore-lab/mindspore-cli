@@ -1,0 +1,4 @@
+epochs: 1
+batch_size: 1
+dataset_path: ./dataset
+model_path: ./model

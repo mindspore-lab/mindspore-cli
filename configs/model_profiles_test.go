@@ -4,7 +4,7 @@ import "testing"
 
 func TestLoadWithEnv_AutoTokenLimitsByModel(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("MSCODE_MODEL", "gpt-5")
+	t.Setenv("MSCLI_MODEL", "gpt-5")
 
 	cfg, err := LoadWithEnv()
 	if err != nil {
@@ -36,7 +36,7 @@ func TestLoadWithEnv_AutoTokenLimitsByModelSeries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearEnv(t)
-			t.Setenv("MSCODE_MODEL", tt.model)
+			t.Setenv("MSCLI_MODEL", tt.model)
 
 			cfg, err := LoadWithEnv()
 			if err != nil {
@@ -52,8 +52,8 @@ func TestLoadWithEnv_AutoTokenLimitsByModelSeries(t *testing.T) {
 
 func TestLoadWithEnv_EnvOverridesAutoTokenLimits(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("MSCODE_MODEL", "gpt-5")
-	t.Setenv("MSCODE_CONTEXT_WINDOW", "16000")
+	t.Setenv("MSCLI_MODEL", "gpt-5")
+	t.Setenv("MSCLI_CONTEXT_WINDOW", "16000")
 
 	cfg, err := LoadWithEnv()
 	if err != nil {

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vigo999/mindspore-code/integrations/llm"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
 )
 
 // CompactStrategy 压缩策略类型

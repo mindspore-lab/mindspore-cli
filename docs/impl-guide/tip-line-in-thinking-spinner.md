@@ -94,4 +94,4 @@ var tipStyle lipgloss.Style
 
 1. `go build ./...` — confirms compilation
 2. `go test ./ui/...` — run existing UI tests
-3. Manual: run `./mscode` and send a prompt — verify the tip line appears below spinner during thinking
+3. Manual: run `./mscli` and send a prompt — verify the tip line appears below spinner during thinking

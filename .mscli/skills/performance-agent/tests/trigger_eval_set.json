@@ -1,0 +1,54 @@
+[
+  {
+    "query": "my mindspore pretraining job on 8x Ascend runs correctly but step time is awful. can you profile it first, figure out whether allreduce or host launch is dominating, then tell me the first optimization to try?",
+    "should_trigger": true
+  },
+  {
+    "query": "Inference latency on GPU doubled after a recent MindSpore refactor. I need a profiler-first diagnosis path to tell whether graph build, kernel time, or CPU launch gaps are the main bottleneck.",
+    "should_trigger": true
+  },
+  {
+    "query": "This model no longer fits in memory after I changed the batch size. It still runs for smaller batches. Help me use profiling data to find the memory-heavy operator and compare before vs after once I change something.",
+    "should_trigger": true
+  },
+  {
+    "query": "distributed training is stable but throughput is low and the cards are idle a lot. use a structured performance workflow for MindSpore and tell me whether communication or input pipeline stalls are the main problem",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a MindSpore trace already and want help classifying the main time-consuming stage, choosing one optimization, and rerunning to confirm the gain.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before we use the profiler on this Ascend slowdown, list the existing performance features we can trial from factory and let me choose one first.",
+    "should_trigger": true
+  },
+  {
+    "query": "MindSpore accuracy dropped after migration from PyTorch even though the job completes. I need to compare step1 loss and find the first divergence point.",
+    "should_trigger": false
+  },
+  {
+    "query": "my training crashes with an unsupported operator on Ascend and sometimes throws ERR codes. please diagnose the failure",
+    "should_trigger": false
+  },
+  {
+    "query": "Can you help me install MindSpore and check whether my machine has the right drivers and dependencies?",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to implement a missing custom operator for GPU in MindSpore. Which builder workflow should I use?",
+    "should_trigger": false
+  },
+  {
+    "query": "The model is too slow in PyTorch on CUDA. Give me general deep learning perf tips.",
+    "should_trigger": false
+  },
+  {
+    "query": "My dataloader is slow in a MindSpore training run and device utilization is low. I need a profiler-led optimization plan rather than generic advice.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a setup checklist for remote Ascend training before I start performance tuning.",
+    "should_trigger": false
+  }
+]

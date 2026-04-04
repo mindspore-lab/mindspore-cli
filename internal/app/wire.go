@@ -11,25 +11,25 @@ import (
 	"sync/atomic"
 	"time"
 
-	agentctx "github.com/vigo999/mindspore-code/agent/context"
-	"github.com/vigo999/mindspore-code/agent/loop"
-	"github.com/vigo999/mindspore-code/agent/session"
-	"github.com/vigo999/mindspore-code/configs"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/integrations/skills"
-	"github.com/vigo999/mindspore-code/internal/bugs"
-	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
-	projectpkg "github.com/vigo999/mindspore-code/internal/project"
-	itrain "github.com/vigo999/mindspore-code/internal/train"
-	"github.com/vigo999/mindspore-code/internal/version"
-	"github.com/vigo999/mindspore-code/permission"
-	rshell "github.com/vigo999/mindspore-code/runtime/shell"
-	"github.com/vigo999/mindspore-code/tools"
-	"github.com/vigo999/mindspore-code/tools/fs"
-	"github.com/vigo999/mindspore-code/tools/shell"
-	skillstool "github.com/vigo999/mindspore-code/tools/skills"
-	"github.com/vigo999/mindspore-code/ui/model"
-	wtrain "github.com/vigo999/mindspore-code/workflow/train"
+	agentctx "github.com/vigo999/mindspore-cli/agent/context"
+	"github.com/vigo999/mindspore-cli/agent/loop"
+	"github.com/vigo999/mindspore-cli/agent/session"
+	"github.com/vigo999/mindspore-cli/configs"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/integrations/skills"
+	"github.com/vigo999/mindspore-cli/internal/bugs"
+	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
+	projectpkg "github.com/vigo999/mindspore-cli/internal/project"
+	itrain "github.com/vigo999/mindspore-cli/internal/train"
+	"github.com/vigo999/mindspore-cli/internal/version"
+	"github.com/vigo999/mindspore-cli/permission"
+	rshell "github.com/vigo999/mindspore-cli/runtime/shell"
+	"github.com/vigo999/mindspore-cli/tools"
+	"github.com/vigo999/mindspore-cli/tools/fs"
+	"github.com/vigo999/mindspore-cli/tools/shell"
+	skillstool "github.com/vigo999/mindspore-cli/tools/skills"
+	"github.com/vigo999/mindspore-cli/ui/model"
+	wtrain "github.com/vigo999/mindspore-cli/workflow/train"
 )
 
 var errAPIKeyNotFound = errors.New("api key not found")
@@ -38,7 +38,7 @@ var buildProvider = func(resolved llm.ResolvedConfig) (llm.Provider, error) {
 	return llm.DefaultManager().Build(resolved)
 }
 
-var Version = "MindSpore Code. " + version.Version
+var Version = "MindSpore CLI. " + version.Version
 
 // Application is the top-level composition container.
 type Application struct {
@@ -170,7 +170,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	if !llmReady {
 		mode, appCfg := detectModelMode()
 		switch mode {
-		case modelModeMSCODEProvided:
+		case modelModeMSCLIProvided:
 			savedModelToken = appCfg.ModelToken
 			if preset, ok := resolveBuiltinModelPreset(appCfg.ModelPresetID); ok {
 				config.Model.URL = preset.BaseURL
@@ -204,18 +204,18 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	toolRegistry := initTools(config, workDir)
 
 	// Skills: embedded skills are extracted next to the executable,
-	// user-installed skills in ~/.mscode/skills/ override them,
-	// project-local skills in .mscode/skills/ override both.
+	// user-installed skills in ~/.mscli/skills/ override them,
+	// project-local skills in .mscli/skills/ override both.
 	homeDir, _ := os.UserHomeDir()
 	execSkillsDir := ""
 	if ep, err := os.Executable(); err == nil {
-		execSkillsDir = filepath.Join(filepath.Dir(ep), ".mscode", "skills")
+		execSkillsDir = filepath.Join(filepath.Dir(ep), ".mscli", "skills")
 		_ = skills.ExtractBuiltin(execSkillsDir)
 	}
 	skillLoader := skills.NewLoader(
 		execSkillsDir,
-		filepath.Join(homeDir, ".mscode", "skills"),
-		filepath.Join(workDir, ".mscode", "skills"),
+		filepath.Join(homeDir, ".mscli", "skills"),
+		filepath.Join(workDir, ".mscli", "skills"),
 	)
 	toolRegistry.MustRegister(skillstool.NewLoadSkillTool(skillLoader))
 
@@ -318,7 +318,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		Engine:                  engine,
 		EventCh:                 eventCh,
 		WorkDir:                 workDir,
-		RepoURL:                 "github.com/vigo999/mindspore-code",
+		RepoURL:                 "github.com/vigo999/mindspore-cli",
 		Config:                  config,
 		llmDebugDumper:          llmDebugDumper,
 		provider:                provider,
@@ -609,12 +609,12 @@ func newEngineConfig(cfg *configs.Config, systemPrompt string) loop.EngineConfig
 
 // detectModelMode checks whether model config is already available.
 // Returns the mode string and the loaded appConfig (if any).
-// Mode is modelModeOwnEnv if env vars are complete, modelModeMSCODEProvided
+// Mode is modelModeOwnEnv if env vars are complete, modelModeMSCLIProvided
 // if a saved token exists, or "" if neither is configured.
 func detectModelMode() (string, *appConfig) {
-	provider := strings.TrimSpace(os.Getenv("MSCODE_PROVIDER"))
-	apiKey := strings.TrimSpace(os.Getenv("MSCODE_API_KEY"))
-	modelName := strings.TrimSpace(os.Getenv("MSCODE_MODEL"))
+	provider := strings.TrimSpace(os.Getenv("MSCLI_PROVIDER"))
+	apiKey := strings.TrimSpace(os.Getenv("MSCLI_API_KEY"))
+	modelName := strings.TrimSpace(os.Getenv("MSCLI_MODEL"))
 	if provider != "" && apiKey != "" && modelName != "" {
 		return modelModeOwnEnv, nil
 	}
@@ -623,10 +623,10 @@ func detectModelMode() (string, *appConfig) {
 	if err != nil {
 		return "", nil
 	}
-	if cfg.ModelMode == modelModeMSCODEProvided &&
+	if cfg.ModelMode == modelModeMSCLIProvided &&
 		strings.TrimSpace(cfg.ModelPresetID) != "" &&
 		strings.TrimSpace(cfg.ModelToken) != "" {
-		return modelModeMSCODEProvided, cfg
+		return modelModeMSCLIProvided, cfg
 	}
 	return "", nil
 }
@@ -644,7 +644,7 @@ func (a *Application) emitModelSetupPopup(canEscape bool) {
 	currentMode := ""
 	currentPreset := ""
 	if a.activeModelPresetID != "" {
-		currentMode = modelModeMSCODEProvided
+		currentMode = modelModeMSCLIProvided
 		currentPreset = a.activeModelPresetID
 	} else if a.llmReady {
 		currentMode = modelModeOwn

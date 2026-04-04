@@ -1,0 +1,47 @@
+{
+  "skill_name": "accuracy-agent",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "My MindSpore training finishes, but the top-1 accuracy dropped after I migrated from PyTorch. Step1 loss is already different from the PyTorch baseline on the same weights and the same batch. How should I debug this?",
+      "expected_output": "Recognizes a step1 loss mismatch, aligns the comparison setup first, treats the problem as a forward-path issue, and recommends a staged tensor comparison instead of generic tuning.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Step1 loss matches our previous good MindSpore run, but after about 80 steps the local norm and loss curve drift and the final evaluation is worse. I need a practical diagnosis plan.",
+      "expected_output": "Routes to the later-divergence branch, focuses on gradients, one-step updates, optimizer settings, and distributed differences, and uses a validation ladder.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Training stops at step 2 with a RuntimeError and then I see NaN in the log. Can the accuracy-agent help me diagnose it?",
+      "expected_output": "Rejects the case as a pure accuracy entry point because execution failed, asks for failure evidence or redirects to failure diagnosis instead of using the NaN branch.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "I aligned weights, inputs, and step1 compare hooks, and now the first stable mismatch is on a single operator between PyTorch and MindSpore. What should I verify before I conclude the MindSpore operator is wrong?",
+      "expected_output": "Requires checking whether the two model scripts pass fully aligned operator arguments including implicit defaults, asks for a minimal single-operator repro to confirm the issue outside the full model, and only then suggests trying a non-legacy replacement such as a mint operator or a reimplementation.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "I wrote a small debug script for our torch_npu baseline, but it only imports torch and I forgot to move the model and tensors to NPU. Can I still use its output to compare against MindSpore on Ascend?",
+      "expected_output": "Rejects the script as an invalid PyTorch-on-Ascend baseline, asks to verify torch and torch_npu versions, requires importing torch_npu and moving the model and tensors to NPU, and asks for deterministic controls before trusting the compare result.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "We found a mismatch inside one decoder block, and my guess is that softmax is numerically bad on MindSpore. Should I start replacing operators now?",
+      "expected_output": "Avoids guessing from intuition alone, asks to verify the mismatching block inputs, weights, dtype, API parameters, and actual device placement first, and only then narrows to operator-level triage if the evidence still points there.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "After replacing one bad operator, the gap is smaller but still around 8e-6. Can we just call that normal cross-platform noise and stop?",
+      "expected_output": "Does not dismiss the residual gap without evidence, reports whether the fixed issue is zero-gap or reduced-gap, asks whether the user accepts the residual, and if not recommends restarting the workflow for the next remaining issue with the already-fixed path neutralized if needed.",
+      "files": []
+    }
+  ]
+}

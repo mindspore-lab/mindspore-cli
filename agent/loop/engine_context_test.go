@@ -6,9 +6,9 @@ import (
 	"io"
 	"testing"
 
-	ctxmanager "github.com/vigo999/mindspore-code/agent/context"
-	"github.com/vigo999/mindspore-code/integrations/llm"
-	"github.com/vigo999/mindspore-code/tools"
+	ctxmanager "github.com/vigo999/mindspore-cli/agent/context"
+	"github.com/vigo999/mindspore-cli/integrations/llm"
+	"github.com/vigo999/mindspore-cli/tools"
 )
 
 type captureProvider struct {

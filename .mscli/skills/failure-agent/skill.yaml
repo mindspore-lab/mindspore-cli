@@ -1,0 +1,67 @@
+schema_version: "1.1.0"
+name: "failure-agent"
+display_name: "Failure Agent"
+description: "Diagnose training and runtime failures across MindSpore and PTA (PyTorch + torch_npu) by analyzing failure evidence, validating the most likely root causes, preserving a reusable diagnosis snapshot, and emitting an actionable report."
+version: "0.6.0"
+
+entry:
+  type: "manual"
+  path: "SKILL.md"
+
+role: "agent"
+
+composes: []
+
+factory:
+  card_types:
+    - "operator"
+    - "report"
+
+inputs:
+  - name: "working_dir"
+    type: "path"
+    required: false
+    description: "Workspace root where the failing job lives. Defaults to the current shell path."
+  - name: "user_problem"
+    type: "string"
+    required: true
+    description: "Problem description, symptom, and failing command context."
+  - name: "error_log"
+    type: "string"
+    required: false
+    description: "Traceback, stderr, or key failure log excerpt."
+  - name: "run_log"
+    type: "path"
+    required: false
+    description: "Path to a run log when available."
+  - name: "env_lock"
+    type: "path"
+    required: false
+    description: "Path to an earlier readiness snapshot such as env.lock.json."
+  - name: "factory_root"
+    type: "path"
+    required: false
+    description: "Optional local ms-factor or Factory root for supporting failure knowledge and compatibility evidence."
+
+outputs:
+  report_schema: "skills/_shared/contract/report.schema.json"
+  out_dir_layout: "runs/<run_id>/out/"
+
+permissions:
+  network: "none"
+  filesystem: "workspace-write"
+
+dependencies:
+  tools:
+    - "bash"
+    - "find"
+    - "rg"
+  python: []
+
+tags:
+  - "mindspore"
+  - "pta"
+  - "torch_npu"
+  - "diagnosis"
+  - "failure"
+  - "runtime"

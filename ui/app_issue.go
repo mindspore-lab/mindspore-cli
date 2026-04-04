@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vigo999/mindspore-code/ui/model"
-	"github.com/vigo999/mindspore-code/ui/panels"
+	"github.com/vigo999/mindspore-cli/ui/model"
+	"github.com/vigo999/mindspore-cli/ui/panels"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

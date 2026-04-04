@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vigo999/mindspore-code/internal/bugs"
-	issuepkg "github.com/vigo999/mindspore-code/internal/issues"
+	"github.com/vigo999/mindspore-cli/internal/bugs"
+	issuepkg "github.com/vigo999/mindspore-cli/internal/issues"
 )
 
 // TaskInfo represents a task in the task pool.
