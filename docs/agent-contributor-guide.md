@@ -51,9 +51,14 @@ This summary matches the current tree in this checkout.
 ```text
 mindspore-cli/
   cmd/mscli/              process entrypoint
-  internal/app/            bootstrap, wiring, commands, startup, train flow, prompt recall persistence
-  internal/project/        roadmap and weekly helpers
-  internal/train/          training types and target abstraction
+  cmd/mscli-server/       bug/issue/project server
+  internal/
+    app/                   bootstrap, wiring, commands, startup, train flow
+    server/                HTTP API for bugs, issues, projects
+    project/               roadmap and weekly helpers
+    train/                 training types and target abstraction
+    update/                binary update checker
+    workspacefile/         workspace path validation
   agent/
     context/               context window management and compaction
     loop/                  ReAct execution loop
@@ -62,22 +67,19 @@ mindspore-cli/
   workflow/
     train/                 train lane controller, setup, run, demo backend
   integrations/
-    domain/                domain client and schema
     llm/                   provider registry and OpenAI/Anthropic clients
-    skills/                skill repository and invocation integration
-  permission/              permission service and types
+    skills/                skill listing, loading, embedded builtin skills
+  permission/              permission service, types, safe command allowlist
   runtime/
     shell/                 stateful shell runner
     probes/                unified probe result model
-      local/               local-side readiness probes (os, aiframework, algo)
-      target/              remote target readiness probes (os, ai, algo, workdir, gpu, npu)
-        ssh/               SSH connectivity probe
+      local/               local-side readiness probes
+      target/              remote target readiness probes
   tools/
     fs/                    filesystem tool implementations
     shell/                 shell tool wrapper
+    skills/                skill loading tool
   ui/                      Bubble Tea app, panels, slash commands, model
-  agent/session/           session state, trajectory persistence, resume
-  report/                  summary generation
   configs/                 config loading and shared config types
   test/mocks/              test doubles
   docs/                    project docs
