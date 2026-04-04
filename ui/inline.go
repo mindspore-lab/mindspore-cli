@@ -474,7 +474,9 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message) tea.Cmd
 
 	switch ev.Type {
 	case model.UserInput:
-		return a.printUserInput(ev.Message)
+		// User input is already printed by handleKey on Enter.
+		// Don't print again when the engine echoes it back.
+		return nil
 	case model.AgentReply:
 		// If deltas were already streamed, flush remaining buffer only.
 		for i := len(prevMessages) - 1; i >= 0; i-- {
