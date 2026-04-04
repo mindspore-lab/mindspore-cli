@@ -186,7 +186,7 @@ func TestRequestRemember_ShellCompositeCommandSplitsAndCapsAtFive(t *testing.T) 
 	svc.SetStore(store)
 	svc.SetUI(stubPermissionUI{granted: true, remember: true})
 
-	action := "npm test ./... && go test ./... && make build && git status && ls -la && whoami"
+	action := "npm test ./... && go test ./... && make build && docker run x && kubectl apply -f y && terraform plan"
 	granted, err := svc.Request(context.Background(), "shell", action, "")
 	if err != nil {
 		t.Fatalf("Request() err = %v", err)
@@ -195,13 +195,14 @@ func TestRequestRemember_ShellCompositeCommandSplitsAndCapsAtFive(t *testing.T) 
 		t.Fatal("Request() granted = false, want true")
 	}
 
-	for _, cmd := range []string{"npm test ./...", "go test ./...", "make build", "git status", "ls -la"} {
+	for _, cmd := range []string{"npm test ./...", "go test ./...", "make build", "docker run x", "kubectl apply -f y"} {
 		if got := svc.CheckCommand(cmd); got != PermissionAllowSession {
 			t.Fatalf("CheckCommand(%q) = %v, want %v", cmd, got, PermissionAllowSession)
 		}
 	}
-	if got := svc.CheckCommand("whoami"); got != PermissionAsk {
-		t.Fatalf("CheckCommand(whoami) = %v, want %v", got, PermissionAsk)
+	// 6th command should not be persisted (cap at 5)
+	if got := svc.CheckCommand("terraform plan"); got != PermissionAsk {
+		t.Fatalf("CheckCommand(terraform plan) = %v, want %v", got, PermissionAsk)
 	}
 	if got := len(store.decisions); got != 5 {
 		t.Fatalf("saved decisions = %d, want 5", got)

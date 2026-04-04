@@ -351,6 +351,28 @@ func (s *DefaultPermissionService) CheckCommand(command string) PermissionLevel 
 	return s.checkShellCommandSingle(command)
 }
 
+// safeReadOnlyCommands are shell commands that only read state and cannot
+// modify files, network, or system configuration. These are auto-allowed
+// without prompting.
+var safeReadOnlyCommands = map[string]bool{
+	"ls": true, "ll": true, "la": true,
+	"cat": true, "head": true, "tail": true, "less": true, "more": true,
+	"find": true, "locate": true, "which": true, "whereis": true,
+	"pwd": true, "echo": true, "printf": true,
+	"wc": true, "sort": true, "uniq": true, "diff": true, "comm": true,
+	"grep": true, "rg": true, "ag": true, "awk": true, "sed": true,
+	"file": true, "stat": true, "du": true, "df": true,
+	"tree": true, "realpath": true, "basename": true, "dirname": true,
+	"env": true, "printenv": true, "uname": true, "whoami": true, "id": true,
+	"date": true, "cal": true, "uptime": true, "hostname": true,
+	"ps": true, "top": true, "htop": true, "free": true,
+	"go": true, "python": true, "python3": true, "node": true, "cargo": true,
+	"git": true, "jq": true, "yq": true, "xargs": true,
+	"md5sum": true, "sha256sum": true, "sha1sum": true,
+	"tar": true, "gzip": true, "gunzip": true, "zcat": true,
+	"true": true, "false": true, "test": true,
+}
+
 func (s *DefaultPermissionService) checkShellCommandSingle(command string) PermissionLevel {
 	if level, matched := s.evaluateRules("shell", command, ""); matched {
 		return level
@@ -367,6 +389,11 @@ func (s *DefaultPermissionService) checkShellCommandSingle(command string) Permi
 	// Check dangerous commands
 	if IsDangerousCommand(command) {
 		return minPermission(s.default_, PermissionAsk)
+	}
+
+	// Auto-allow safe read-only commands
+	if safeReadOnlyCommands[cmd] {
+		return PermissionAllowAlways
 	}
 
 	return s.default_

@@ -12,6 +12,7 @@ type Command struct {
 	Name        string
 	Description string
 	Usage       string
+	Hidden      bool // hidden from /help and autocomplete, but still executable
 	Handler     func(args []string) string
 }
 
@@ -51,7 +52,9 @@ func (r *Registry) List() []Command {
 	defer r.mu.RUnlock()
 	cmds := make([]Command, 0, len(r.commands))
 	for _, cmd := range r.commands {
-		cmds = append(cmds, cmd)
+		if !cmd.Hidden {
+			cmds = append(cmds, cmd)
+		}
 	}
 	return cmds
 }
@@ -63,14 +66,16 @@ func (r *Registry) Match(prefix string) []Command {
 	if prefix == "" {
 		cmds := make([]Command, 0, len(r.commands))
 		for _, cmd := range r.commands {
-			cmds = append(cmds, cmd)
+			if !cmd.Hidden {
+				cmds = append(cmds, cmd)
+			}
 		}
 		return cmds
 	}
 
 	var matches []Command
 	for name, cmd := range r.commands {
-		if strings.HasPrefix(name, prefix) {
+		if !cmd.Hidden && strings.HasPrefix(name, prefix) {
 			matches = append(matches, cmd)
 		}
 	}
@@ -85,12 +90,14 @@ func (r *Registry) Suggestions(input string) []string {
 
 	var matches []string
 	if input == "/" {
-		for name := range r.commands {
-			matches = append(matches, name)
+		for name, cmd := range r.commands {
+			if !cmd.Hidden {
+				matches = append(matches, name)
+			}
 		}
 	} else {
-		for name := range r.commands {
-			if strings.HasPrefix(name, input) {
+		for name, cmd := range r.commands {
+			if !cmd.Hidden && strings.HasPrefix(name, input) {
 				matches = append(matches, name)
 			}
 		}
@@ -192,6 +199,7 @@ func (r *Registry) registerDefaults() {
 		Name:        "/project",
 		Description: "Show or edit project status data",
 		Usage:       "/project [status|add|update|rm]",
+		Hidden:      true,
 	})
 
 	r.Register(Command{
