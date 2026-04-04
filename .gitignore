@@ -1,4 +1,5 @@
 # Binaries
+/mscli
 /mscode
 /dist/
 *.exe
@@ -11,16 +12,23 @@
 # Go workspace and cache files
 *.coverprofile
 
-# mscode local state
+# mscli local state
+.mscli/
 .mscode/
 /.cache
 
 # Server runtime artifacts
+mscli-server
 mscode-server
 issues.db
 
 # Mirror deploy config (contains server IP/user/key path)
 scripts/mirror.conf
+
+# Debug/log files
+*.log
+debug*.log
+sse_debug.log
 
 # IDE files
 .vscode/

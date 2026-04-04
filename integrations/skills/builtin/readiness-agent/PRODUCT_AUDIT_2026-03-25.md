@@ -22,7 +22,7 @@ Current state:
 
 Recommended readiness level:
 
-- still appropriate for internal alpha / `mscli` integration experiments
+- still appropriate for internal alpha / `ms-cli` integration experiments
 - stronger than the earlier prompt-first MVP because Python control-plane
   behavior is now explicit instead of implicit
 - not yet fully closed as a final GA skill
@@ -159,7 +159,7 @@ user-space actions. This is correct for product safety, but it means:
 
 This is not a flaw, but it should remain explicit in integration plans.
 
-### 3. No Formal `mscli` Adapter Contract Yet
+### 3. No Formal `ms-cli` Adapter Contract Yet
 
 The skill now has a clearer internal Python contract and stable artifacts, but
 the adapter layer that maps:
@@ -171,7 +171,7 @@ the adapter layer that maps:
 - artifact locations
 - final surfaced summary
 
-into `mscli` runtime behavior is not yet formalized in this repo.
+into `ms-cli` runtime behavior is not yet formalized in this repo.
 
 ## Recommended Final Steps
 

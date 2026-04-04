@@ -129,4 +129,4 @@ rg "FACTORY_REG.*{OpName}" mindspore/mindspore/ops/kernel/
 ## When to Go Deeper
 
 If the issue still looks like a MindSpore operator or backend implementation
-problem after these checks, move to [mindspore-dianosis](mindspore-dianosis.md).
+problem after these checks, move to [mindspore-diagnosis](mindspore-diagnosis.md).

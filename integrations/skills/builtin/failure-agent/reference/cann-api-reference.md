@@ -44,4 +44,4 @@ High-value mappings:
 
 - use [pta-diagnosis](pta-diagnosis.md) for quick code routing
 - use [backend-diagnosis](backend-diagnosis.md) for broader layer triage
-- use [mindspore-dianosis](mindspore-dianosis.md) if source-level investigation is needed
+- use [mindspore-diagnosis](mindspore-diagnosis.md) if source-level investigation is needed

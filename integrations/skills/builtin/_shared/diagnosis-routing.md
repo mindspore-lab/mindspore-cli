@@ -57,6 +57,6 @@ Do not route to diagnosis specialists when the real user need is:
 - pre-run validation or environment compatibility check
   - route to `readiness-agent`
 - model migration or initial porting
-  - route to `model-agent`
+  - route to `migrate-agent`
 - algorithm feature adaptation into an existing model
   - route to `algorithm-agent`

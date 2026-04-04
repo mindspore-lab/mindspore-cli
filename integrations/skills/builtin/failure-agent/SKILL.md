@@ -50,6 +50,7 @@ Do not use this skill for:
 - If evidence conflicts or is incomplete, downgrade confidence instead of
   pretending certainty.
 - Do not claim a fix is confirmed until the user verifies it.
+- Do not auto-edit code, configs, or the environment in this skill.
 - In `diagnose` mode, do not edit code, configs, or the environment.
 - In `fix` mode, do not edit anything until you have presented the diagnosis,
   proposed the fix, and received explicit user confirmation.
@@ -222,7 +223,7 @@ Load these references when needed:
 - `reference/backend-diagnosis.md`
 - `reference/pta-diagnosis.md`
 - `reference/mindspore-api-reference.md`
-- `reference/mindspore-dianosis.md`
+- `reference/mindspore-diagnosis.md`
 - `reference/cann-api-reference.md`
 - `reference/failure-showcase.md`
 

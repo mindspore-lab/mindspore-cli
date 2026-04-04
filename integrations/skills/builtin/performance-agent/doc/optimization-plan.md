@@ -66,7 +66,7 @@ samples and expanding column-name compatibility only when needed.
 
 ### 3. Adapter Contract
 
-The skill still needs an explicit adapter contract for `mscli` integration:
+The skill still needs an explicit adapter contract for `ms-cli` integration:
 
 - input mapping from host runtime into skill inputs
 - output surfacing rules for `report.json`, `report.md`, and verdict payloads
