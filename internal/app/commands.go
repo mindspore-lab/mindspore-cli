@@ -77,6 +77,13 @@ func (a *Application) handleCommand(input string) {
 			return
 		}
 		a.cmdFix(expanded)
+	case "/migrate":
+		expanded, err := a.expandIssueCommandInput(cmd.Remainder)
+		if err != nil {
+			a.emitInputExpansionError(err)
+			return
+		}
+		a.cmdMigrate(expanded)
 	case "/bugs":
 		a.cmdBugs(args)
 	case "/__bug_detail":
@@ -923,6 +930,7 @@ func (a *Application) cmdHelp() {
   /status <ISSUE-id> <ready|doing|closed>  Update an issue status
   /diagnose <problem text|ISSUE-id>  Diagnose a problem or issue
   /fix <problem text|ISSUE-id>  Run fix flow for a problem or issue
+  /migrate <description or repo URL>  Migrate a model to MindSpore
   /bugs [status]          List bugs (optional status filter: open, doing)
   /claim <id>             Claim a bug as your lead
   /dock                   Show bug dashboard (open count, ready, recent)

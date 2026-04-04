@@ -257,6 +257,12 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
+		Name:        "/migrate",
+		Description: "Migrate a model to MindSpore",
+		Usage:       "/migrate <description or repo URL>",
+	})
+
+	r.Register(Command{
 		Name:        "/bugs",
 		Description: "List bugs",
 		Usage:       "/bugs [status]",

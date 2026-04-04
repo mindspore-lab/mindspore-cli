@@ -152,6 +152,15 @@ func (a *Application) cmdFix(input string) {
 	a.runSkillCommand(input, "/fix")
 }
 
+func (a *Application) cmdMigrate(input string) {
+	task := fmt.Sprintf(
+		"Load skill migrate-agent.\n\nUser request: %s",
+		strings.TrimSpace(input),
+	)
+	a.EventCh <- model.Event{Type: model.AgentThinking}
+	go a.runTask(task)
+}
+
 func (a *Application) runSkillCommand(input, command string) {
 	mode := strings.TrimPrefix(command, "/")
 	target, err := parseIssueCommandTarget(input, command)
