@@ -38,7 +38,7 @@ PLATFORMS=(
 
 [ -f "${SCRIPT_DIR}/mirror.conf" ] && source "${SCRIPT_DIR}/mirror.conf"
 MIRROR_ROOT="${MSCLI_MIRROR_ROOT:-/opt/downloads/mscli/releases}"
-MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-http://47.115.175.134/mscli/releases}"
+MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-http://mscli.dev/mscli/releases}"
 TARGET_DIR="${MIRROR_ROOT}/${VERSION}"
 LATEST_LINK="${MIRROR_ROOT}/latest"
 PUBLIC_ROOT="$(dirname "${MIRROR_ROOT}")"
