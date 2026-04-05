@@ -179,7 +179,11 @@ mscli
 ### 9.1 脚本安装
 
 ```bash
-curl -fsSL http://47.115.175.134/mscli/install.sh | bash
+# GitCode（推荐）
+curl -fsSL https://gitcode.com/mindspore-lab/mindspore-cli/raw/main/scripts/install.sh | bash
+
+# GitHub
+curl -fsSL https://raw.githubusercontent.com/mindspore-lab/mindspore-cli/main/scripts/install.sh | bash
 ```
 
 ### 9.2 从源码构建
