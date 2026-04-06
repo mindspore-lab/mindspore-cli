@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	defaultMirrorManifestURL = "http://mscli.dev/mscli/releases/latest/manifest.json"
+	defaultMirrorManifestURL = "https://mscli.dev/mscli/releases/latest/manifest.json"
 	defaultGitHubManifestURL = "https://github.com/mindspore-lab/mindspore-cli/releases/latest/download/manifest.json"
 )
 

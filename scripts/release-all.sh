@@ -7,12 +7,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VERSION=""
 NOTES=""
 SKIP_GITHUB=0
-SKIP_MIRROR=0
+SKIP_LOCAL=0
 
 for arg in "$@"; do
   case "$arg" in
     --skip-github) SKIP_GITHUB=1 ;;
-    --skip-mirror) SKIP_MIRROR=1 ;;
+    --skip-local)  SKIP_LOCAL=1 ;;
     *)
       if [ -z "$VERSION" ]; then
         VERSION="$arg"
@@ -24,12 +24,12 @@ for arg in "$@"; do
 done
 
 if [ -z "$VERSION" ]; then
-  echo "Usage: ./scripts/release-all.sh <version> [notes] [--skip-github] [--skip-mirror]"
+  echo "Usage: ./scripts/release-all.sh <version> [notes] [--skip-github] [--skip-local]"
   echo ""
   echo "Examples:"
   echo "  ./scripts/release-all.sh v0.5.1 \"Fix bug\"        # full release"
-  echo "  ./scripts/release-all.sh v0.5.1 --skip-github     # mirror only"
-  echo "  ./scripts/release-all.sh v0.5.1 \"notes\" --skip-mirror  # GitHub only"
+  echo "  ./scripts/release-all.sh v0.5.1 --skip-github     # local mirror only"
+  echo "  ./scripts/release-all.sh v0.5.1 \"notes\" --skip-local  # GitHub only"
   exit 1
 fi
 
@@ -63,20 +63,14 @@ else
   fi
 fi
 
-# ── Step 2: Mirror deploy ──────────────────────────────────────
-if [ "$SKIP_MIRROR" -eq 0 ]; then
+# ── Step 2: Local mirror deploy ────────────────────────────────
+if [ "$SKIP_LOCAL" -eq 0 ]; then
   echo ""
-  echo "==> Mirror deploy"
-  # Source mirror defaults and export for publish-caddy-mirror.sh
-  if [ -f "${SCRIPT_DIR}/mirror.conf" ]; then
-    source "${SCRIPT_DIR}/mirror.conf"
-  fi
-  export MSCLI_MIRROR_HOST MSCLI_MIRROR_USER MSCLI_MIRROR_PORT MSCLI_MIRROR_SSH_KEY
-  export MSCLI_MIRROR_ROOT MSCLI_MIRROR_BASE_URL
-  "${SCRIPT_DIR}/publish-caddy-mirror.sh" "$VERSION"
+  echo "==> Local mirror deploy"
+  "${SCRIPT_DIR}/publish-local-caddy.sh" "$VERSION"
 else
   echo ""
-  echo "==> Skipping mirror deploy"
+  echo "==> Skipping local mirror deploy"
 fi
 
 echo ""

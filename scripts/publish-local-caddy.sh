@@ -23,6 +23,7 @@ TARGET_DIR="${MIRROR_ROOT}/${VERSION}"
 LATEST_LINK="${MIRROR_ROOT}/latest"
 PUBLIC_ROOT="$(dirname "${MIRROR_ROOT}")"
 INSTALL_SCRIPT_SOURCE="${MSCLI_INSTALL_SCRIPT_SOURCE:-${REPO_ROOT}/scripts/install.sh}"
+MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-https://mscli.dev/mscli/releases}"
 INSTALL_SCRIPT_PATH="${PUBLIC_ROOT}/install.sh"
 
 required_files=(
@@ -43,12 +44,24 @@ for file in "${required_files[@]}"; do
 done
 
 echo "Publishing ${VERSION} from ${DIST_DIR} to ${TARGET_DIR}"
-sudo mkdir -p "${TARGET_DIR}"
-sudo cp "${DIST_DIR}"/* "${TARGET_DIR}/"
-sudo cp "${INSTALL_SCRIPT_SOURCE}" "${INSTALL_SCRIPT_PATH}"
-sudo chmod -R a+rX "${TARGET_DIR}"
-sudo chmod a+rX "${INSTALL_SCRIPT_PATH}"
-sudo ln -sfn "${TARGET_DIR}" "${LATEST_LINK}"
+
+# Rewrite manifest download_base for the local mirror.
+if [ -f "${DIST_DIR}/manifest.json" ]; then
+  python3 -c "
+import json, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+d = json.loads(p.read_text())
+d['download_base'] = sys.argv[2].rstrip('/')
+p.write_text(json.dumps(d, indent=2) + '\n')
+" "${DIST_DIR}/manifest.json" "${MIRROR_BASE_URL}"
+fi
+
+mkdir -p "${TARGET_DIR}"
+cp "${DIST_DIR}"/* "${TARGET_DIR}/"
+cp "${INSTALL_SCRIPT_SOURCE}" "${INSTALL_SCRIPT_PATH}"
+chmod -R a+rX "${TARGET_DIR}"
+chmod a+rX "${INSTALL_SCRIPT_PATH}"
+ln -sfn "${TARGET_DIR}" "${LATEST_LINK}"
 
 echo ""
 echo "Published ${VERSION} to local Caddy mirror:"

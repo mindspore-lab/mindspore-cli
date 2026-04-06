@@ -26,7 +26,6 @@ need_cmd() {
 
 need_cmd go
 need_cmd mktemp
-need_cmd sudo
 
 PLATFORMS=(
   "linux/amd64"
@@ -36,9 +35,8 @@ PLATFORMS=(
   "windows/amd64"
 )
 
-[ -f "${SCRIPT_DIR}/mirror.conf" ] && source "${SCRIPT_DIR}/mirror.conf"
 MIRROR_ROOT="${MSCLI_MIRROR_ROOT:-/opt/downloads/mscli/releases}"
-MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-http://mscli.dev/mscli/releases}"
+MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-https://mscli.dev/mscli/releases}"
 TARGET_DIR="${MIRROR_ROOT}/${VERSION}"
 LATEST_LINK="${MIRROR_ROOT}/latest"
 PUBLIC_ROOT="$(dirname "${MIRROR_ROOT}")"
@@ -77,7 +75,7 @@ if [ "${SERVER_GOOS}" = "windows" ]; then
 fi
 
 echo "  -> ${SERVER_OUTPUT}"
-GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build \
+CGO_ENABLED=1 GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build \
   -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${PLAIN_VERSION}" \
   -o "${BUILD_DIR}/${SERVER_OUTPUT}" \
   ./cmd/mscli-server/
@@ -92,12 +90,12 @@ MANIFEST
 
 echo ""
 echo "Installing assets to ${TARGET_DIR}"
-sudo mkdir -p "${TARGET_DIR}"
-sudo cp "${BUILD_DIR}"/* "${TARGET_DIR}/"
-sudo cp "${REPO_ROOT}/scripts/install.sh" "${INSTALL_SCRIPT_PATH}"
-sudo chmod -R a+rX "${TARGET_DIR}"
-sudo chmod a+rX "${INSTALL_SCRIPT_PATH}"
-sudo ln -sfn "${TARGET_DIR}" "${LATEST_LINK}"
+mkdir -p "${TARGET_DIR}"
+cp "${BUILD_DIR}"/* "${TARGET_DIR}/"
+cp "${REPO_ROOT}/scripts/install.sh" "${INSTALL_SCRIPT_PATH}"
+chmod -R a+rX "${TARGET_DIR}"
+chmod a+rX "${INSTALL_SCRIPT_PATH}"
+ln -sfn "${TARGET_DIR}" "${LATEST_LINK}"
 
 echo ""
 echo "Release assets ready:"

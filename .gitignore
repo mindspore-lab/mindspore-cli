@@ -22,8 +22,6 @@ mscli-server
 mscode-server
 issues.db
 
-# Mirror deploy config (contains server IP/user/key path)
-scripts/mirror.conf
 
 # Debug/log files
 *.log

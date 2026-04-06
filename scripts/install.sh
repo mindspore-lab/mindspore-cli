@@ -3,7 +3,7 @@ set -euo pipefail
 
 GITHUB_REPO="${MSCLI_GITHUB_REPO:-mindspore-lab/mindspore-cli}"
 GITCODE_REPO="${MSCLI_GITCODE_REPO:-mindspore-lab/mindspore-cli}"
-MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-http://mscli.dev/mscli/releases}"
+MIRROR_BASE_URL="${MSCLI_MIRROR_BASE_URL:-https://mscli.dev/mscli/releases}"
 MIRROR_MANIFEST_URL="${MSCLI_MIRROR_MANIFEST_URL:-${MIRROR_BASE_URL%/}/latest/manifest.json}"
 GITCODE_BASE_URL="https://gitcode.com/api/v5/repos/${GITCODE_REPO}/releases"
 INSTALL_DIR="$HOME/.mscli/bin"

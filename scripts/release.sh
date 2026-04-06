@@ -43,7 +43,7 @@ if [ "${SERVER_GOOS}" = "windows" ]; then
 fi
 
 echo "  -> ${SERVER_OUTPUT}"
-GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${SERVER_OUTPUT}" ./cmd/mscli-server/
+CGO_ENABLED=1 GOOS="${SERVER_GOOS}" GOARCH="${SERVER_GOARCH}" go build -ldflags "-X github.com/mindspore-lab/mindspore-cli/internal/version.Version=${VERSION#v}" -o "${BUILD_DIR}/${SERVER_OUTPUT}" ./cmd/mscli-server/
 
 echo ""
 echo "Built binaries:"
