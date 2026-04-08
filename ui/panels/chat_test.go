@@ -58,6 +58,38 @@ func TestRenderMessages_ToolSuccessShowsSummaryAndDetails(t *testing.T) {
 	}
 }
 
+func TestRenderMessages_ToolBlocksAlignWithAgentMessages(t *testing.T) {
+	state := model.State{
+		Messages: []model.Message{
+			{
+				Kind:    model.MsgAgent,
+				Content: "agent reply",
+			},
+			{
+				Kind:     model.MsgTool,
+				ToolName: "Bash",
+				ToolArgs: "$ which uv",
+				Display:  model.DisplayCollapsed,
+				Content:  "completed\n/Users/townwish/.local/bin/uv",
+			},
+		},
+	}
+
+	view := testANSIPattern.ReplaceAllString(RenderMessages(state, "", "", 80), "")
+	lines := strings.Split(view, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected multiline render, got:\n%s", view)
+	}
+	if !strings.HasPrefix(lines[0], "• ") {
+		t.Fatalf("expected agent line to start at message column, got %q", lines[0])
+	}
+	for _, line := range lines {
+		if strings.Contains(line, "✓ Bash($ which uv)") && strings.HasPrefix(line, "  ") {
+			t.Fatalf("expected tool block to align with agent messages, got %q", line)
+		}
+	}
+}
+
 func TestRenderMessages_ToolFailureShowsErrorSummaryAndDetails(t *testing.T) {
 	state := model.State{
 		Messages: []model.Message{
@@ -145,6 +177,41 @@ func TestRenderMessages_ToolWarningUsesWarningSummaryStyle(t *testing.T) {
 	}
 	if !strings.Contains(view, "⎿") || !strings.Contains(view, "request timeout") {
 		t.Fatalf("expected warning summary, got:\n%s", view)
+	}
+}
+
+func TestRenderMessages_EditToolUsesDiffMetaWhenPresent(t *testing.T) {
+	state := model.State{
+		Messages: []model.Message{{
+			Kind:     model.MsgTool,
+			ToolName: "Edit",
+			ToolArgs: "sample.txt",
+			Display:  model.DisplayExpanded,
+			Content:  "Edited: sample.txt\n-old\n+new",
+			Meta: map[string]any{
+				"edit_diff": map[string]any{
+					"path":   "sample.txt",
+					"header": "@@ -1,1 +1,1 @@",
+					"lines":  []string{" line-1", "-old", "+new", " line-2"},
+				},
+			},
+		}},
+	}
+
+	view := testANSIPattern.ReplaceAllString(RenderMessages(state, "", "", 80, true), "")
+	if !strings.Contains(view, "✓ Edit(sample.txt)") {
+		t.Fatalf("expected edit tool call line, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Edited: sample.txt") {
+		t.Fatalf("expected edit summary from metadata, got:\n%s", view)
+	}
+	if !strings.Contains(view, "@@ -1,1 +1,1 @@") {
+		t.Fatalf("expected diff header from metadata, got:\n%s", view)
+	}
+	for _, want := range []string{" line-1", "-old", "+new", " line-2"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected diff line %q in rendered output, got:\n%s", want, view)
+		}
 	}
 }
 

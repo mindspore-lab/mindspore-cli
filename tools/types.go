@@ -48,7 +48,8 @@ type StreamingTool interface {
 type Result struct {
 	Content string // Main output content
 	Summary string // Summary for UI display (e.g., "42 lines", "5 matches")
-	Error   error  // Execution error
+	Meta    map[string]any
+	Error   error // Execution error
 }
 
 // StringResult creates a result with just content.

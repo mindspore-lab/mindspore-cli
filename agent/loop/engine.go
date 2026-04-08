@@ -351,6 +351,9 @@ func (ex *executor) applyStreamChunk(resp *llm.CompletionResponse, chunk *llm.St
 		resp.Content += chunk.Content
 		ex.addEvent(NewEvent(EventAgentReplyDelta, chunk.Content))
 	}
+	if chunk.BackgroundWork {
+		ex.addEvent(NewEvent(EventAgentBackgroundWork, ""))
+	}
 	if len(chunk.ToolCalls) > 0 {
 		resp.ToolCalls = make([]llm.ToolCall, len(chunk.ToolCalls))
 		copy(resp.ToolCalls, chunk.ToolCalls)
@@ -472,6 +475,9 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			if interruptErr := ex.handleInterruptedToolCall(tc, ""); interruptErr != nil {
+				return interruptErr
+			}
 			return context.Canceled
 		}
 		errMsg := fmt.Sprintf("Tool execution error: %v", err)
@@ -489,6 +495,9 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 
 	if result.Error != nil {
 		if errors.Is(result.Error, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			if interruptErr := ex.handleInterruptedToolCall(tc, result.Content); interruptErr != nil {
+				return interruptErr
+			}
 			return context.Canceled
 		}
 		errMsg := result.Error.Error()
@@ -502,6 +511,12 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 		ex.emitContextCompactionNotice(notice)
 		ex.addEvent(NewEvent(EventToolError, fmt.Sprintf("Tool %s failed: %s", toolName, errMsg)))
 		return nil
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		if interruptErr := ex.handleInterruptedToolCall(tc, result.Content); interruptErr != nil {
+			return interruptErr
+		}
+		return context.Canceled
 	}
 
 	notice, err := ex.addToolResultWithFallback(tc.ID, result.Content)
@@ -521,6 +536,42 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 	ex.emitContextCompactionNotice(notice)
 	ex.addToolEvent(toolName, tc.ID, result)
 	return nil
+}
+
+func (ex *executor) handleInterruptedToolCall(tc llm.ToolCall, partialOutput string) error {
+	content := interruptedToolResultContent(partialOutput)
+	notice, err := ex.addToolResultWithFallback(tc.ID, content)
+	if err != nil {
+		return err
+	}
+	if err := ex.persistSnapshot(); err != nil {
+		return err
+	}
+	ex.emitContextCompactionNotice(notice)
+
+	ev := NewEvent(EventToolInterrupted, strings.TrimSpace(partialOutput))
+	ev.ToolName = tc.Function.Name
+	ev.ToolCallID = tc.ID
+	ev.Summary = "interrupted"
+	ex.addEvent(ev)
+	return nil
+}
+
+func interruptedToolResultContent(partialOutput string) string {
+	lines := []string{
+		"tool interrupted",
+		"status: interrupted",
+		"reason: user requested cancellation",
+		"result: incomplete; do not treat this tool call as successful",
+	}
+	partialOutput = strings.TrimSpace(partialOutput)
+	if partialOutput == "" {
+		lines = append(lines, "partial_output: none")
+		return strings.Join(lines, "\n")
+	}
+	lines = append(lines, "partial_output:")
+	lines = append(lines, partialOutput)
+	return strings.Join(lines, "\n")
 }
 
 var toolEventMap = map[string]string{
@@ -566,6 +617,7 @@ func (ex *executor) addToolEvent(toolName, toolCallID string, result *tools.Resu
 	ev.ToolName = toolName
 	ev.ToolCallID = toolCallID
 	ev.Summary = result.Summary
+	ev.Meta = result.Meta
 	ex.addEvent(ev)
 }
 

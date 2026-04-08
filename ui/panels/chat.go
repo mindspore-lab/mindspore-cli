@@ -131,11 +131,11 @@ func renderThinking(thinkingView string, width int) string {
 func renderTool(state model.State, m model.Message, spinnerFrame string, width int) string {
 	call := renderToolCallLine(state, m, spinnerFrame)
 	if m.Pending {
-		return "  " + call
+		return call
 	}
 	summary, details := toolResult(m)
 	if summary == "" && len(details) == 0 {
-		return "  " + call
+		return call
 	}
 	// Tool call is indented under agent message; result lines indent further.
 	bodyWidth := width - 7
@@ -143,15 +143,15 @@ func renderTool(state model.State, m model.Message, spinnerFrame string, width i
 		bodyWidth = 1
 	}
 	wrapStyle := lipgloss.NewStyle().Width(bodyWidth)
-	lines := []string{"  " + call}
+	lines := []string{call}
 	if summary != "" {
-		lines = append(lines, "    "+toolResultPrefixStyle.Render("⎿")+"  "+renderToolSummary(m, summary))
+		lines = append(lines, "  "+toolResultPrefixStyle.Render("⎿")+"  "+renderToolSummary(m, summary))
 	}
 	for _, line := range details {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		lines = append(lines, "       "+wrapStyle.Render(renderToolDetail(m, line)))
+		lines = append(lines, "     "+wrapStyle.Render(renderToolDetail(m, line)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -216,6 +216,9 @@ func toolCallArgs(m model.Message) string {
 }
 
 func toolResult(m model.Message) (string, []string) {
+	if summary, lines, ok := toolResultFromMeta(m); ok {
+		return summary, lines
+	}
 	lines := nonEmptyLines(m.Content)
 	summary := strings.TrimSpace(m.Summary)
 	if summary == "" && len(lines) > 0 {
@@ -244,7 +247,54 @@ func renderToolDetail(m model.Message, line string) string {
 	if m.Display == model.DisplayError {
 		return toolResultErrorStyle.Render(line)
 	}
+	if strings.EqualFold(strings.TrimSpace(m.ToolName), "Edit") {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			return diffAddStyle.Render(line)
+		case strings.HasPrefix(line, "-"):
+			return diffRemoveStyle.Render(line)
+		case strings.HasPrefix(line, "@@"):
+			return diffNeutralStyle.Render(line)
+		}
+	}
 	return toolResultDetailStyle.Render(line)
+}
+
+func toolResultFromMeta(m model.Message) (string, []string, bool) {
+	if !strings.EqualFold(strings.TrimSpace(m.ToolName), "Edit") || m.Meta == nil {
+		return "", nil, false
+	}
+	diffRaw, ok := m.Meta["edit_diff"]
+	if !ok {
+		return "", nil, false
+	}
+	diff, ok := diffRaw.(map[string]any)
+	if !ok {
+		return "", nil, false
+	}
+
+	summary := strings.TrimSpace(m.Summary)
+	if summary == "" {
+		if path, ok := diff["path"].(string); ok && strings.TrimSpace(path) != "" {
+			summary = "Edited: " + strings.TrimSpace(path)
+		}
+	}
+
+	var details []string
+	if header, ok := diff["header"].(string); ok && strings.TrimSpace(header) != "" {
+		details = append(details, header)
+	}
+	switch lines := diff["lines"].(type) {
+	case []string:
+		details = append(details, lines...)
+	case []any:
+		for _, item := range lines {
+			if text, ok := item.(string); ok {
+				details = append(details, text)
+			}
+		}
+	}
+	return summary, details, true
 }
 
 func toolHeadline(content string) string {

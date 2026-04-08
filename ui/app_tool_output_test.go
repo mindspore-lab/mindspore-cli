@@ -243,6 +243,45 @@ func TestShellCmdOutputRendersLiveInUI(t *testing.T) {
 	}
 }
 
+func TestToolEditPreservesMetaInResolvedMessage(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "edit",
+		ToolCallID: "call-edit-1",
+		Message:    "sample.txt",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolEdit,
+		ToolName:   "edit",
+		ToolCallID: "call-edit-1",
+		Message:    "Edited: sample.txt\n- old\n+ new",
+		Meta: map[string]any{
+			"edit_diff": map[string]any{
+				"path":   "sample.txt",
+				"header": "@@ -1,1 +1,1 @@",
+				"lines":  []string{"-old", "+new"},
+			},
+		},
+	})
+	app = next.(App)
+
+	if len(app.state.Messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(app.state.Messages))
+	}
+	diff, ok := app.state.Messages[0].Meta["edit_diff"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected edit diff meta in resolved message, got %#v", app.state.Messages[0].Meta)
+	}
+	if got, _ := diff["path"].(string); got != "sample.txt" {
+		t.Fatalf("diff path = %q, want sample.txt", got)
+	}
+}
+
 func TestAgentReplyDeltaRendersLiveInUI(t *testing.T) {
 	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
 	app.bootActive = false
@@ -302,6 +341,55 @@ func TestAgentReplyDeltaUsesAvailableViewportHeightInsteadOfFixedEightLines(t *t
 	}
 }
 
+func TestBackgroundModelWorkShowsWorkingBetweenAgentTextAndToolCall(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{Type: model.AgentThinking})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:    model.AgentReplyDelta,
+		Message: "好的，我来处理。",
+	})
+	app = next.(App)
+
+	view := testANSIPattern.ReplaceAllString(app.View(), "")
+	if !strings.Contains(view, "好的，我来处理。") {
+		t.Fatalf("expected streamed text in live view before background work, got:\n%s", view)
+	}
+
+	next, _ = app.handleEvent(model.Event{Type: model.AgentBackgroundWork})
+	app = next.(App)
+
+	view = testANSIPattern.ReplaceAllString(app.View(), "")
+	if !strings.Contains(view, "Working...") {
+		t.Fatalf("expected Working... during background model work, got:\n%s", view)
+	}
+	if strings.Contains(view, "好的，我来处理。") {
+		t.Fatalf("expected live preview to switch away from streaming text during background work, got:\n%s", view)
+	}
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "write",
+		ToolCallID: "call-write-1",
+		Message:    `{"path":"README.md"}`,
+	})
+	app = next.(App)
+
+	view = testANSIPattern.ReplaceAllString(app.View(), "")
+	if strings.Contains(view, "Working...") {
+		t.Fatalf("expected Working... cleared once tool call starts, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Write") {
+		t.Fatalf("expected pending tool preview after tool call start, got:\n%s", view)
+	}
+}
+
 func TestShellStreamingPreviewUsesFixedEightLineTailAndStatusOnCommandLine(t *testing.T) {
 	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
 	app.bootActive = false
@@ -347,6 +435,255 @@ func TestShellStreamingPreviewUsesFixedEightLineTailAndStatusOnCommandLine(t *te
 	}
 	if !strings.Contains(view, "Bash($ go test ./ui) running, ctrl+o to expand... 2s") {
 		t.Fatalf("expected shell preview status on command line, got:\n%s", view)
+	}
+}
+
+func TestShellInterruptedResolvesStreamingToolAndStopsRunningState(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt",
+		Message:    "go test ./ui",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdStarted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt",
+		Message:    "partial output",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolInterrupted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt",
+		Message:    "partial output",
+		Summary:    "interrupted",
+	})
+	app = next.(App)
+
+	if got, want := app.state.WaitKind, model.WaitNone; got != want {
+		t.Fatalf("wait kind = %v, want %v", got, want)
+	}
+	if app.state.Messages[0].Pending {
+		t.Fatal("expected interrupted shell message to clear pending flag")
+	}
+	if app.state.Messages[0].Streaming {
+		t.Fatal("expected interrupted shell message to clear streaming flag")
+	}
+	if got, want := app.state.Messages[0].Display, model.DisplayWarning; got != want {
+		t.Fatalf("display = %v, want %v", got, want)
+	}
+	if got, want := app.state.Messages[0].Summary, "interrupted"; got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
+	}
+	if got, want := app.state.Messages[0].Content, "partial output"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+
+	view := testANSIPattern.ReplaceAllString(app.View(), "")
+	if strings.Contains(view, "running command...") {
+		t.Fatalf("expected interrupted view to stop showing running status, got:\n%s", view)
+	}
+}
+
+func TestShellInterruptedAfterLargeOutputKeepsRecentWindow(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-large-interrupt",
+		Message:    "go test ./ui",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdStarted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-large-interrupt",
+	})
+	app = next.(App)
+
+	lines := make([]string, 12000)
+	for i := range lines {
+		lines[i] = "line-" + strconv.Itoa(i+1)
+	}
+	largeOutput := strings.Join(lines, "\n")
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-large-interrupt",
+		Message:    largeOutput,
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolInterrupted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-large-interrupt",
+		Message:    "line-11999\nline-12000",
+		Summary:    "interrupted",
+	})
+	app = next.(App)
+
+	got := app.state.Messages[0].Content
+	if !strings.Contains(got, "line-12000") {
+		t.Fatalf("expected interrupted content to keep latest output, got suffix:\n%s", got)
+	}
+	if strings.Contains(got, "line-1\n") || strings.HasPrefix(got, "line-1") {
+		t.Fatalf("expected interrupted content to drop oldest output once truncated, got prefix:\n%s", got)
+	}
+	if !strings.Contains(got, "[output truncated]") {
+		t.Fatalf("expected interrupted content to indicate truncation, got:\n%s", got)
+	}
+	if app.state.Messages[0].Streaming {
+		t.Fatal("expected interrupted shell message to stop streaming after large output")
+	}
+	if app.state.Messages[0].Pending {
+		t.Fatal("expected interrupted shell message to stop pending after large output")
+	}
+}
+
+func TestShellLateCmdStartedWithoutCallIDDoesNotCreatePhantomActiveTool(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt-no-id",
+		Message:    "uv run train.py",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdStarted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt-no-id",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt-no-id",
+		Message:    "partial output",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolInterrupted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-interrupt-no-id",
+		Message:    "partial output",
+		Summary:    "interrupted",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:     model.CmdStarted,
+		ToolName: "shell",
+	})
+	app = next.(App)
+
+	if got, want := len(app.state.Messages), 1; got != want {
+		t.Fatalf("message count = %d, want %d", got, want)
+	}
+	if _, ok := app.lastActiveTool(); ok {
+		t.Fatal("expected no active tool after stray shell start without call id")
+	}
+
+	view := testANSIPattern.ReplaceAllString(app.View(), "")
+	if strings.Contains(view, "Bash() running, ctrl+o to expand...") {
+		t.Fatalf("expected stray shell start to be ignored, got:\n%s", view)
+	}
+}
+
+func TestShellLateCmdOutputAfterInterruptDoesNotResurrectInterruptedTool(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolCallStart,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-late-output",
+		Message:    "uv run train.py",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdStarted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-late-output",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-late-output",
+		Message:    "partial output",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.ToolInterrupted,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-late-output",
+		Message:    "partial output",
+		Summary:    "interrupted",
+	})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type:       model.CmdOutput,
+		ToolName:   "shell",
+		ToolCallID: "call-shell-late-output",
+		Message:    "late output should be ignored",
+	})
+	app = next.(App)
+
+	if got, want := len(app.state.Messages), 1; got != want {
+		t.Fatalf("message count = %d, want %d", got, want)
+	}
+	if app.state.Messages[0].Streaming {
+		t.Fatal("expected interrupted shell message to remain non-streaming after late output")
+	}
+	if app.state.Messages[0].Pending {
+		t.Fatal("expected interrupted shell message to remain non-pending after late output")
+	}
+	if got, want := app.state.Messages[0].Content, "partial output"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+	if _, ok := app.lastActiveTool(); ok {
+		t.Fatal("expected no active tool after late output for interrupted shell")
 	}
 }
 

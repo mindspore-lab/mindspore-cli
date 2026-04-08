@@ -36,6 +36,8 @@ const (
 	defaultPreviewHeadLines         = 5
 	defaultPreviewTailLines         = 0
 	collapsedPreviewMaxLines        = 3
+	maxStreamingToolContentBytes    = 64 * 1024
+	uiOutputTruncatedMarker         = "[output truncated]"
 	bootReadyToken                  = "__boot_ready__"
 	historyReplayReadyToken         = "__history_replay_ready__"
 	maxToolLines                    = 120
@@ -170,27 +172,28 @@ const (
 
 // App is the TUI root model.
 type App struct {
-	state            model.State
-	viewport         components.Viewport
-	input            components.TextInput
-	thinking         components.ThinkingSpinner
-	width            int
-	height           int
-	eventCh          <-chan model.Event
-	userCh           chan<- string // sends user input to the engine bridge
-	lastInterrupt    time.Time     // track last ctrl+c for double-press exit
-	mouseEnabled     bool
-	replayWait       *model.ReplayWaitData
-	modalAltScreen   bool
-	deltaMu          *sync.Mutex
-	deltaBuf         *strings.Builder // buffers agent deltas until a full line is ready
-	deltaStarted     *bool            // true after the first agent delta line is printed
-	eventListening   *int32           // atomic flag: 1 = waitForEvent goroutine is active
-	cmdOutputStarted *bool            // true after first shell output line is printed
-	cmdOutputLines   *int             // lines printed so far for current shell command
-	followBottom     bool
-	unreadCount      int
-	lastMsgCount     int
+	state               model.State
+	viewport            components.Viewport
+	input               components.TextInput
+	thinking            components.ThinkingSpinner
+	width               int
+	height              int
+	eventCh             <-chan model.Event
+	userCh              chan<- string // sends user input to the engine bridge
+	lastInterrupt       time.Time     // track last ctrl+c for double-press exit
+	mouseEnabled        bool
+	replayWait          *model.ReplayWaitData
+	modalAltScreen      bool
+	deltaMu             *sync.Mutex
+	deltaBuf            *strings.Builder // buffers agent deltas until a full line is ready
+	deltaStarted        *bool            // true after the first agent delta line is printed
+	eventListening      *int32           // atomic flag: 1 = waitForEvent goroutine is active
+	cmdOutputStarted    *bool            // true after first shell output line is printed
+	cmdOutputLines      *int             // lines printed so far for current shell command
+	followBottom        bool
+	unreadCount         int
+	lastMsgCount        int
+	backgroundModelWork bool
 
 	// Train mode
 	trainView     model.TrainViewState
@@ -1097,14 +1100,17 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.TaskDone:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 
 	case model.AgentThinking:
 		a.replayWait = ev.ReplayWait
+		a.backgroundModelWork = false
 		a.state = a.startWait(model.WaitModel)
 
 	case model.AgentReply:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.input = a.input.ClearSlashMode()
 		content := ev.Message
@@ -1120,22 +1126,31 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.AgentReplyDelta:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		// Keep WaitStartedAt so the elapsed timer continues through "Responding...".
 		a.state = a.state.WithThinking(false)
 		a.state = a.appendToStreamingAgent(ev.Message)
 
+	case model.AgentBackgroundWork:
+		a.replayWait = nil
+		a.backgroundModelWork = true
+		a.state = a.state.WithThinking(true)
+
 	case model.PermissionPrompt:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.permissionPrompt = toPermissionPromptState(ev)
 
 	case model.PermissionsView:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.permissionsView = toPermissionsViewState(ev)
 
 	case model.ToolCallStart:
 		a.replayWait = ev.ReplayWait
+		a.backgroundModelWork = false
 		a.state = a.startWait(model.WaitTool)
 		a.state = a.commitStreamingAgent()
 		a.state = a.state.WithMessage(a.pendingToolMessage(ev))
@@ -1157,6 +1172,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.CmdFinished:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.state = a.resolveToolEvent(ev, model.Message{
 			Kind:       model.MsgTool,
@@ -1169,6 +1185,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolRead:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesRead++
@@ -1180,6 +1197,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolGrep:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Searches++
@@ -1191,6 +1209,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolGlob:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Searches++
@@ -1202,28 +1221,31 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolEdit:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesEdited++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
 			Kind: model.MsgTool, ToolName: "Edit", ToolArgs: ev.Message,
-			Display: model.DisplayExpanded, Content: ev.Message,
+			Display: model.DisplayExpanded, Content: ev.Message, Summary: ev.Summary, Meta: ev.Meta,
 		})
 
 	case model.ToolWrite:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesEdited++
 		a.state = a.state.WithStats(stats)
 		a.state = a.resolveToolEvent(ev, model.Message{
 			Kind: model.MsgTool, ToolName: "Write", ToolArgs: ev.Message,
-			Display: model.DisplayExpanded, Content: ev.Message,
+			Display: model.DisplayExpanded, Content: ev.Message, Summary: ev.Summary, Meta: ev.Meta,
 		})
 
 	case model.ToolSkill:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		msg := model.Message{
 			Kind:     model.MsgTool,
@@ -1240,14 +1262,29 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolWarning:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.state = a.resolveToolEvent(ev, model.Message{
 			Kind: model.MsgTool, ToolName: displayToolName(ev.ToolName), ToolArgs: ev.Message,
 			Display: model.DisplayWarning, Content: ev.Message,
 		})
 
+	case model.ToolInterrupted:
+		a.replayWait = nil
+		a.state = a.clearThinking()
+		a.state = a.resolveToolEvent(ev, model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   displayToolName(ev.ToolName),
+			ToolCallID: ev.ToolCallID,
+			Display:    model.DisplayWarning,
+			Content:    ev.Message,
+			Summary:    ev.Summary,
+			Meta:       ev.Meta,
+		})
+
 	case model.ToolError:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Errors++
@@ -2311,33 +2348,70 @@ func (a App) currentWaitElapsed() time.Duration {
 }
 
 func (a App) appendToolOutput(ev model.Event) model.State {
+	if requiresActiveToolMatch(ev) && strings.TrimSpace(ev.ToolCallID) == "" {
+		return a.state
+	}
+
 	msgs := make([]model.Message, len(a.state.Messages))
 	copy(msgs, a.state.Messages)
 
 	idx := toolMessageIndex(msgs, ev.ToolCallID)
 	if idx < 0 {
-		for i := len(msgs) - 1; i >= 0; i-- {
-			if msgs[i].Kind == model.MsgTool {
-				idx = i
-				break
-			}
-		}
+		return a.state
 	}
-	if idx >= 0 {
-		content := msgs[idx].Content
-		if content == "" {
-			content = ev.Message
-		} else {
-			content += "\n" + ev.Message
-		}
-		msgs[idx].Content = content
-		msgs[idx].Pending = false
-		msgs[idx].Streaming = true
+	if !canApplyToolLifecycleEvent(msgs[idx], ev) {
+		return a.state
 	}
+	msgs[idx].Content = appendStreamingToolWindow(msgs[idx].Content, ev.Message, maxStreamingToolContentBytes)
+	msgs[idx].Pending = false
+	msgs[idx].Streaming = true
 
 	next := a.state
 	next.Messages = msgs
 	return next
+}
+
+func appendStreamingToolWindow(content, chunk string, maxBytes int) string {
+	content = strings.TrimPrefix(content, uiOutputTruncatedMarker+"\n")
+	content = strings.TrimPrefix(content, uiOutputTruncatedMarker)
+
+	window, truncated := appendOutputWindow(content, chunk, maxBytes)
+	if !truncated {
+		return window
+	}
+	if strings.TrimSpace(window) == "" {
+		return uiOutputTruncatedMarker
+	}
+	return uiOutputTruncatedMarker + "\n" + window
+}
+
+func appendOutputWindow(content, chunk string, maxBytes int) (string, bool) {
+	if maxBytes <= 0 {
+		return "", strings.TrimSpace(content) != "" || strings.TrimSpace(chunk) != ""
+	}
+
+	switch {
+	case content == "":
+		content = chunk
+	case chunk != "":
+		content += "\n" + chunk
+	}
+
+	if len(content) <= maxBytes {
+		return content, false
+	}
+
+	start := len(content) - maxBytes
+	window := content[start:]
+	if start > 0 {
+		if idx := strings.IndexByte(window, '\n'); idx >= 0 && idx < len(window)-1 {
+			window = window[idx+1:]
+		}
+	}
+	if window == "" {
+		window = content[len(content)-maxBytes:]
+	}
+	return window, true
 }
 
 func (a App) pendingToolMessage(ev model.Event) model.Message {
@@ -2375,10 +2449,18 @@ func (a App) pendingToolMessage(ev model.Event) model.Message {
 }
 
 func (a App) resolveToolEvent(ev model.Event, fallback model.Message) model.State {
+	strictMatch := requiresActiveToolMatch(ev)
+	if strictMatch && strings.TrimSpace(ev.ToolCallID) == "" {
+		return a.state
+	}
+
 	msgs := make([]model.Message, len(a.state.Messages))
 	copy(msgs, a.state.Messages)
 
 	if idx := pendingToolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
+		if strictMatch && !canApplyToolLifecycleEvent(msgs[idx], ev) {
+			return a.state
+		}
 		msgs[idx] = finalizeToolMessage(msgs[idx], ev)
 		next := a.state
 		next.Messages = msgs
@@ -2386,10 +2468,17 @@ func (a App) resolveToolEvent(ev model.Event, fallback model.Message) model.Stat
 	}
 
 	if idx := toolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
+		if strictMatch && !canApplyToolLifecycleEvent(msgs[idx], ev) {
+			return a.state
+		}
 		msgs[idx] = finalizeToolMessage(msgs[idx], ev)
 		next := a.state
 		next.Messages = msgs
 		return next
+	}
+
+	if strictMatch {
+		return a.state
 	}
 
 	for i := len(msgs) - 1; i >= 0; i-- {
@@ -2477,6 +2566,22 @@ func isPendingToolMessage(msg model.Message) bool {
 	return msg.Kind == model.MsgTool && msg.Pending
 }
 
+func requiresActiveToolMatch(ev model.Event) bool {
+	switch ev.Type {
+	case model.CmdStarted, model.CmdOutput, model.CmdFinished, model.ToolInterrupted:
+		return true
+	default:
+		return false
+	}
+}
+
+func canApplyToolLifecycleEvent(msg model.Message, ev model.Event) bool {
+	if !requiresActiveToolMatch(ev) {
+		return true
+	}
+	return msg.Kind == model.MsgTool && (msg.Pending || msg.Streaming)
+}
+
 func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 	switch ev.Type {
 	case model.CmdStarted:
@@ -2488,6 +2593,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			Display:    model.DisplayCollapsed,
 			Content:    ev.Message,
 			Summary:    ev.Summary,
+			Meta:       ev.Meta,
 			Streaming:  true,
 		}
 	case model.CmdFinished:
@@ -2499,6 +2605,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			Display:    model.DisplayCollapsed,
 			Content:    ev.Message,
 			Summary:    ev.Summary,
+			Meta:       ev.Meta,
 		}
 	case model.ToolEdit, model.ToolWrite:
 		return model.Message{
@@ -2509,6 +2616,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			Display:    model.DisplayExpanded,
 			Content:    ev.Message,
 			Summary:    ev.Summary,
+			Meta:       firstNonNilMeta(ev.Meta, pending.Meta),
 		}
 	case model.ToolRead:
 		return model.Message{
@@ -2519,6 +2627,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			Display:    model.DisplayCollapsed,
 			Content:    "",
 			Summary:    firstNonEmpty(ev.Summary, pending.Summary),
+			Meta:       firstNonNilMeta(ev.Meta, pending.Meta),
 		}
 	case model.ToolGrep, model.ToolGlob, model.ToolSkill:
 		return model.Message{
@@ -2529,6 +2638,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			Display:    model.DisplayCollapsed,
 			Content:    ev.Message,
 			Summary:    firstNonEmpty(ev.Summary, pending.Summary),
+			Meta:       firstNonNilMeta(ev.Meta, pending.Meta),
 		}
 	case model.ToolWarning:
 		toolName := pending.ToolName
@@ -2542,6 +2652,29 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
 			Display:    model.DisplayWarning,
 			Content:    ev.Message,
+			Meta:       firstNonNilMeta(ev.Meta, pending.Meta),
+		}
+	case model.ToolInterrupted:
+		toolName := pending.ToolName
+		if toolName == "" {
+			toolName = displayToolName(ev.ToolName)
+		}
+		content := strings.TrimSpace(pending.Content)
+		if content == "" {
+			content = strings.TrimSpace(ev.Message)
+		}
+		if content == "" {
+			content = "interrupted by user"
+		}
+		return model.Message{
+			Kind:       model.MsgTool,
+			ToolName:   toolName,
+			ToolCallID: valueOrString(pending.ToolCallID, ev.ToolCallID),
+			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
+			Display:    model.DisplayWarning,
+			Content:    content,
+			Summary:    firstNonEmpty(ev.Summary, "interrupted"),
+			Meta:       firstNonNilMeta(ev.Meta, pending.Meta),
 		}
 	case model.ToolError:
 		toolName := pending.ToolName
@@ -2555,10 +2688,18 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			ToolArgs:   valueOrString(pending.ToolArgs, pending.Content),
 			Display:    model.DisplayError,
 			Content:    ev.Message,
+			Meta:       firstNonNilMeta(ev.Meta, pending.Meta),
 		}
 	default:
 		return pending
 	}
+}
+
+func firstNonNilMeta(primary, fallback map[string]any) map[string]any {
+	if primary != nil {
+		return primary
+	}
+	return fallback
 }
 
 func finalizeToolReplayMessage(pending model.Message, ev model.Event) model.Message {

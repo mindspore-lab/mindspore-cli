@@ -110,6 +110,25 @@ func (t streamingStubTool) ExecuteStream(ctx context.Context, raw json.RawMessag
 	return t.Execute(ctx, raw)
 }
 
+type cancelAwareStreamingStubTool struct {
+	stubTool
+	started chan struct{}
+}
+
+func (t cancelAwareStreamingStubTool) ExecuteStream(ctx context.Context, raw json.RawMessage, emit func(tools.StreamEvent)) (*tools.Result, error) {
+	if emit != nil {
+		emit(tools.StreamEvent{Type: tools.StreamEventStarted})
+		emit(tools.StreamEvent{Type: tools.StreamEventOutput, Message: t.content})
+	}
+	select {
+	case <-t.started:
+	default:
+		close(t.started)
+	}
+	<-ctx.Done()
+	return tools.StringResultWithSummary(t.content, "interrupted"), nil
+}
+
 func newPersistenceRecorder(log *[]string) *TrajectoryRecorder {
 	last := ""
 	appendLog := func(entry string) {
@@ -327,6 +346,104 @@ func TestRunShellStreamingEmitsLiveCommandEvents(t *testing.T) {
 	}
 	if got := events[4].Message; got != "line-1\nline-2" {
 		t.Fatalf("final message = %q, want full shell output", got)
+	}
+}
+
+func TestRunPersistsInterruptedToolResultBeforeInterruptedRender(t *testing.T) {
+	args, err := json.Marshal(map[string]string{"command": "sleep 10"})
+	if err != nil {
+		t.Fatalf("marshal tool args: %v", err)
+	}
+
+	provider := &scriptedStreamProvider{
+		responses: []*llm.CompletionResponse{{
+			ToolCalls: []llm.ToolCall{{
+				ID:   "call-shell-interrupt-1",
+				Type: "function",
+				Function: llm.ToolCallFunc{
+					Name:      "shell",
+					Arguments: args,
+				},
+			}},
+			FinishReason: llm.FinishToolCalls,
+		}},
+	}
+
+	registry := tools.NewRegistry()
+	started := make(chan struct{})
+	registry.MustRegister(cancelAwareStreamingStubTool{
+		stubTool: stubTool{name: "shell", content: "partial line"},
+		started:  started,
+	})
+
+	engine := NewEngine(EngineConfig{
+		MaxIterations: 1,
+		ContextWindow: 4096,
+	}, provider, registry)
+
+	var log []string
+	var events []Event
+	engine.SetTrajectoryRecorder(newPersistenceRecorder(&log))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	err = engine.RunWithContextStream(ctx, Task{
+		ID:          "interrupt-shell",
+		Description: "run shell then interrupt",
+	}, func(ev Event) {
+		log = append(log, "ui:"+ev.Type)
+		events = append(events, ev)
+	})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "canceled") {
+		t.Fatalf("RunWithContextStream error = %v, want context canceled", err)
+	}
+
+	requireOrder(t, log, "tool_call:shell", "snapshot:tool_call:shell", "ui:ToolCallStart")
+	requireOrder(t, log, "tool_result:shell", "snapshot:tool_result:shell", "ui:ToolInterrupted")
+
+	var interrupted *Event
+	for i := range events {
+		if events[i].Type == EventToolInterrupted {
+			interrupted = &events[i]
+			break
+		}
+	}
+	if interrupted == nil {
+		t.Fatalf("expected ToolInterrupted event, got %#v", events)
+	}
+	if got, want := interrupted.ToolCallID, "call-shell-interrupt-1"; got != want {
+		t.Fatalf("ToolInterrupted ToolCallID = %q, want %q", got, want)
+	}
+	if got, want := interrupted.Summary, "interrupted"; got != want {
+		t.Fatalf("ToolInterrupted summary = %q, want %q", got, want)
+	}
+	if got, want := interrupted.Message, "partial line"; got != want {
+		t.Fatalf("ToolInterrupted message = %q, want %q", got, want)
+	}
+
+	messages := engine.ctxManager.GetNonSystemMessages()
+	var toolResult string
+	for _, msg := range messages {
+		if msg.Role == "tool" && msg.ToolCallID == "call-shell-interrupt-1" {
+			toolResult = msg.Content
+		}
+	}
+	if !strings.Contains(toolResult, "status: interrupted") {
+		t.Fatalf("tool result missing interrupted status, got:\n%s", toolResult)
+	}
+	if !strings.Contains(toolResult, "reason: user requested cancellation") {
+		t.Fatalf("tool result missing cancellation reason, got:\n%s", toolResult)
+	}
+	if !strings.Contains(toolResult, "partial_output:") {
+		t.Fatalf("tool result missing partial output section, got:\n%s", toolResult)
+	}
+	if !strings.Contains(toolResult, "partial line") {
+		t.Fatalf("tool result missing streamed partial output, got:\n%s", toolResult)
 	}
 }
 

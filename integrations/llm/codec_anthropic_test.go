@@ -229,6 +229,106 @@ func TestAnthropicStreamIteratorUsesStartBlockInputWithoutJSONDeltas(t *testing.
 	}
 }
 
+func TestAnthropicStreamIteratorSignalsBackgroundWorkWhenToolJSONFollowsText(t *testing.T) {
+	stream := strings.Join([]string{
+		mustAnthropicSSEEvent(t, "message_start", anthropicStreamMessageStartEvent{
+			Message: struct {
+				ID    string         `json:"id"`
+				Model string         `json:"model"`
+				Usage anthropicUsage `json:"usage"`
+			}{
+				ID:    "msg_456",
+				Model: "claude-test",
+				Usage: anthropicUsage{InputTokens: 9},
+			},
+		}),
+		mustAnthropicSSEEvent(t, "content_block_delta", anthropicStreamContentBlockDeltaEvent{
+			Index: 0,
+			Delta: struct {
+				Type        string `json:"type"`
+				Text        string `json:"text,omitempty"`
+				PartialJSON string `json:"partial_json,omitempty"`
+			}{
+				Type: "text_delta",
+				Text: "好的，我来处理。",
+			},
+		}),
+		mustAnthropicSSEEvent(t, "content_block_start", anthropicStreamContentBlockStartEvent{
+			Index: 1,
+			ContentBlock: anthropicContentBlock{
+				Type: "tool_use",
+				ID:   "toolu_456",
+				Name: "write",
+			},
+		}),
+		mustAnthropicSSEEvent(t, "content_block_delta", anthropicStreamContentBlockDeltaEvent{
+			Index: 1,
+			Delta: struct {
+				Type        string `json:"type"`
+				Text        string `json:"text,omitempty"`
+				PartialJSON string `json:"partial_json,omitempty"`
+			}{
+				Type:        "input_json_delta",
+				PartialJSON: `{"path":"README.md"`,
+			},
+		}),
+		mustAnthropicSSEEvent(t, "content_block_delta", anthropicStreamContentBlockDeltaEvent{
+			Index: 1,
+			Delta: struct {
+				Type        string `json:"type"`
+				Text        string `json:"text,omitempty"`
+				PartialJSON string `json:"partial_json,omitempty"`
+			}{
+				Type:        "input_json_delta",
+				PartialJSON: `,"content":"hello"}`,
+			},
+		}),
+		mustAnthropicSSEEvent(t, "content_block_stop", anthropicStreamContentBlockStopEvent{
+			Index: 1,
+		}),
+		mustAnthropicSSEEvent(t, "message_delta", anthropicStreamMessageDeltaEvent{
+			Delta: struct {
+				StopReason string `json:"stop_reason"`
+			}{
+				StopReason: "tool_use",
+			},
+			Usage: anthropicUsage{OutputTokens: 5},
+		}),
+		"event: message_stop\n\n",
+	}, "")
+
+	it := newAnthropicCodec("").newStreamIterator(io.NopCloser(strings.NewReader(stream)))
+	t.Cleanup(func() {
+		if err := it.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+	})
+
+	textChunk, err := it.Next()
+	if err != nil {
+		t.Fatalf("first Next() error = %v", err)
+	}
+	if textChunk == nil || textChunk.Content != "好的，我来处理。" {
+		t.Fatalf("first chunk = %#v, want streamed text content", textChunk)
+	}
+
+	backgroundChunk, err := it.Next()
+	if err != nil {
+		t.Fatalf("second Next() error = %v", err)
+	}
+	if backgroundChunk == nil || !backgroundChunk.BackgroundWork {
+		t.Fatalf("second chunk = %#v, want BackgroundWork signal", backgroundChunk)
+	}
+
+	toolChunk, err := it.Next()
+	if err != nil {
+		t.Fatalf("third Next() error = %v", err)
+	}
+	if toolChunk == nil || len(toolChunk.ToolCalls) != 1 {
+		t.Fatalf("third chunk = %#v, want tool call chunk", toolChunk)
+	}
+}
+
 func TestAnthropicStreamIteratorAccumulatesSingleToolUseJSONDelta(t *testing.T) {
 	stream := strings.Join([]string{
 		mustAnthropicSSEEvent(t, "message_start", anthropicStreamMessageStartEvent{

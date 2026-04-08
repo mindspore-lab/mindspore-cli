@@ -95,6 +95,7 @@ func (t *EditTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 	}
 
 	// Replace
+	oldPos := strings.Index(contentStr, p.OldString)
 	newContent := strings.Replace(contentStr, p.OldString, p.NewString, 1)
 
 	// Write back
@@ -115,5 +116,118 @@ func (t *EditTool) Execute(ctx context.Context, params json.RawMessage) (*tools.
 	result := fmt.Sprintf("Edited: %s\n- %s\n+ %s", p.Path, p.OldString, p.NewString)
 	summary := fmt.Sprintf("%d lines → %d lines", oldLines, newLines)
 
-	return tools.StringResultWithSummary(result, summary), nil
+	out := tools.StringResultWithSummary(result, summary)
+	out.Meta = buildEditDiffMeta(p.Path, contentStr, newContent, p.OldString, p.NewString, oldPos)
+	return out, nil
+}
+
+func buildEditDiffMeta(path, before, after, oldString, newString string, oldPos int) map[string]any {
+	if oldPos < 0 {
+		return nil
+	}
+	const contextLines = 2
+
+	beforeLines := splitDiffLines(before)
+	afterLines := splitDiffLines(after)
+	oldParts := splitDiffLines(oldString)
+	newParts := splitDiffLines(newString)
+
+	oldStart := strings.Count(before[:oldPos], "\n") + 1
+	oldCount := max(1, len(oldParts))
+	newCount := max(1, len(newParts))
+	newStart := oldStart
+
+	oldCtxStart := max(1, oldStart-contextLines)
+	oldCtxEnd := min(len(beforeLines), oldStart+oldCount-1+contextLines)
+	newCtxStart := max(1, newStart-contextLines)
+	newCtxEnd := min(len(afterLines), newStart+newCount-1+contextLines)
+
+	lines := make([]string, 0, (oldCtxEnd-oldCtxStart+1)+(newCtxEnd-newCtxStart+1)+8)
+	for i := oldCtxStart; i < oldStart; i++ {
+		lines = append(lines, " "+beforeLines[i-1])
+	}
+	lines = append(lines, lineDiff(oldParts, newParts)...)
+	for i := newStart + newCount; i <= newCtxEnd; i++ {
+		lines = append(lines, " "+afterLines[i-1])
+	}
+
+	header := fmt.Sprintf("@@ -%d,%d +%d,%d @@", oldCtxStart, oldCtxEnd-oldCtxStart+1, newCtxStart, newCtxEnd-newCtxStart+1)
+	return map[string]any{
+		"edit_diff": map[string]any{
+			"path":   path,
+			"header": header,
+			"lines":  lines,
+		},
+	}
+}
+
+func splitDiffLines(s string) []string {
+	normalized := strings.ReplaceAll(s, "\r\n", "\n")
+	if normalized == "" {
+		return []string{}
+	}
+	lines := strings.Split(normalized, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+func lineDiff(oldLines, newLines []string) []string {
+	oldN, newN := len(oldLines), len(newLines)
+	lcs := make([][]int, oldN+1)
+	for i := range lcs {
+		lcs[i] = make([]int, newN+1)
+	}
+	for i := oldN - 1; i >= 0; i-- {
+		for j := newN - 1; j >= 0; j-- {
+			if oldLines[i] == newLines[j] {
+				lcs[i][j] = lcs[i+1][j+1] + 1
+				continue
+			}
+			if lcs[i+1][j] >= lcs[i][j+1] {
+				lcs[i][j] = lcs[i+1][j]
+			} else {
+				lcs[i][j] = lcs[i][j+1]
+			}
+		}
+	}
+
+	out := make([]string, 0, oldN+newN)
+	i, j := 0, 0
+	for i < oldN && j < newN {
+		switch {
+		case oldLines[i] == newLines[j]:
+			out = append(out, " "+oldLines[i])
+			i++
+			j++
+		case lcs[i+1][j] >= lcs[i][j+1]:
+			out = append(out, "-"+oldLines[i])
+			i++
+		default:
+			out = append(out, "+"+newLines[j])
+			j++
+		}
+	}
+	for ; i < oldN; i++ {
+		out = append(out, "-"+oldLines[i])
+	}
+	for ; j < newN; j++ {
+		out = append(out, "+"+newLines[j])
+	}
+	return out
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

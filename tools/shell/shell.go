@@ -5,6 +5,7 @@ package shell
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -98,22 +99,22 @@ func (t *ShellTool) ExecuteStream(ctx context.Context, params json.RawMessage, e
 		})
 	})
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return tools.StringResultWithSummary("", "interrupted"), nil
+		}
 		return tools.ErrorResultf("execute command: %w", err), nil
 	}
 
-	var parts []string
-	if result.Stdout != "" {
-		parts = append(parts, result.Stdout)
+	output, hasOutput := shellOutput(result)
+	if errors.Is(ctx.Err(), context.Canceled) {
+		if !hasOutput {
+			output = ""
+		}
+		return tools.StringResultWithSummary(output, "interrupted"), nil
 	}
-
-	if result.Stderr != "" {
-		parts = append(parts, fmt.Sprintf("[stderr]\n%s", result.Stderr))
+	if !hasOutput {
+		output = "(No output)"
 	}
-	if len(parts) == 0 {
-		parts = append(parts, "(No output)")
-	}
-
-	output := strings.Join(parts, "\n")
 
 	summary := "completed"
 	if result.ExitCode != 0 {
@@ -124,6 +125,17 @@ func (t *ShellTool) ExecuteStream(ctx context.Context, params json.RawMessage, e
 	}
 
 	return tools.StringResultWithSummary(output, summary), nil
+}
+
+func shellOutput(result *rshell.Result) (string, bool) {
+	var parts []string
+	if result.Stdout != "" {
+		parts = append(parts, result.Stdout)
+	}
+	if result.Stderr != "" {
+		parts = append(parts, fmt.Sprintf("[stderr]\n%s", result.Stderr))
+	}
+	return strings.Join(parts, "\n"), len(parts) > 0
 }
 
 func timeoutFromInt(seconds int) time.Duration {

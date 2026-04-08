@@ -134,12 +134,13 @@ type StreamIterator interface {
 
 // StreamChunk represents a chunk in a streaming response.
 type StreamChunk struct {
-	ID           string
-	Model        string
-	Content      string
-	ToolCalls    []ToolCall
-	FinishReason FinishReason
-	Usage        *Usage
+	ID             string
+	Model          string
+	Content        string
+	BackgroundWork bool
+	ToolCalls      []ToolCall
+	FinishReason   FinishReason
+	Usage          *Usage
 }
 
 // NewUserMessage creates a new user message.

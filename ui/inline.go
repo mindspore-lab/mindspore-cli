@@ -150,6 +150,14 @@ func (a App) renderMainView() string {
 }
 
 func (a App) activePreview(partsBeforeStatus []string, inputView, hintView string) string {
+	if a.backgroundModelWork && a.state.WaitKind == model.WaitModel {
+		a.thinking.SetText("Working...")
+		teal := lipgloss.Color("#2DD4BF")
+		a.thinking.SetStyle(
+			lipgloss.NewStyle().Foreground(teal),
+			lipgloss.NewStyle().Foreground(teal).Italic(true))
+		return a.thinking.ViewWithTip()
+	}
 	if msg, ok := a.lastStreamingAgent(); ok {
 		return a.fitStatusPreview(a.renderTranscriptMessage(msg), partsBeforeStatus, inputView, hintView)
 	}
@@ -223,7 +231,7 @@ func (a App) renderShellActivePreview(msg model.Message, available int) string {
 		return ""
 	}
 
-	header := "  " + panels.RenderToolCallHeader("Bash", strings.TrimSpace(msg.ToolArgs)) +
+	header := panels.RenderToolCallHeader("Bash", strings.TrimSpace(msg.ToolArgs)) +
 		" " + metaStyle.Render(a.shellActiveStatusText())
 	if available == 1 {
 		return header
@@ -266,8 +274,8 @@ func (a App) printMessage(msg model.Message) tea.Cmd {
 	if strings.TrimSpace(rendered) == "" {
 		return nil
 	}
-	// Add blank line before agent messages to separate logical groups.
-	if msg.Kind == model.MsgAgent {
+	// Add blank line before block messages to separate logical groups.
+	if msg.Kind == model.MsgAgent || msg.Kind == model.MsgTool {
 		return tea.Sequence(tea.Println(""), tea.Println(rendered))
 	}
 	return tea.Println(rendered)
@@ -487,7 +495,7 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message) tea.Cmd
 		return a.printMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message, RawANSI: ev.RawANSI})
 	case model.AgentReplyDelta:
 		return a.printAgentDelta(ev.Message)
-	case model.AgentThinking, model.TaskDone, model.TokenUpdate:
+	case model.AgentBackgroundWork, model.AgentThinking, model.TaskDone, model.TokenUpdate:
 		return nil
 	case model.ToolCallStart:
 		// Don't print pending tools to scrollback — they show in the live
@@ -506,7 +514,7 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message) tea.Cmd
 		return nil
 	case model.CmdFinished:
 		return a.printResolvedTool(ev)
-	case model.ToolRead, model.ToolGrep, model.ToolGlob, model.ToolEdit, model.ToolWrite, model.ToolSkill, model.ToolWarning, model.ToolError, model.ToolReplay:
+	case model.ToolRead, model.ToolGrep, model.ToolGlob, model.ToolEdit, model.ToolWrite, model.ToolSkill, model.ToolInterrupted, model.ToolWarning, model.ToolError, model.ToolReplay:
 		return a.printResolvedTool(ev)
 	case model.ClearScreen:
 		return clearMessage()

@@ -48,6 +48,7 @@ const (
 	maxOutputBytes      = 64 * 1024
 	StreamStdout        = "stdout"
 	StreamStderr        = "stderr"
+	outputTruncatedMark = "[output truncated]"
 )
 
 // NewRunner creates a new shell runner.
@@ -73,7 +74,8 @@ func (r *Runner) RunStream(ctx context.Context, command string, emit func(Output
 	}
 
 	buildCmd := func(execCtx context.Context) *exec.Cmd {
-		cmd := exec.CommandContext(execCtx, "sh", "-c", command)
+		cmd := exec.Command("sh", "-c", command)
+		configureCmdForCancel(cmd)
 		cmd.Dir = r.config.WorkDir
 		cmd.Env = os.Environ()
 		for k, v := range r.config.Env {
@@ -104,6 +106,14 @@ func (r *Runner) RunStream(ctx context.Context, command string, emit func(Output
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start command: %w", err)
 	}
+	cmdDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			terminateCmd(cmd)
+		case <-cmdDone:
+		}
+	}()
 
 	var stdoutOut, stderrOut string
 	var stdoutErr, stderrErr error
@@ -138,6 +148,7 @@ func (r *Runner) RunStream(ctx context.Context, command string, emit func(Output
 	}
 
 	err = cmd.Wait()
+	close(cmdDone)
 
 	result := &Result{
 		Stdout:   stdoutOut,
@@ -161,40 +172,56 @@ func readCapped(r io.Reader, maxBytes int, emit func(string)) (string, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), maxScannerTokenSize)
 
-	var b strings.Builder
+	content := ""
 	truncated := false
 	for scanner.Scan() {
 		line := scanner.Text()
-		extra := len(line)
-		if b.Len() > 0 {
-			extra++
+		if emit != nil {
+			emit(line)
 		}
-		if b.Len()+extra <= maxBytes {
-			if b.Len() > 0 {
-				b.WriteByte('\n')
-			}
-			b.WriteString(line)
-			if emit != nil {
-				emit(line)
-			}
-		} else {
-			truncated = true
-		}
+		var nextTruncated bool
+		content, nextTruncated = appendOutputWindow(content, line, maxBytes)
+		truncated = truncated || nextTruncated
 	}
 	if err := scanner.Err(); err != nil {
 		return "", err
 	}
 	if truncated {
-		if b.Len() > 0 {
-			b.WriteString("\n")
+		if strings.TrimSpace(content) == "" {
+			return outputTruncatedMark, nil
 		}
-		const marker = "[output truncated]"
-		b.WriteString(marker)
-		if emit != nil {
-			emit(marker)
+		return outputTruncatedMark + "\n" + content, nil
+	}
+	return content, nil
+}
+
+func appendOutputWindow(content, chunk string, maxBytes int) (string, bool) {
+	if maxBytes <= 0 {
+		return "", strings.TrimSpace(content) != "" || strings.TrimSpace(chunk) != ""
+	}
+
+	switch {
+	case content == "":
+		content = chunk
+	case chunk != "":
+		content += "\n" + chunk
+	}
+
+	if len(content) <= maxBytes {
+		return content, false
+	}
+
+	start := len(content) - maxBytes
+	window := content[start:]
+	if start > 0 {
+		if idx := strings.IndexByte(window, '\n'); idx >= 0 && idx < len(window)-1 {
+			window = window[idx+1:]
 		}
 	}
-	return b.String(), nil
+	if window == "" {
+		window = content[len(content)-maxBytes:]
+	}
+	return window, true
 }
 
 // IsDangerous checks if a command might be dangerous.

@@ -82,3 +82,36 @@ func TestShellToolExecuteStream_EmitsStartedAndOutput(t *testing.T) {
 		t.Fatalf("expected stderr update, got %#v", updates)
 	}
 }
+
+func TestShellToolExecuteStream_ReturnsInterruptedSummaryWithPartialOutput(t *testing.T) {
+	runner := rshell.NewRunner(rshell.Config{
+		WorkDir: ".",
+		Timeout: 5 * time.Second,
+	})
+	tool := NewShellTool(runner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var once sync.Once
+	result, err := tool.ExecuteStream(ctx, []byte(`{"command":"printf 'hello\\n'; sleep 5; printf 'done\\n'"}`), func(ev tools.StreamEvent) {
+		if ev.Type == tools.StreamEventOutput && strings.Contains(ev.Message, "hello") {
+			once.Do(cancel)
+		}
+	})
+	if err != nil {
+		t.Fatalf("execute shell tool stream: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("unexpected result error: %v", result.Error)
+	}
+	if got, want := strings.TrimSpace(result.Summary), "interrupted"; got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
+	}
+	if !strings.Contains(result.Content, "hello") {
+		t.Fatalf("expected partial stdout preserved, got:\n%s", result.Content)
+	}
+	if strings.Contains(result.Content, "done") {
+		t.Fatalf("expected canceled command to omit trailing output, got:\n%s", result.Content)
+	}
+}
