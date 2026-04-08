@@ -273,6 +273,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 					systemPrompt, restoredMessages := sourceSession.RestoreContext()
 					ctxManager.SetSystemPrompt(systemPrompt)
 					ctxManager.SetNonSystemMessages(restoredMessages)
+					restoreProviderUsageSnapshot(ctxManager, sourceSession.UsageSnapshot())
 					replayTimeline = sourceSession.PlaybackTimeline()
 					if metaWorkDir := strings.TrimSpace(sourceSession.Meta().WorkDir); metaWorkDir != "" {
 						workDir = metaWorkDir
@@ -289,6 +290,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 					systemPrompt, restoredMessages := runtimeSession.RestoreContext()
 					ctxManager.SetSystemPrompt(systemPrompt)
 					ctxManager.SetNonSystemMessages(restoredMessages)
+					restoreProviderUsageSnapshot(ctxManager, runtimeSession.UsageSnapshot())
 					if cfg.Replay {
 						replayTimeline = runtimeSession.PlaybackTimeline()
 					} else {
@@ -303,6 +305,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 				systemPrompt, restoredMessages := runtimeSession.RestoreContext()
 				ctxManager.SetSystemPrompt(systemPrompt)
 				ctxManager.SetNonSystemMessages(restoredMessages)
+				restoreProviderUsageSnapshot(ctxManager, runtimeSession.UsageSnapshot())
 				replayBacklog = runtimeSession.ReplayEvents()
 			}
 		} else {
@@ -652,7 +655,11 @@ func newTrajectoryRecorder(s *session.Session, cm *agentctx.Manager, noteLiveLLM
 			if msg := cm.GetSystemPrompt(); msg != nil {
 				systemPrompt = msg.Content
 			}
-			return s.SaveSnapshot(systemPrompt, cm.GetNonSystemMessages())
+			return s.SaveSnapshotWithUsage(
+				systemPrompt,
+				cm.GetNonSystemMessages(),
+				providerUsageSnapshotFromDetails(cm.TokenUsageDetails()),
+			)
 		},
 	}
 }

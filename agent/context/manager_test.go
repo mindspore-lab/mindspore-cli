@@ -281,6 +281,45 @@ func TestSetProviderTokenUsagePrefersTotalTokensAndTracksAppendedMessages(t *tes
 	}
 }
 
+func TestRestoreProviderUsageSnapshotRestoresCurrentAndLocalDelta(t *testing.T) {
+	cfg := DefaultManagerConfig()
+	cfg.ContextWindow = 1000
+	cfg.ReserveTokens = 100
+	mgr := NewManager(cfg)
+	if err := mgr.AddMessage(llm.NewUserMessage("hello")); err != nil {
+		t.Fatalf("AddMessage failed: %v", err)
+	}
+	if err := mgr.AddMessage(llm.NewAssistantMessage("ok")); err != nil {
+		t.Fatalf("AddMessage failed: %v", err)
+	}
+	if err := mgr.AddMessage(llm.NewToolMessage("call_1", "done")); err != nil {
+		t.Fatalf("AddMessage failed: %v", err)
+	}
+
+	localEstimatedTotal := mgr.totalTokensLocked()
+	if localEstimatedTotal <= 5 {
+		t.Fatalf("localEstimatedTotal = %d, want > 5", localEstimatedTotal)
+	}
+
+	mgr.RestoreProviderUsageSnapshot(ProviderUsageSnapshot{
+		Provider:   "anthropic",
+		TokenScope: ProviderTokenScopeTotal,
+		Tokens:     1809,
+		LocalDelta: 5,
+	})
+
+	if got, want := mgr.TokenUsage().Current, 1814; got != want {
+		t.Fatalf("TokenUsage().Current = %d, want %d", got, want)
+	}
+	details := mgr.TokenUsageDetails()
+	if got, want := details.ProviderSnapshotTokens, 1809; got != want {
+		t.Fatalf("TokenUsageDetails().ProviderSnapshotTokens = %d, want %d", got, want)
+	}
+	if got, want := details.LocalDelta, 5; got != want {
+		t.Fatalf("TokenUsageDetails().LocalDelta = %d, want %d", got, want)
+	}
+}
+
 func TestIsWithinBudget(t *testing.T) {
 	cfg := DefaultManagerConfig()
 	cfg.ContextWindow = 100

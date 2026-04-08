@@ -543,7 +543,11 @@ func (a *Application) persistSessionSnapshot() error {
 	if a == nil || a.session == nil || a.ctxManager == nil {
 		return nil
 	}
-	return a.session.SaveSnapshot(a.currentSystemPrompt(), a.ctxManager.GetNonSystemMessages())
+	return a.session.SaveSnapshotWithUsage(
+		a.currentSystemPrompt(),
+		a.ctxManager.GetNonSystemMessages(),
+		providerUsageSnapshotFromDetails(a.ctxManager.TokenUsageDetails()),
+	)
 }
 
 func (a *Application) noteLiveLLMActivity() error {

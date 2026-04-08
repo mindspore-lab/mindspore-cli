@@ -36,9 +36,14 @@ func TestCreateDefersDiskWritesUntilActivate(t *testing.T) {
 	if err := s.AppendAssistant("hi"); err != nil {
 		t.Fatalf("append assistant reply: %v", err)
 	}
-	if err := s.SaveSnapshot("updated prompt", []llm.Message{
+	if err := s.SaveSnapshotWithUsage("updated prompt", []llm.Message{
 		llm.NewUserMessage("hello"),
 		llm.NewAssistantMessage("hi"),
+	}, &UsageSnapshot{
+		Provider:   "anthropic",
+		TokenScope: "total",
+		Tokens:     1809,
+		LocalDelta: 17,
 	}); err != nil {
 		t.Fatalf("save buffered snapshot: %v", err)
 	}
@@ -85,6 +90,22 @@ func TestCreateDefersDiskWritesUntilActivate(t *testing.T) {
 	}
 	if len(restored) != 2 {
 		t.Fatalf("restored message count = %d, want 2", len(restored))
+	}
+	usage := loaded.UsageSnapshot()
+	if usage == nil {
+		t.Fatal("UsageSnapshot() = nil, want snapshot")
+	}
+	if got, want := usage.Provider, "anthropic"; got != want {
+		t.Fatalf("usage.Provider = %q, want %q", got, want)
+	}
+	if got, want := usage.TokenScope, "total"; got != want {
+		t.Fatalf("usage.TokenScope = %q, want %q", got, want)
+	}
+	if got, want := usage.Tokens, 1809; got != want {
+		t.Fatalf("usage.Tokens = %d, want %d", got, want)
+	}
+	if got, want := usage.LocalDelta, 17; got != want {
+		t.Fatalf("usage.LocalDelta = %d, want %d", got, want)
 	}
 
 	replay := loaded.ReplayEvents()

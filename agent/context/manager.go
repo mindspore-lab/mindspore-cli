@@ -87,6 +87,13 @@ type TokenUsageDetails struct {
 	LocalDelta             int
 }
 
+type ProviderUsageSnapshot struct {
+	Provider   string
+	TokenScope ProviderTokenScope
+	Tokens     int
+	LocalDelta int
+}
+
 // Stats 上下文统计
 type Stats struct {
 	MessageCount    int
@@ -331,6 +338,41 @@ func (m *Manager) setProviderTokenUsage(provider string, tokens int, scope Provi
 		m.hasExactSnapshot = true
 	}
 
+	m.recalculateUsage()
+}
+
+// RestoreProviderUsageSnapshot restores a persisted provider snapshot for the current context.
+// The caller must restore the matching message set before invoking this method.
+func (m *Manager) RestoreProviderUsageSnapshot(snapshot ProviderUsageSnapshot) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if snapshot.Tokens <= 0 {
+		m.clearProviderTokenUsageLocked()
+		m.recalculateUsage()
+		return
+	}
+
+	localTotal := m.totalTokensLocked()
+	localDelta := snapshot.LocalDelta
+	if localDelta < 0 {
+		localDelta = 0
+	}
+	exactEstimate := localTotal - localDelta
+	if exactEstimate < 0 {
+		exactEstimate = 0
+	}
+
+	scope := snapshot.TokenScope
+	if scope != ProviderTokenScopeTotal {
+		scope = ProviderTokenScopePrompt
+	}
+
+	m.exactSnapshotTokens = snapshot.Tokens
+	m.exactSnapshotEstimate = exactEstimate
+	m.exactSnapshotProvider = strings.TrimSpace(snapshot.Provider)
+	m.exactSnapshotScope = scope
+	m.hasExactSnapshot = true
 	m.recalculateUsage()
 }
 

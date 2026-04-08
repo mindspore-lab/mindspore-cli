@@ -86,6 +86,17 @@ func TestCmdResumeSwitchesConversationAndShowsReturnHint(t *testing.T) {
 	if err := target.Activate(); err != nil {
 		t.Fatalf("activate target session: %v", err)
 	}
+	if err := target.SaveSnapshotWithUsage("system prompt", []llm.Message{
+		llm.NewUserMessage("target conversation"),
+		llm.NewAssistantMessage("target reply"),
+	}, &session.UsageSnapshot{
+		Provider:   "anthropic",
+		TokenScope: "total",
+		Tokens:     1809,
+		LocalDelta: 21,
+	}); err != nil {
+		t.Fatalf("save target snapshot with usage: %v", err)
+	}
 	if err := target.Close(); err != nil {
 		t.Fatalf("close target session: %v", err)
 	}
@@ -116,6 +127,9 @@ func TestCmdResumeSwitchesConversationAndShowsReturnHint(t *testing.T) {
 	}
 	if got, want := app.session.ID(), target.ID(); got != want {
 		t.Fatalf("active session id = %q, want %q", got, want)
+	}
+	if got, want := app.ctxManager.TokenUsage().Current, 1830; got != want {
+		t.Fatalf("ctx current after resume = %d, want %d", got, want)
 	}
 
 	timer := time.NewTimer(2 * time.Second)

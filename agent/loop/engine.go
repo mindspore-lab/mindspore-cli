@@ -375,6 +375,9 @@ func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResp
 	if err != nil {
 		return false, err
 	}
+	if notice == nil {
+		ex.syncContextTokenUsage(resp.Usage)
+	}
 	if ex.engine.recorder != nil {
 		if strings.TrimSpace(resp.Content) != "" && ex.engine.recorder.RecordAssistant != nil {
 			if err := ex.engine.recorder.RecordAssistant(resp.Content); err != nil {
@@ -393,9 +396,6 @@ func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResp
 		return false, err
 	}
 	ex.emitContextCompactionNotice(notice)
-	if notice == nil {
-		ex.syncContextTokenUsage(resp.Usage)
-	}
 
 	if ex.usesResponsesChain() && strings.TrimSpace(resp.ID) != "" {
 		ex.responsesPreviousID = strings.TrimSpace(resp.ID)

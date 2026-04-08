@@ -55,11 +55,20 @@ type MessageRecord struct {
 
 // Snapshot stores the latest restorable context state.
 type Snapshot struct {
-	SessionID    string        `json:"session_id"`
-	WorkDir      string        `json:"workdir"`
-	SystemPrompt string        `json:"system_prompt"`
-	UpdatedAt    time.Time     `json:"updated_at"`
-	Messages     []llm.Message `json:"messages,omitempty"`
+	SessionID     string         `json:"session_id"`
+	WorkDir       string         `json:"workdir"`
+	SystemPrompt  string         `json:"system_prompt"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	Messages      []llm.Message  `json:"messages,omitempty"`
+	ProviderUsage *UsageSnapshot `json:"provider_usage,omitempty"`
+}
+
+// UsageSnapshot stores the latest provider-backed token snapshot for resume.
+type UsageSnapshot struct {
+	Provider   string `json:"provider,omitempty"`
+	TokenScope string `json:"token_scope,omitempty"`
+	Tokens     int    `json:"tokens,omitempty"`
+	LocalDelta int    `json:"local_delta,omitempty"`
 }
 
 // ReplayFrame is one UI replay event paired with its original timestamp.
@@ -695,6 +704,17 @@ func (s *Session) RestoreContext() (string, []llm.Message) {
 	return s.snapshot.SystemPrompt, messages
 }
 
+// UsageSnapshot returns a copy of the persisted provider-backed usage snapshot.
+func (s *Session) UsageSnapshot() *UsageSnapshot {
+	if s == nil {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneUsageSnapshot(s.snapshot.ProviderUsage)
+}
+
 // Path returns the trajectory file path.
 func (s *Session) Path() string {
 	if s == nil {
@@ -1002,6 +1022,11 @@ func (s *Session) writeRecordLocked(record any) error {
 
 // SaveSnapshot overwrites snapshot.json with the current restorable context.
 func (s *Session) SaveSnapshot(systemPrompt string, messages []llm.Message) error {
+	return s.SaveSnapshotWithUsage(systemPrompt, messages, nil)
+}
+
+// SaveSnapshotWithUsage overwrites snapshot.json with the current restorable context and usage snapshot.
+func (s *Session) SaveSnapshotWithUsage(systemPrompt string, messages []llm.Message, usage *UsageSnapshot) error {
 	if s == nil {
 		return fmt.Errorf("session is nil")
 	}
@@ -1014,10 +1039,19 @@ func (s *Session) SaveSnapshot(systemPrompt string, messages []llm.Message) erro
 	s.snapshot.UpdatedAt = time.Now()
 	s.snapshot.Messages = make([]llm.Message, len(messages))
 	copy(s.snapshot.Messages, messages)
+	s.snapshot.ProviderUsage = cloneUsageSnapshot(usage)
 	if !s.persisted {
 		return nil
 	}
 	return s.writeSnapshotLocked()
+}
+
+func cloneUsageSnapshot(usage *UsageSnapshot) *UsageSnapshot {
+	if usage == nil {
+		return nil
+	}
+	copy := *usage
+	return &copy
 }
 
 func (s *Session) cleanupActivationFailureLocked() {
