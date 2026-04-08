@@ -509,7 +509,7 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message) tea.Cmd
 	case model.ToolRead, model.ToolGrep, model.ToolGlob, model.ToolEdit, model.ToolWrite, model.ToolSkill, model.ToolWarning, model.ToolError, model.ToolReplay:
 		return a.printResolvedTool(ev)
 	case model.ClearScreen:
-		return clearMessage()
+		return a.clearMessage(ev.Summary)
 	default:
 		return a.fallbackPrint(prevLen)
 	}
@@ -630,8 +630,25 @@ func combineCmds(cmds ...tea.Cmd) tea.Cmd {
 	}
 }
 
-func clearMessage() tea.Cmd {
-	return tea.Println(metaStyle.Render("conversation cleared"))
+func (a App) clearHeadingLines(resumeHint string) []string {
+	lines := []string{
+		RenderBanner(a.state.Version, a.state.WorkDir, a.state.RepoURL, a.state.Model.Name, a.state.Model.CtxMax),
+	}
+	if hint := strings.TrimSpace(resumeHint); hint != "" {
+		lines = append(lines, metaStyle.Render(hint))
+	}
+	return lines
+}
+
+func (a App) clearMessage(resumeHint string) tea.Cmd {
+	cmds := []tea.Cmd{
+		tea.ClearScreen,
+		tea.Printf("\x1b[3J"),
+	}
+	for _, line := range a.clearHeadingLines(resumeHint) {
+		cmds = append(cmds, tea.Println(line))
+	}
+	return tea.Sequence(cmds...)
 }
 
 func timestampLabel(now time.Time) string {

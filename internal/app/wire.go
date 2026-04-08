@@ -363,7 +363,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	if sessionStoreReady {
 		app.sessionStoreReady.Store(true)
 	}
-	engine.SetTrajectoryRecorder(newTrajectoryRecorder(runtimeSession, ctxManager, app.noteLiveLLMActivity))
+	app.refreshEngineSessionBindings()
 
 	return app, nil
 }
@@ -432,6 +432,48 @@ func (a *Application) ensureSessionPermissionStore() {
 	a.sessionStoreReady.Store(true)
 }
 
+func (a *Application) refreshEngineSessionBindings() {
+	if a == nil || a.Engine == nil {
+		return
+	}
+	a.Engine.SetLLMDebugDumper(a.llmDebugDumper)
+	a.Engine.SetTrajectoryRecorder(newTrajectoryRecorder(a.session, a.ctxManager, a.noteLiveLLMActivity))
+}
+
+func (a *Application) rotateSession() error {
+	if a == nil || a.replayOnly {
+		return nil
+	}
+
+	systemPrompt := a.currentSystemPrompt()
+	nextSession, err := session.Create(a.WorkDir, systemPrompt)
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	if err := nextSession.Activate(); err != nil {
+		return fmt.Errorf("activate session: %w", err)
+	}
+
+	previous := a.session
+	a.session = nextSession
+	a.sessionLLMActivity.Store(false)
+	a.sessionStoreReady.Store(false)
+
+	if permSvc, ok := a.permService.(*permission.DefaultPermissionService); ok {
+		permSvc.ResetSessionState()
+	}
+
+	if a.llmDebugDumper != nil {
+		a.llmDebugDumper = llm.NewDebugDumper(filepath.Dir(nextSession.Path()))
+	}
+	a.refreshEngineSessionBindings()
+
+	if previous != nil {
+		_ = previous.Close()
+	}
+	return nil
+}
+
 // SetProvider updates model/key and reinitializes the engine.
 func (a *Application) SetProvider(providerName, modelName, apiKey string) error {
 	normalizedProvider := llm.NormalizeProvider(providerName)
@@ -483,12 +525,11 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 		}
 	}
 	newEngine.SetContextManager(a.ctxManager)
-	newEngine.SetLLMDebugDumper(a.llmDebugDumper)
 	newEngine.SetPermissionService(a.permService)
-	newEngine.SetTrajectoryRecorder(newTrajectoryRecorder(a.session, a.ctxManager, a.noteLiveLLMActivity))
 
 	a.Engine = newEngine
 	a.provider = provider
+	a.refreshEngineSessionBindings()
 
 	return nil
 }

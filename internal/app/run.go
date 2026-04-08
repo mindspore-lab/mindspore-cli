@@ -526,12 +526,15 @@ func (a *Application) exitResumeHint() string {
 	if !a.sessionLLMActivity.Load() {
 		return ""
 	}
+	return resumeHintForSession(a.session.ID())
+}
 
-	sessionID := strings.TrimSpace(a.session.ID())
+func resumeHintForSession(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return ""
 	}
-	return fmt.Sprintf("Resume this session with: mscli resume %s", sessionID)
+	return fmt.Sprintf("Resume the previous conversation with: mscli resume %s", sessionID)
 }
 
 func (a *Application) recordUnavailableTurn(userInput, assistantReply string) error {

@@ -1272,9 +1272,23 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ClearScreen:
 		a.replayWait = nil
-		a.state = a.state.ClearWait()
-		a.state.Messages = []model.Message{
-			{Kind: model.MsgAgent, Content: ev.Message},
+		a.state = a.clearThinking()
+		a.state.Messages = nil
+		a.input = a.input.ClearSlashMode()
+		a.viewport = a.viewport.Clear()
+		a.followBottom = true
+		a.unreadCount = 0
+		if a.deltaBuf != nil {
+			a.deltaBuf.Reset()
+		}
+		if a.deltaStarted != nil {
+			*a.deltaStarted = false
+		}
+		if a.cmdOutputStarted != nil {
+			*a.cmdOutputStarted = false
+		}
+		if a.cmdOutputLines != nil {
+			*a.cmdOutputLines = 0
 		}
 
 	case model.ModelUpdate:
