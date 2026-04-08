@@ -270,13 +270,15 @@ type openAIResponsesStreamEvent struct {
 }
 
 type openAIResponsesStreamIterator struct {
-	reader      *bufio.Reader
-	closer      io.Closer
-	done        bool
-	accumulated StreamChunk
-	text        strings.Builder
-	toolState   map[int]ToolCall
-	toolOrder   []int
+	reader         *bufio.Reader
+	closer         io.Closer
+	done           bool
+	accumulated    StreamChunk
+	text           strings.Builder
+	toolState      map[int]ToolCall
+	toolOrder      []int
+	seenText       bool
+	backgroundWork bool
 }
 
 func (it *openAIResponsesStreamIterator) Next() (*StreamChunk, error) {
@@ -313,6 +315,8 @@ func (it *openAIResponsesStreamIterator) Next() (*StreamChunk, error) {
 		switch event.Type {
 		case "response.output_text.delta":
 			it.text.WriteString(event.Delta)
+			it.seenText = true
+			it.backgroundWork = false
 			return &StreamChunk{Content: event.Delta}, nil
 		case "response.output_item.added":
 			if event.Item.Type == "function_call" {
@@ -320,6 +324,10 @@ func (it *openAIResponsesStreamIterator) Next() (*StreamChunk, error) {
 			}
 		case "response.function_call_arguments.delta":
 			it.applyToolCallArgumentsDelta(event.OutputIndex, event.Delta)
+			if it.seenText && !it.backgroundWork {
+				it.backgroundWork = true
+				return &StreamChunk{BackgroundWork: true}, nil
+			}
 		case "response.output_item.done":
 			if event.Item.Type == "function_call" {
 				it.applyToolCallItem(event.OutputIndex, event.Item, true)

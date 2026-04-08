@@ -78,6 +78,7 @@ const (
 	AnalysisReady        EventType = "AnalysisReady"
 	AgentReply           EventType = "AgentReply"
 	AgentReplyDelta      EventType = "AgentReplyDelta"
+	AgentBackgroundWork  EventType = "AgentBackgroundWork"
 	PermissionPrompt     EventType = "PermissionPrompt"
 	PermissionsView      EventType = "PermissionsView"
 	AgentThinking        EventType = "AgentThinking"

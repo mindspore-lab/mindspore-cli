@@ -351,6 +351,9 @@ func (ex *executor) applyStreamChunk(resp *llm.CompletionResponse, chunk *llm.St
 		resp.Content += chunk.Content
 		ex.addEvent(NewEvent(EventAgentReplyDelta, chunk.Content))
 	}
+	if chunk.BackgroundWork {
+		ex.addEvent(NewEvent(EventAgentBackgroundWork, ""))
+	}
 	if len(chunk.ToolCalls) > 0 {
 		resp.ToolCalls = make([]llm.ToolCall, len(chunk.ToolCalls))
 		copy(resp.ToolCalls, chunk.ToolCalls)

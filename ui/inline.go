@@ -150,6 +150,14 @@ func (a App) renderMainView() string {
 }
 
 func (a App) activePreview(partsBeforeStatus []string, inputView, hintView string) string {
+	if a.backgroundModelWork && a.state.WaitKind == model.WaitModel {
+		a.thinking.SetText("Working...")
+		teal := lipgloss.Color("#2DD4BF")
+		a.thinking.SetStyle(
+			lipgloss.NewStyle().Foreground(teal),
+			lipgloss.NewStyle().Foreground(teal).Italic(true))
+		return a.thinking.ViewWithTip()
+	}
 	if msg, ok := a.lastStreamingAgent(); ok {
 		return a.fitStatusPreview(a.renderTranscriptMessage(msg), partsBeforeStatus, inputView, hintView)
 	}
@@ -487,7 +495,7 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message) tea.Cmd
 		return a.printMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message, RawANSI: ev.RawANSI})
 	case model.AgentReplyDelta:
 		return a.printAgentDelta(ev.Message)
-	case model.AgentThinking, model.TaskDone, model.TokenUpdate:
+	case model.AgentBackgroundWork, model.AgentThinking, model.TaskDone, model.TokenUpdate:
 		return nil
 	case model.ToolCallStart:
 		// Don't print pending tools to scrollback — they show in the live

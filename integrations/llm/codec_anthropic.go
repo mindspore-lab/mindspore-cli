@@ -261,6 +261,8 @@ type anthropicStreamIterator struct {
 	promptTokens   int
 	completedCalls []ToolCall
 	toolBlocks     map[int]*anthropicStreamToolState
+	seenText       bool
+	backgroundWork bool
 }
 
 type anthropicStreamEvent struct {
@@ -446,6 +448,8 @@ func (it *anthropicStreamIterator) startContentBlock(payload anthropicStreamCont
 func (it *anthropicStreamIterator) applyContentBlockDelta(payload anthropicStreamContentBlockDeltaEvent) *StreamChunk {
 	switch payload.Delta.Type {
 	case "text_delta":
+		it.seenText = true
+		it.backgroundWork = false
 		return &StreamChunk{Content: payload.Delta.Text}
 	case "input_json_delta":
 		state, ok := it.toolBlocks[payload.Index]
@@ -453,6 +457,10 @@ func (it *anthropicStreamIterator) applyContentBlockDelta(payload anthropicStrea
 			return nil
 		}
 		state.Partial.WriteString(payload.Delta.PartialJSON)
+		if it.seenText && !it.backgroundWork {
+			it.backgroundWork = true
+			return &StreamChunk{BackgroundWork: true}
+		}
 	}
 
 	return nil

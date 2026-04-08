@@ -280,6 +280,20 @@ func TestConvertLoopEvent_PreservesToolCallID(t *testing.T) {
 	}
 }
 
+func TestConvertLoopEvent_MapsAgentBackgroundWork(t *testing.T) {
+	ev := loop.Event{
+		Type: loop.EventAgentBackgroundWork,
+	}
+
+	got := convertLoopEvent(ev)
+	if got == nil {
+		t.Fatal("convertLoopEvent(AgentBackgroundWork) = nil, want non-nil")
+	}
+	if got.Type != model.AgentBackgroundWork {
+		t.Fatalf("convertLoopEvent type = %v, want %v", got.Type, model.AgentBackgroundWork)
+	}
+}
+
 func TestConvertLoopEvent_PreservesMeta(t *testing.T) {
 	ev := loop.Event{
 		Type:     loop.EventToolEdit,

@@ -172,27 +172,28 @@ const (
 
 // App is the TUI root model.
 type App struct {
-	state            model.State
-	viewport         components.Viewport
-	input            components.TextInput
-	thinking         components.ThinkingSpinner
-	width            int
-	height           int
-	eventCh          <-chan model.Event
-	userCh           chan<- string // sends user input to the engine bridge
-	lastInterrupt    time.Time     // track last ctrl+c for double-press exit
-	mouseEnabled     bool
-	replayWait       *model.ReplayWaitData
-	modalAltScreen   bool
-	deltaMu          *sync.Mutex
-	deltaBuf         *strings.Builder // buffers agent deltas until a full line is ready
-	deltaStarted     *bool            // true after the first agent delta line is printed
-	eventListening   *int32           // atomic flag: 1 = waitForEvent goroutine is active
-	cmdOutputStarted *bool            // true after first shell output line is printed
-	cmdOutputLines   *int             // lines printed so far for current shell command
-	followBottom     bool
-	unreadCount      int
-	lastMsgCount     int
+	state               model.State
+	viewport            components.Viewport
+	input               components.TextInput
+	thinking            components.ThinkingSpinner
+	width               int
+	height              int
+	eventCh             <-chan model.Event
+	userCh              chan<- string // sends user input to the engine bridge
+	lastInterrupt       time.Time     // track last ctrl+c for double-press exit
+	mouseEnabled        bool
+	replayWait          *model.ReplayWaitData
+	modalAltScreen      bool
+	deltaMu             *sync.Mutex
+	deltaBuf            *strings.Builder // buffers agent deltas until a full line is ready
+	deltaStarted        *bool            // true after the first agent delta line is printed
+	eventListening      *int32           // atomic flag: 1 = waitForEvent goroutine is active
+	cmdOutputStarted    *bool            // true after first shell output line is printed
+	cmdOutputLines      *int             // lines printed so far for current shell command
+	followBottom        bool
+	unreadCount         int
+	lastMsgCount        int
+	backgroundModelWork bool
 
 	// Train mode
 	trainView     model.TrainViewState
@@ -1099,14 +1100,17 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.TaskDone:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 
 	case model.AgentThinking:
 		a.replayWait = ev.ReplayWait
+		a.backgroundModelWork = false
 		a.state = a.startWait(model.WaitModel)
 
 	case model.AgentReply:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.input = a.input.ClearSlashMode()
 		content := ev.Message
@@ -1122,22 +1126,31 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.AgentReplyDelta:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		// Keep WaitStartedAt so the elapsed timer continues through "Responding...".
 		a.state = a.state.WithThinking(false)
 		a.state = a.appendToStreamingAgent(ev.Message)
 
+	case model.AgentBackgroundWork:
+		a.replayWait = nil
+		a.backgroundModelWork = true
+		a.state = a.state.WithThinking(true)
+
 	case model.PermissionPrompt:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.permissionPrompt = toPermissionPromptState(ev)
 
 	case model.PermissionsView:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.permissionsView = toPermissionsViewState(ev)
 
 	case model.ToolCallStart:
 		a.replayWait = ev.ReplayWait
+		a.backgroundModelWork = false
 		a.state = a.startWait(model.WaitTool)
 		a.state = a.commitStreamingAgent()
 		a.state = a.state.WithMessage(a.pendingToolMessage(ev))
@@ -1159,6 +1172,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.CmdFinished:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.state = a.resolveToolEvent(ev, model.Message{
 			Kind:       model.MsgTool,
@@ -1171,6 +1185,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolRead:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesRead++
@@ -1182,6 +1197,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolGrep:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Searches++
@@ -1193,6 +1209,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolGlob:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Searches++
@@ -1204,6 +1221,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolEdit:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesEdited++
@@ -1215,6 +1233,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolWrite:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.FilesEdited++
@@ -1226,6 +1245,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolSkill:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		msg := model.Message{
 			Kind:     model.MsgTool,
@@ -1242,6 +1262,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolWarning:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		a.state = a.resolveToolEvent(ev, model.Message{
 			Kind: model.MsgTool, ToolName: displayToolName(ev.ToolName), ToolArgs: ev.Message,
@@ -1263,6 +1284,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ToolError:
 		a.replayWait = nil
+		a.backgroundModelWork = false
 		a.state = a.clearThinking()
 		stats := a.state.Stats
 		stats.Errors++
@@ -2326,23 +2348,23 @@ func (a App) currentWaitElapsed() time.Duration {
 }
 
 func (a App) appendToolOutput(ev model.Event) model.State {
+	if requiresActiveToolMatch(ev) && strings.TrimSpace(ev.ToolCallID) == "" {
+		return a.state
+	}
+
 	msgs := make([]model.Message, len(a.state.Messages))
 	copy(msgs, a.state.Messages)
 
 	idx := toolMessageIndex(msgs, ev.ToolCallID)
 	if idx < 0 {
-		for i := len(msgs) - 1; i >= 0; i-- {
-			if msgs[i].Kind == model.MsgTool {
-				idx = i
-				break
-			}
-		}
+		return a.state
 	}
-	if idx >= 0 {
-		msgs[idx].Content = appendStreamingToolWindow(msgs[idx].Content, ev.Message, maxStreamingToolContentBytes)
-		msgs[idx].Pending = false
-		msgs[idx].Streaming = true
+	if !canApplyToolLifecycleEvent(msgs[idx], ev) {
+		return a.state
 	}
+	msgs[idx].Content = appendStreamingToolWindow(msgs[idx].Content, ev.Message, maxStreamingToolContentBytes)
+	msgs[idx].Pending = false
+	msgs[idx].Streaming = true
 
 	next := a.state
 	next.Messages = msgs
@@ -2427,10 +2449,18 @@ func (a App) pendingToolMessage(ev model.Event) model.Message {
 }
 
 func (a App) resolveToolEvent(ev model.Event, fallback model.Message) model.State {
+	strictMatch := requiresActiveToolMatch(ev)
+	if strictMatch && strings.TrimSpace(ev.ToolCallID) == "" {
+		return a.state
+	}
+
 	msgs := make([]model.Message, len(a.state.Messages))
 	copy(msgs, a.state.Messages)
 
 	if idx := pendingToolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
+		if strictMatch && !canApplyToolLifecycleEvent(msgs[idx], ev) {
+			return a.state
+		}
 		msgs[idx] = finalizeToolMessage(msgs[idx], ev)
 		next := a.state
 		next.Messages = msgs
@@ -2438,10 +2468,17 @@ func (a App) resolveToolEvent(ev model.Event, fallback model.Message) model.Stat
 	}
 
 	if idx := toolMessageIndex(msgs, ev.ToolCallID); idx >= 0 {
+		if strictMatch && !canApplyToolLifecycleEvent(msgs[idx], ev) {
+			return a.state
+		}
 		msgs[idx] = finalizeToolMessage(msgs[idx], ev)
 		next := a.state
 		next.Messages = msgs
 		return next
+	}
+
+	if strictMatch {
+		return a.state
 	}
 
 	for i := len(msgs) - 1; i >= 0; i-- {
@@ -2527,6 +2564,22 @@ func pendingReplayToolMessageIndex(msgs []model.Message, ev model.Event) int {
 
 func isPendingToolMessage(msg model.Message) bool {
 	return msg.Kind == model.MsgTool && msg.Pending
+}
+
+func requiresActiveToolMatch(ev model.Event) bool {
+	switch ev.Type {
+	case model.CmdStarted, model.CmdOutput, model.CmdFinished, model.ToolInterrupted:
+		return true
+	default:
+		return false
+	}
+}
+
+func canApplyToolLifecycleEvent(msg model.Message, ev model.Event) bool {
+	if !requiresActiveToolMatch(ev) {
+		return true
+	}
+	return msg.Kind == model.MsgTool && (msg.Pending || msg.Streaming)
 }
 
 func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
