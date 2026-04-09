@@ -46,6 +46,9 @@ const (
 	interruptActiveTaskToken        = "__interrupt_active_task__"
 	internalPermissionsActionPrefix = "\x00permissions:"
 	modelSetupToken                 = "__model_setup"
+	connectProviderInputToken       = "__connect_provider__"
+	selectModelInputToken           = "__select_model__"
+	deleteProviderInputToken        = "__delete_provider__"
 )
 
 // Style vars are populated by InitStyles() below.
@@ -74,6 +77,27 @@ func agentMsg(source, msg string, done bool) string {
 		return fmt.Sprintf("%s %-12s: %s", marker, source, msg)
 	}
 	return fmt.Sprintf("%s %s", marker, msg)
+}
+
+func moveSelectionIndex(current, delta int, options []model.SelectionOption) int {
+	n := len(options)
+	if n == 0 {
+		return 0
+	}
+	if delta == 0 {
+		return current
+	}
+	if current < 0 || current >= n {
+		current = 0
+	}
+	next := current
+	for range n {
+		next = (next + delta%n + n) % n
+		if !options[next].Disabled {
+			return next
+		}
+	}
+	return current
 }
 
 var (
@@ -136,6 +160,9 @@ func evSource(data *model.TrainEventData, fallback string) string {
 
 type bootDoneMsg struct{}
 type bootTickMsg struct{}
+type modelBrowserAnimTickMsg struct{}
+
+const modelBrowserAnimStep = 30 * time.Millisecond
 
 type permissionPromptState struct {
 	title    string
@@ -208,6 +235,7 @@ type App struct {
 	permissionPrompt *permissionPromptState
 	permissionsView  *permissionsViewState
 	toolsExpanded    *bool
+	modelBrowser     *model.ModelBrowserPopup
 	modelPicker      *model.SelectionPopup
 	setupPopup       *model.SetupPopup
 	appendHistoryFn  func(string)
@@ -225,9 +253,9 @@ type toolOutputViewState struct {
 
 // New creates a new App driven by the given event channel.
 // userCh may be nil — user input won't be forwarded.
-func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
+func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int, providerName ...string) App {
 	return App{
-		state:            model.NewState(version, workDir, repoURL, modelName, ctxMax),
+		state:            model.NewState(version, workDir, repoURL, modelName, ctxMax, providerName...),
 		input:            components.NewTextInput().WithFileSuggestions(workDir),
 		thinking:         components.NewThinkingSpinner(),
 		eventCh:          ch,
@@ -245,8 +273,8 @@ func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL,
 }
 
 // NewReplay creates a TUI instance that starts directly in chat view for playback.
-func NewReplay(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
-	app := New(ch, userCh, version, workDir, repoURL, modelName, ctxMax)
+func NewReplay(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int, providerName ...string) App {
+	app := New(ch, userCh, version, workDir, repoURL, modelName, ctxMax, providerName...)
 	app.bootActive = false
 	return app
 }
@@ -379,6 +407,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.bootActive = false
 		return a, a.maybePrintBanner()
 
+	case modelBrowserAnimTickMsg:
+		if a.modelBrowser == nil || a.modelBrowser.AnimationOffset == 0 {
+			return a, nil
+		}
+		if a.modelBrowser.AnimationOffset > 0 {
+			a.modelBrowser.AnimationOffset--
+		} else {
+			a.modelBrowser.AnimationOffset++
+		}
+		if a.modelBrowser.AnimationOffset == 0 {
+			return a, nil
+		}
+		return a, tea.Tick(modelBrowserAnimStep, func(time.Time) tea.Msg {
+			return modelBrowserAnimTickMsg{}
+		})
+
 	case model.Event:
 		return a.handleEvent(msg)
 
@@ -450,7 +494,7 @@ func (a *App) wantsModalAltScreen() bool {
 	if a == nil {
 		return false
 	}
-	return a.modelPicker != nil || a.setupPopup != nil || a.toolOutputView != nil
+	return a.modelBrowser != nil || a.modelPicker != nil || a.setupPopup != nil || a.toolOutputView != nil
 }
 
 func (a *App) syncModalAltScreen() tea.Cmd {
@@ -774,6 +818,174 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if a.modelBrowser != nil {
+		p := a.modelBrowser
+		if p.ProviderInput != nil {
+			switch msg.String() {
+			case "enter":
+				if a.userCh != nil {
+					token := strings.TrimSpace(p.ProviderInput.Value)
+					if token == "" {
+						p.ProviderInput.Error = "api key required"
+						return a, nil
+					}
+					cmd := connectProviderInputToken + " " + p.ProviderInput.Option.ID + " " + token
+					select {
+					case a.userCh <- cmd:
+					default:
+					}
+				}
+				return a, nil
+			case "esc":
+				p.ProviderInput = nil
+				return a, nil
+			case "backspace":
+				runes := []rune(p.ProviderInput.Value)
+				if len(runes) > 0 {
+					p.ProviderInput.Value = string(runes[:len(runes)-1])
+				}
+				p.ProviderInput.Error = ""
+				return a, nil
+			default:
+				if msg.Type == tea.KeyRunes {
+					p.ProviderInput.Value += string(msg.Runes)
+					p.ProviderInput.Error = ""
+				}
+				return a, nil
+			}
+		}
+
+		target := &p.Models
+		if p.Focus == model.ModelBrowserFocusProvider {
+			target = &p.Providers
+		}
+		selectedDeleteProviderID := ""
+		if len(target.Options) > 0 && target.Selected >= 0 && target.Selected < len(target.Options) {
+			selectedDeleteProviderID = strings.TrimSpace(target.Options[target.Selected].DeleteProviderID)
+		}
+		clearPendingDelete := func() {
+			if p.PendingDeleteProviderID != "" && p.PendingDeleteProviderID != selectedDeleteProviderID {
+				p.PendingDeleteProviderID = ""
+			}
+		}
+		clearPendingDelete()
+		switch msg.String() {
+		case "left":
+			p.PendingDeleteProviderID = ""
+			if p.Focus == model.ModelBrowserFocusModel && len(p.Providers.Options) > 0 {
+				p.ProvidersVisible = true
+				p.Focus = model.ModelBrowserFocusProvider
+				p.AnimationOffset = 2
+				return a, tea.Tick(modelBrowserAnimStep, func(time.Time) tea.Msg {
+					return modelBrowserAnimTickMsg{}
+				})
+			}
+			return a, nil
+		case "right":
+			p.PendingDeleteProviderID = ""
+			if p.Focus == model.ModelBrowserFocusProvider && p.HasModels() {
+				p.ProvidersVisible = false
+				p.Focus = model.ModelBrowserFocusModel
+				p.AnimationOffset = -2
+				return a, tea.Tick(modelBrowserAnimStep, func(time.Time) tea.Msg {
+					return modelBrowserAnimTickMsg{}
+				})
+			}
+			return a, nil
+		case "up":
+			p.PendingDeleteProviderID = ""
+			target.MoveSelection(-1)
+			return a, nil
+		case "down":
+			p.PendingDeleteProviderID = ""
+			target.MoveSelection(1)
+			return a, nil
+		case "enter":
+			p.PendingDeleteProviderID = ""
+			if len(target.Options) == 0 {
+				return a, nil
+			}
+			selected := target.Options[target.Selected]
+			if !selected.Selectable() {
+				return a, nil
+			}
+			if p.Focus == model.ModelBrowserFocusProvider {
+				if selected.RequiresInput {
+					p.ProviderInput = &model.ModelBrowserProviderInput{
+						Option: selected,
+						Label:  "API key",
+					}
+					return a, nil
+				}
+				if a.userCh != nil {
+					select {
+					case a.userCh <- connectProviderInputToken + " " + selected.ID:
+					default:
+					}
+				}
+				return a, nil
+			}
+			if a.userCh != nil {
+				select {
+				case a.userCh <- selectModelInputToken + " " + selected.ID:
+				default:
+				}
+			}
+			return a, nil
+		case "esc":
+			p.PendingDeleteProviderID = ""
+			a.modelBrowser = nil
+			a.state = a.clearThinking()
+			exitAlt := a.syncModalAltScreen()
+			banner := a.maybePrintBanner()
+			if exitAlt != nil && banner != nil {
+				return a, tea.Sequence(exitAlt, banner)
+			}
+			return a, combineCmds(exitAlt, banner)
+		case "backspace":
+			p.PendingDeleteProviderID = ""
+			runes := []rune(target.SearchQuery)
+			if len(runes) > 0 {
+				target.SearchQuery = string(runes[:len(runes)-1])
+				if strings.TrimSpace(target.SearchQuery) == "" {
+					target.RestoreSearchBaseIfNeeded()
+				} else {
+					target.EnsureSelectableSelection()
+				}
+			}
+			return a, nil
+		default:
+			if p.Focus == model.ModelBrowserFocusModel && selectedDeleteProviderID != "" && msg.Type == tea.KeyRunes && string(msg.Runes) == "d" {
+				if p.PendingDeleteProviderID == selectedDeleteProviderID {
+					p.PendingDeleteProviderID = ""
+					if a.userCh != nil {
+						select {
+						case a.userCh <- deleteProviderInputToken + " " + selectedDeleteProviderID:
+						default:
+						}
+					}
+				} else {
+					p.PendingDeleteProviderID = selectedDeleteProviderID
+				}
+				return a, nil
+			}
+			p.PendingDeleteProviderID = ""
+			if msg.Type == tea.KeyRunes {
+				target.BeginSearchIfNeeded()
+				target.SearchQuery += string(msg.Runes)
+				target.EnsureSelectableSelection()
+				return a, nil
+			}
+			if msg.Type == tea.KeySpace {
+				target.BeginSearchIfNeeded()
+				target.SearchQuery += " "
+				target.EnsureSelectableSelection()
+				return a, nil
+			}
+		}
+		return a, nil
+	}
+
 	// Multi-step model setup popup navigation
 	if a.setupPopup != nil {
 		switch a.setupPopup.Screen {
@@ -810,19 +1022,58 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				opt := a.setupPopup.PresetOptions[a.setupPopup.PresetSelected]
 				if !opt.Disabled {
 					a.setupPopup.SelectedPreset = opt
-					a.setupPopup.Screen = model.SetupScreenTokenInput
-					a.setupPopup.TokenError = ""
+					if opt.RequiresInput {
+						a.setupPopup.Screen = model.SetupScreenTokenInput
+						a.setupPopup.TokenError = ""
+					} else if a.userCh != nil {
+						select {
+						case a.userCh <- connectProviderInputToken + " " + a.setupPopup.SelectedPreset.ID:
+						default:
+						}
+					}
 				}
 				return a, nil
 			case "esc":
+				if a.setupPopup.BackCloses {
+					a.setupPopup = nil
+					return a, a.syncModalAltScreen()
+				}
 				a.setupPopup.Screen = model.SetupScreenModeSelect
 				return a, nil
+			case "backspace":
+				runes := []rune(a.setupPopup.SearchQuery)
+				if len(runes) > 0 {
+					a.setupPopup.SearchQuery = string(runes[:len(runes)-1])
+					if strings.TrimSpace(a.setupPopup.SearchQuery) == "" {
+						a.setupPopup.RestoreSearchBaseIfNeeded()
+					} else {
+						a.setupPopup.EnsureSelectablePreset()
+					}
+				}
+				return a, nil
+			default:
+				if msg.Type == tea.KeyRunes {
+					a.setupPopup.BeginSearchIfNeeded()
+					a.setupPopup.SearchQuery += string(msg.Runes)
+					a.setupPopup.EnsureSelectablePreset()
+					return a, nil
+				}
+				if msg.Type == tea.KeySpace {
+					a.setupPopup.BeginSearchIfNeeded()
+					a.setupPopup.SearchQuery += " "
+					a.setupPopup.EnsureSelectablePreset()
+					return a, nil
+				}
 			}
 		case model.SetupScreenTokenInput:
 			switch msg.String() {
 			case "enter":
 				if a.userCh != nil && strings.TrimSpace(a.setupPopup.TokenValue) != "" {
-					cmd := fmt.Sprintf("%s %s %s", modelSetupToken,
+					token := modelSetupToken
+					if a.setupPopup.InputLabel == "API key" {
+						token = connectProviderInputToken
+					}
+					cmd := fmt.Sprintf("%s %s %s", token,
 						a.setupPopup.SelectedPreset.ID,
 						strings.TrimSpace(a.setupPopup.TokenValue))
 					select {
@@ -869,16 +1120,16 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "up", "left":
-			p.Selected--
-			if p.Selected < 0 {
-				p.Selected = len(p.Options) - 1
-			}
+			p.MoveSelection(-1)
 			return a, nil
 		case "down", "right":
-			p.Selected = (p.Selected + 1) % len(p.Options)
+			p.MoveSelection(1)
 			return a, nil
 		case "enter":
 			selected := p.Options[p.Selected]
+			if !selected.Selectable() {
+				return a, nil
+			}
 			a.trainView.SelectionPopup = nil
 			a.modelPicker = nil
 			var input string
@@ -889,6 +1140,10 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				input = "/train add perf-feature " + selected.ID
 			case "model_picker":
 				input = "/model " + selected.ID
+			default:
+				if strings.HasPrefix(p.ActionID, "connect_provider_model_picker:") {
+					input = "/model " + selected.ID
+				}
 			}
 			if input != "" && a.userCh != nil {
 				select {
@@ -906,6 +1161,43 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return a, tea.Sequence(exitAlt, banner)
 			}
 			return a, combineCmds(exitAlt, banner)
+		case "ctrl+a":
+			if p.ActionID != "model_picker" {
+				return a, nil
+			}
+			a.trainView.SelectionPopup = nil
+			a.modelPicker = nil
+			if a.userCh != nil {
+				select {
+				case a.userCh <- "/connect":
+				default:
+				}
+			}
+			return a, a.syncModalAltScreen()
+		case "backspace":
+			runes := []rune(p.SearchQuery)
+			if len(runes) > 0 {
+				p.SearchQuery = string(runes[:len(runes)-1])
+				if strings.TrimSpace(p.SearchQuery) == "" {
+					p.RestoreSearchBaseIfNeeded()
+				} else {
+					p.EnsureSelectableSelection()
+				}
+			}
+			return a, nil
+		default:
+			if msg.Type == tea.KeyRunes {
+				p.BeginSearchIfNeeded()
+				p.SearchQuery += string(msg.Runes)
+				p.EnsureSelectableSelection()
+				return a, nil
+			}
+			if msg.Type == tea.KeySpace {
+				p.BeginSearchIfNeeded()
+				p.SearchQuery += " "
+				p.EnsureSelectableSelection()
+				return a, nil
+			}
 		}
 		return a, nil
 	}
@@ -1317,10 +1609,44 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	case model.ModelUpdate:
 		mi := a.state.Model
 		mi.Name = ev.Message
+		mi.Provider = ev.Provider
 		if ev.CtxMax > 0 {
 			mi.CtxMax = ev.CtxMax
 		}
 		a.state = a.state.WithModel(mi)
+
+	case model.ModelBrowserOpen:
+		if ev.ModelBrowser != nil {
+			cp := *ev.ModelBrowser
+			cp.Providers.Options = append([]model.SelectionOption(nil), ev.ModelBrowser.Providers.Options...)
+			cp.Models.Options = append([]model.SelectionOption(nil), ev.ModelBrowser.Models.Options...)
+			if ev.ModelBrowser.ProviderInput != nil {
+				input := *ev.ModelBrowser.ProviderInput
+				cp.ProviderInput = &input
+			}
+			if a.modelBrowser != nil && a.modelBrowser.Focus != cp.Focus && cp.AnimationOffset == 0 {
+				if cp.Focus == model.ModelBrowserFocusProvider {
+					cp.AnimationOffset = 2
+				} else {
+					cp.AnimationOffset = -2
+				}
+				eventCmd = combineCmds(eventCmd, tea.Tick(modelBrowserAnimStep, func(time.Time) tea.Msg {
+					return modelBrowserAnimTickMsg{}
+				}))
+			}
+			a.modelBrowser = &cp
+			eventCmd = combineCmds(eventCmd, a.syncModalAltScreen())
+		}
+
+	case model.ModelBrowserClose:
+		a.modelBrowser = nil
+		exitAlt := a.syncModalAltScreen()
+		banner := a.maybePrintBanner()
+		if exitAlt != nil && banner != nil {
+			eventCmd = combineCmds(eventCmd, tea.Sequence(exitAlt, banner))
+		} else {
+			eventCmd = combineCmds(eventCmd, exitAlt, banner)
+		}
 
 	case model.ModelPickerOpen:
 		if ev.Popup != nil {
@@ -3282,6 +3608,9 @@ func (a App) View() string {
 	blank := strings.Repeat("\n", a.height-1)
 	if a.trainView.Active && a.trainView.SelectionPopup != nil {
 		return overlayPopup(blank, panels.RenderSelectionPopup(a.trainView.SelectionPopup), a.width, a.height)
+	}
+	if a.modelBrowser != nil {
+		return overlayPopup(blank, panels.RenderModelBrowserPopup(a.modelBrowser), a.width, a.height)
 	}
 	if a.modelPicker != nil {
 		return overlayPopup(blank, panels.RenderSelectionPopup(a.modelPicker), a.width, a.height)

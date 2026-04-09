@@ -1,5 +1,7 @@
 package model
 
+import "strings"
+
 // Train-specific UI event types.
 const (
 	TrainModeOpen      EventType = "TrainModeOpen"
@@ -224,17 +226,63 @@ type TrainActionsState struct {
 
 // SelectionPopup is a popup menu shown when an action needs user input.
 type SelectionPopup struct {
-	Title    string
-	Options  []SelectionOption
-	Selected int
-	ActionID string // which action triggered the popup
+	Title       string
+	SearchQuery string
+	Options     []SelectionOption
+	Selected    int
+	SearchBase  int
+	ActionID    string // which action triggered the popup
+}
+
+type ModelBrowserFocus int
+
+const (
+	ModelBrowserFocusProvider ModelBrowserFocus = iota
+	ModelBrowserFocusModel
+)
+
+type ModelBrowserProviderInput struct {
+	Option SelectionOption
+	Label  string
+	Value  string
+	Error  string
+}
+
+type ProviderImportSuggestion struct {
+	ProviderID    string
+	ProviderLabel string
+	Source        string
+	SourceLabel   string
+	Protocol      string
+	BaseURL       string
+	APIKeyEnvVar  string
+	BaseURLEnvVar string
+}
+
+type ModelBrowserPopup struct {
+	Title                   string
+	Providers               SelectionPopup
+	Models                  SelectionPopup
+	Focus                   ModelBrowserFocus
+	ProvidersVisible        bool
+	ProviderInput           *ModelBrowserProviderInput
+	ImportSuggestions       []ProviderImportSuggestion
+	AnimationOffset         int
+	PendingDeleteProviderID string
 }
 
 type SelectionOption struct {
-	ID       string
-	Label    string
-	Desc     string
-	Disabled bool // grayed out, not selectable (e.g. coming soon)
+	ID               string
+	Label            string
+	Desc             string
+	Header           bool
+	Separator        bool
+	Disabled         bool // grayed out, not selectable (e.g. coming soon)
+	RequiresInput    bool
+	Featured         bool
+	DetailRow        bool
+	ProviderRow      bool
+	DeleteProviderID string
 }
 
 // SetupScreen identifies which screen of the model setup popup is shown.
@@ -242,23 +290,28 @@ type SetupScreen int
 
 const (
 	SetupScreenModeSelect   SetupScreen = iota // "mscli-provided" vs "your own model"
-	SetupScreenPresetPicker                     // pick from preset list
-	SetupScreenTokenInput                       // enter token for selected preset
-	SetupScreenEnvInfo                          // show env var examples
+	SetupScreenPresetPicker                    // pick from preset list
+	SetupScreenTokenInput                      // enter token for selected preset
+	SetupScreenEnvInfo                         // show env var examples
 )
 
 // SetupPopup holds the full state of the multi-step model setup popup.
 type SetupPopup struct {
+	Title          string
+	InputLabel     string
+	SearchQuery    string
 	Screen         SetupScreen
-	ModeSelected   int    // 0 = mscli-provided, 1 = your own model
+	ModeSelected   int // 0 = mscli-provided, 1 = your own model
 	PresetOptions  []SelectionOption
 	PresetSelected int
+	SearchBase     int
 	SelectedPreset SelectionOption // set when user picks a preset
 	TokenValue     string
 	TokenError     string // inline error message
 	CurrentMode    string // "mscli-provided", "own", or "" — for (current) badge
 	CurrentPreset  string // preset ID currently active — for (current) badge
 	CanEscape      bool   // false on first boot (no config to fall back to)
+	BackCloses     bool
 }
 
 // MoveModeSelection moves the mode cursor by delta, wrapping around 2 options.
@@ -267,13 +320,174 @@ func (p *SetupPopup) MoveModeSelection(delta int) {
 }
 
 // MovePresetSelection moves the preset cursor by delta, wrapping around all options.
-// Disabled options are visually navigable but cannot be confirmed with enter.
+// Disabled options are skipped.
 func (p *SetupPopup) MovePresetSelection(delta int) {
-	n := len(p.PresetOptions)
-	if n == 0 {
-		return
+	p.PresetSelected = moveFilteredSelection(p.PresetSelected, delta, p.PresetOptions, p.SearchQuery)
+}
+
+func (p *SetupPopup) FirstSelectablePreset() int {
+	return firstSelectableFilteredOption(p.PresetOptions, p.SearchQuery)
+}
+
+func (p *SetupPopup) EnsureSelectablePreset() {
+	p.PresetSelected = ensureFilteredSelection(p.PresetSelected, p.PresetOptions, p.SearchQuery)
+}
+
+func (p *SetupPopup) BeginSearchIfNeeded() {
+	if strings.TrimSpace(p.SearchQuery) == "" {
+		p.SearchBase = p.PresetSelected
 	}
-	p.PresetSelected = (p.PresetSelected + delta%n + n) % n
+}
+
+func (p *SetupPopup) RestoreSearchBaseIfNeeded() {
+	if strings.TrimSpace(p.SearchQuery) == "" && p.SearchBase >= 0 && p.SearchBase < len(p.PresetOptions) {
+		p.PresetSelected = p.SearchBase
+	}
+}
+
+func (p *SelectionPopup) MoveSelection(delta int) {
+	p.Selected = moveFilteredSelection(p.Selected, delta, p.Options, p.SearchQuery)
+}
+
+func (p *SelectionPopup) EnsureSelectableSelection() {
+	p.Selected = ensureFilteredSelection(p.Selected, p.Options, p.SearchQuery)
+}
+
+func (p *SelectionPopup) BeginSearchIfNeeded() {
+	if strings.TrimSpace(p.SearchQuery) == "" {
+		p.SearchBase = p.Selected
+	}
+}
+
+func (p *SelectionPopup) RestoreSearchBaseIfNeeded() {
+	if strings.TrimSpace(p.SearchQuery) == "" && p.SearchBase >= 0 && p.SearchBase < len(p.Options) {
+		p.Selected = p.SearchBase
+	}
+}
+
+func (p *ModelBrowserPopup) HasModels() bool {
+	if p == nil {
+		return false
+	}
+	for _, opt := range p.Models.Options {
+		if opt.Selectable() {
+			return true
+		}
+	}
+	return false
+}
+
+func (o SelectionOption) Selectable() bool {
+	return !o.Disabled && !o.Header && !o.Separator
+}
+
+func filteredOptionIndices(options []SelectionOption, query string) []int {
+	if len(options) == 0 {
+		return nil
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		idxs := make([]int, 0, len(options))
+		for i := range options {
+			idxs = append(idxs, i)
+		}
+		return idxs
+	}
+
+	type group struct {
+		header int
+		items  []int
+	}
+	var (
+		groups        []group
+		currentHeader = -1
+		currentItems  []int
+	)
+	flush := func() {
+		if len(currentItems) == 0 {
+			return
+		}
+		items := make([]int, len(currentItems))
+		copy(items, currentItems)
+		groups = append(groups, group{header: currentHeader, items: items})
+		currentItems = nil
+	}
+
+	for i, opt := range options {
+		if opt.Separator {
+			continue
+		}
+		if opt.Header {
+			flush()
+			currentHeader = i
+			continue
+		}
+		if !opt.Selectable() {
+			continue
+		}
+		text := strings.ToLower(strings.TrimSpace(opt.Label + " " + opt.Desc))
+		if strings.Contains(text, query) {
+			currentItems = append(currentItems, i)
+		}
+	}
+	flush()
+
+	result := make([]int, 0)
+	for gi, group := range groups {
+		if gi > 0 {
+			result = append(result, -1)
+		}
+		if group.header >= 0 {
+			result = append(result, group.header)
+		}
+		result = append(result, group.items...)
+	}
+	return result
+}
+
+func FilteredOptionIndicesForRender(options []SelectionOption, query string) []int {
+	return filteredOptionIndices(options, query)
+}
+
+func firstSelectableFilteredOption(options []SelectionOption, query string) int {
+	for _, idx := range filteredOptionIndices(options, query) {
+		if idx >= 0 && options[idx].Selectable() {
+			return idx
+		}
+	}
+	return 0
+}
+
+func ensureFilteredSelection(current int, options []SelectionOption, query string) int {
+	for _, idx := range filteredOptionIndices(options, query) {
+		if idx >= 0 && idx == current && options[idx].Selectable() {
+			return current
+		}
+	}
+	return firstSelectableFilteredOption(options, query)
+}
+
+func moveFilteredSelection(current, delta int, options []SelectionOption, query string) int {
+	if delta == 0 {
+		return current
+	}
+	selectable := make([]int, 0)
+	for _, idx := range filteredOptionIndices(options, query) {
+		if idx >= 0 && options[idx].Selectable() {
+			selectable = append(selectable, idx)
+		}
+	}
+	if len(selectable) == 0 {
+		return 0
+	}
+	pos := 0
+	for i, idx := range selectable {
+		if idx == current {
+			pos = i
+			break
+		}
+	}
+	return selectable[(pos+delta%len(selectable)+len(selectable))%len(selectable)]
 }
 
 type TrainMetricsView struct {

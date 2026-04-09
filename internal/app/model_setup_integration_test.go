@@ -8,8 +8,25 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/ui/model"
 )
 
-func TestModelCommand_OpensSetupPopupWithState(t *testing.T) {
+func TestModelCommand_OpensModelBrowserWithState(t *testing.T) {
 	eventCh := make(chan model.Event, 64)
+	t.Setenv("HOME", t.TempDir())
+	if err := saveCredentials(&credentials{
+		ServerURL: "https://mscli.dev",
+		Token:     "user-token",
+		User:      "alice",
+		Role:      "user",
+	}); err != nil {
+		t.Fatalf("saveCredentials() error = %v", err)
+	}
+	if err := saveModelSelectionState(&modelSelectionState{
+		Active: &modelRef{
+			ProviderID: mindsporeCLIFreeProviderID,
+			ModelID:    "kimi-k2.5",
+		},
+	}); err != nil {
+		t.Fatalf("saveModelSelectionState() error = %v", err)
+	}
 	app := &Application{
 		EventCh:             eventCh,
 		Config:              configs.DefaultConfig(),
@@ -19,36 +36,27 @@ func TestModelCommand_OpensSetupPopupWithState(t *testing.T) {
 
 	app.cmdModel(nil)
 
-	var popup *model.SetupPopup
+	var popup *model.ModelBrowserPopup
 	for len(eventCh) > 0 {
 		ev := <-eventCh
-		if ev.Type == model.ModelSetupOpen {
-			popup = ev.SetupPopup
+		if ev.Type == model.ModelBrowserOpen {
+			popup = ev.ModelBrowser
 		}
 	}
 	if popup == nil {
-		t.Fatal("expected setup popup to open")
+		t.Fatal("expected model browser to open")
 	}
-	if !popup.CanEscape {
-		t.Error("expected CanEscape=true from /model")
+	if len(popup.Models.Options) == 0 {
+		t.Fatal("expected model options")
 	}
-	if popup.CurrentMode != modelModeMSCLIProvided {
-		t.Errorf("expected current mode %q, got %q", modelModeMSCLIProvided, popup.CurrentMode)
-	}
-	if popup.CurrentPreset != "kimi-k2.5-free" {
-		t.Errorf("expected current preset 'kimi-k2.5-free', got %q", popup.CurrentPreset)
-	}
-
-	disabledCount := 0
-	for _, opt := range popup.PresetOptions {
-		if opt.Disabled {
-			disabledCount++
-			if !strings.Contains(opt.Label, "coming soon") {
-				t.Errorf("disabled option %q should contain 'coming soon'", opt.Label)
-			}
+	foundFree := false
+	for _, opt := range popup.Models.Options {
+		if strings.Contains(opt.ID, "mindspore-cli-free:kimi-k2.5") {
+			foundFree = true
+			break
 		}
 	}
-	if disabledCount != 2 {
-		t.Errorf("expected 2 disabled (coming soon) presets, got %d", disabledCount)
+	if !foundFree {
+		t.Errorf("expected free model option, got %#v", popup.Models.Options)
 	}
 }

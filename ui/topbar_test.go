@@ -29,10 +29,11 @@ func TestViewOmitsPersistentTopBarAndViewportFill(t *testing.T) {
 }
 
 func TestRenderBannerIncludesMetadata(t *testing.T) {
-	banner := RenderBanner("MindSpore CLI. test", "/tmp/project", "github.com/mindspore-lab/mindspore-cli", "demo-model", 4096)
+	banner := RenderBanner("MindSpore CLI. test", "/tmp/project", "github.com/mindspore-lab/mindspore-cli", "demo-model", 4096, "MindSpore CLI Free")
 	for _, want := range []string{
 		"MindSpore CLI",
 		"demo-model",
+		"MindSpore CLI Free",
 		"/tmp/project",
 	} {
 		if !strings.Contains(banner, want) {
@@ -41,5 +42,28 @@ func TestRenderBannerIncludesMetadata(t *testing.T) {
 	}
 	if !strings.Contains(banner, "model: demo-model") {
 		t.Fatalf("expected banner rows to stay left aligned, got:\n%s", banner)
+	}
+	if strings.Contains(banner, "provider:") {
+		t.Fatalf("expected provider to render inline with model instead of its own row, got:\n%s", banner)
+	}
+}
+
+func TestModelUpdateSetsProviderDisplay(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.handleEvent(model.Event{
+		Type:     model.ModelUpdate,
+		Message:  "Kimi K2.5",
+		Provider: "MindSpore CLI Free",
+		CtxMax:   262144,
+	})
+	app = next.(App)
+
+	if got, want := app.state.Model.Name, "Kimi K2.5"; got != want {
+		t.Fatalf("state.Model.Name = %q, want %q", got, want)
+	}
+	if got, want := app.state.Model.Provider, "MindSpore CLI Free"; got != want {
+		t.Fatalf("state.Model.Provider = %q, want %q", got, want)
 	}
 }

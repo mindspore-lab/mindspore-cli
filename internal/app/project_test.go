@@ -450,20 +450,20 @@ func TestRenderMilestoneLines_TagsColumn(t *testing.T) {
 	}
 }
 
-func TestRenderTaskLines_LongTitleTruncated(t *testing.T) {
+func TestRenderTaskLines_LongSingleTokenPreservedWithoutEllipsis(t *testing.T) {
 	longTitle := strings.Repeat("a", 120)
 	tasks := []projectTask{
 		{ID: "1", Title: longTitle, Status: "doing", Progress: 50, Owner: "alice", Tags: "long"},
 	}
 	lines := renderTaskLines(tasks)
 	if len(lines) != 1 {
-		t.Fatalf("expected 1 line, got %d", len(lines))
+		t.Fatalf("expected 1 line for single-token title, got %d", len(lines))
 	}
-	if strings.Contains(lines[0], longTitle) {
-		t.Errorf("expected title to be truncated, got full title in:\n%s", lines[0])
+	if strings.Contains(lines[0], "...") {
+		t.Errorf("expected long single-token title to be preserved without ellipsis, got:\n%s", lines[0])
 	}
-	if !strings.Contains(lines[0], "...") {
-		t.Errorf("expected truncation marker '...', got:\n%s", lines[0])
+	if !strings.Contains(lines[0], longTitle) {
+		t.Errorf("expected full single-token title to be preserved, got:\n%s", lines[0])
 	}
 }
 

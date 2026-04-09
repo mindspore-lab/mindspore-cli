@@ -31,6 +31,9 @@ var (
 	bannerValueStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("252"))
 
+	bannerProviderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("248"))
+
 	cmdOutputStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245"))
 
@@ -52,13 +55,13 @@ func (a *App) maybePrintBanner() tea.Cmd {
 	}
 	a.bannerPrinted = true
 	return tea.Sequence(
-		tea.Println(RenderBanner(a.state.Version, a.state.WorkDir, a.state.RepoURL, a.state.Model.Name, a.state.Model.CtxMax)),
+		tea.Println(RenderBanner(a.state.Version, a.state.WorkDir, a.state.RepoURL, a.state.Model.Name, a.state.Model.CtxMax, a.state.Model.Provider)),
 		a.signalHistoryReplayReady(),
 	)
 }
 
 // RenderBanner renders the one-shot banner shown after boot in inline mode.
-func RenderBanner(version, workDir, repoURL, modelName string, ctxMax int) string {
+func RenderBanner(version, workDir, repoURL, modelName string, ctxMax int, providerName ...string) string {
 	ver := strings.TrimSpace(version)
 	// Strip product name prefix (e.g. "MindSpore CLI. v0.5.0" → "v0.5.0")
 	for _, prefix := range []string{"MindSpore CLI. ", "MindSpore CLI. "} {
@@ -69,8 +72,13 @@ func RenderBanner(version, workDir, repoURL, modelName string, ctxMax int) strin
 	}
 	title := bannerTitleStyle.Render("MindSpore CLI") + " " + bannerValueStyle.Render("("+ver+")")
 
+	provider := ""
+	if len(providerName) > 0 {
+		provider = strings.TrimSpace(providerName[0])
+	}
+
 	rows := []string{
-		bannerRow("model", valueOrString(strings.TrimSpace(modelName), "unknown")),
+		bannerModelRow(strings.TrimSpace(modelName), provider),
 		bannerRow("directory", valueOrString(shortenPath(strings.TrimSpace(workDir)), ".")),
 	}
 
@@ -80,6 +88,14 @@ func RenderBanner(version, workDir, repoURL, modelName string, ctxMax int) strin
 
 func bannerRow(label, value string) string {
 	return bannerLabelStyle.Render(label+":") + " " + bannerValueStyle.Render(value)
+}
+
+func bannerModelRow(modelName, providerName string) string {
+	row := bannerLabelStyle.Render("model:") + " " + bannerValueStyle.Render(valueOrString(strings.TrimSpace(modelName), "unknown"))
+	if strings.TrimSpace(providerName) != "" {
+		row += " " + bannerProviderStyle.Render(strings.TrimSpace(providerName))
+	}
+	return row
 }
 
 func (a *App) signalHistoryReplayReady() tea.Cmd {

@@ -117,6 +117,16 @@ func (a *Application) cmdLogin(args []string) {
 	a.issueRole = me.Role
 
 	a.EventCh <- model.Event{Type: model.IssueUserUpdate, Message: me.User}
+	if !a.llmReady {
+		if result, err := a.activateLogicalModelSelection(mindsporeCLIFreeProviderID, "kimi-k2.5"); err == nil {
+			a.EventCh <- model.Event{
+				Type:     model.ModelUpdate,
+				Message:  a.Config.Model.Model,
+				Provider: result.ProviderLabel,
+				CtxMax:   a.Config.Context.Window,
+			}
+		}
+	}
 	a.EventCh <- model.Event{
 		Type:    model.AgentReply,
 		Message: fmt.Sprintf("logged in as %s (%s)", me.User, me.Role),

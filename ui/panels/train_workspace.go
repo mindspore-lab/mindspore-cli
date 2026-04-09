@@ -361,34 +361,54 @@ func RenderSelectionPopup(popup *model.SelectionPopup) string {
 	titleStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Align(lipgloss.Center)
 	normalStyle := lipgloss.NewStyle().Foreground(t.TextSecondary)
 	selectedStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	disabledStyle := lipgloss.NewStyle().Foreground(t.TextMuted)
 	hintStyle := lipgloss.NewStyle().Foreground(t.TextMuted).Italic(true)
 
-	// Find the widest option line to size the title
-	maxW := lipgloss.Width(popup.Title)
-	for _, opt := range popup.Options {
-		w := 2 + lipgloss.Width(opt.Label)
-		if opt.Desc != "" {
-			w += 1 + lipgloss.Width(opt.Desc)
-		}
-		if w > maxW {
-			maxW = w
-		}
-	}
+	filtered := filteredPopupOptions(popup.Options, popup.SearchQuery)
+	visible, start, end := popupOptionWindow(filtered, popup.Selected, popupVisibleOptions)
+	maxW := popupContentWidth
 
 	var lines []string
 	lines = append(lines, titleStyle.Width(maxW).Render(popup.Title))
 	lines = append(lines, "")
-	for i, opt := range popup.Options {
+	lines = append(lines, setupLabelStyle.Render("Search"))
+	lines = append(lines, renderSearchField(popup.SearchQuery, maxW))
+	lines = append(lines, "")
+	for _, row := range visible {
+		if row.Separator {
+			lines = append(lines, "")
+			continue
+		}
+		opt := row.Option
 		marker := "  "
 		style := normalStyle
-		if i == popup.Selected {
-			marker = "❯ "
-			style = selectedStyle
+		if opt.Disabled {
+			style = disabledStyle
 		}
-		lines = append(lines, marker+style.Render(opt.Label))
+		if row.Index == popup.Selected {
+			marker = "❯ "
+			if !opt.Disabled {
+				style = selectedStyle
+			}
+		}
+		label := opt.Label
+		if popup.ActionID == "model_picker" && opt.Desc != "" {
+			label += " " + modelPickerDescStyle.Render(opt.Desc)
+		} else if opt.Desc != "" {
+			label += " " + opt.Desc
+		}
+		lines = append(lines, renderWrappedPopupOption(label, marker, style, maxW))
 	}
 	lines = append(lines, "")
-	lines = append(lines, hintStyle.Render("↑/↓ select · enter confirm · esc cancel"))
+	if popup.ActionID == "model_picker" {
+		lines = append(lines, hintStyle.Render("Connect Provider ctrl+a"))
+	} else {
+		scrollHint := "↑/↓ select · enter confirm · esc cancel"
+		if start > 0 || end < len(filtered) {
+			scrollHint = "↑/↓ scroll · enter confirm · esc cancel"
+		}
+		lines = append(lines, hintStyle.Render(scrollHint))
+	}
 
 	content := strings.Join(lines, "\n")
 	return lipgloss.NewStyle().

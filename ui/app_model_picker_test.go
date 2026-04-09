@@ -176,3 +176,261 @@ func TestModelSetupPopupSuppressesThinkingIndicatorWithoutClearingState(t *testi
 		t.Fatalf("expected thinking indicator to return after popup close, got:\n%s", view)
 	}
 }
+
+func TestSetupPopupPresetPickerSupportsSearch(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.ModelSetupOpen,
+		SetupPopup: &model.SetupPopup{
+			Title:  "Connect Provider",
+			Screen: model.SetupScreenPresetPicker,
+			PresetOptions: []model.SelectionOption{
+				{ID: "__header__popular", Label: "Popular", Header: true, Disabled: true},
+				{ID: "anthropic", Label: "Anthropic"},
+				{ID: "openai", Label: "OpenAI"},
+			},
+			PresetSelected: 1,
+			CanEscape:      true,
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("open")})
+	app = next.(App)
+
+	if got, want := app.setupPopup.SearchQuery, "open"; got != want {
+		t.Fatalf("SearchQuery = %q, want %q", got, want)
+	}
+	view := app.View()
+	if !strings.Contains(view, "OpenAI") {
+		t.Fatalf("expected filtered match in view, got:\n%s", view)
+	}
+	if strings.Contains(view, "Anthropic") {
+		t.Fatalf("expected non-matching option filtered out, got:\n%s", view)
+	}
+}
+
+func TestSetupPopupSearchClearRestoresPreviousSelection(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.ModelSetupOpen,
+		SetupPopup: &model.SetupPopup{
+			Title:  "Connect Provider",
+			Screen: model.SetupScreenPresetPicker,
+			PresetOptions: []model.SelectionOption{
+				{ID: "__header__popular", Label: "Popular", Header: true, Disabled: true},
+				{ID: "anthropic", Label: "Anthropic"},
+				{ID: "openai", Label: "OpenAI"},
+			},
+			PresetSelected: 1,
+			CanEscape:      true,
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("open")})
+	app = next.(App)
+	if got, want := app.setupPopup.PresetSelected, 2; got != want {
+		t.Fatalf("PresetSelected after search = %d, want %d", got, want)
+	}
+
+	for range 4 {
+		next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+		app = next.(App)
+	}
+
+	if got, want := app.setupPopup.SearchQuery, ""; got != want {
+		t.Fatalf("SearchQuery after clear = %q, want %q", got, want)
+	}
+	if got, want := app.setupPopup.PresetSelected, 1; got != want {
+		t.Fatalf("PresetSelected after clear = %d, want %d", got, want)
+	}
+}
+
+func TestConnectPopupEscapeClosesInsteadOfShowingModeSelect(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.ModelSetupOpen,
+		SetupPopup: &model.SetupPopup{
+			Title:  "Connect Provider",
+			Screen: model.SetupScreenPresetPicker,
+			PresetOptions: []model.SelectionOption{
+				{ID: "__header__popular", Label: "Popular", Header: true, Disabled: true},
+				{ID: "anthropic", Label: "Anthropic"},
+			},
+			PresetSelected: 1,
+			BackCloses:     true,
+			CanEscape:      true,
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEscape})
+	app = next.(App)
+
+	if app.setupPopup != nil {
+		t.Fatal("expected connect popup to close on esc")
+	}
+	if view := app.View(); strings.Contains(view, "mscli-provided model") {
+		t.Fatalf("expected old mode-select screen not to appear, got:\n%s", view)
+	}
+}
+
+func TestModelPickerSupportsSearch(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.ModelPickerOpen,
+		Popup: &model.SelectionPopup{
+			Title: "Select model",
+			Options: []model.SelectionOption{
+				{ID: "__header__provider:free", Label: "MindSpore CLI Free", Header: true, Disabled: true},
+				{ID: "mindspore-cli-free:kimi-k2.5", Label: "Kimi K2.5"},
+				{ID: "mindspore-cli-free:deepseek-chat", Label: "DeepSeek V3"},
+			},
+			Selected: 1,
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("deep")})
+	app = next.(App)
+
+	if got, want := app.modelPicker.SearchQuery, "deep"; got != want {
+		t.Fatalf("SearchQuery = %q, want %q", got, want)
+	}
+	view := app.View()
+	if !strings.Contains(view, "DeepSeek V3") {
+		t.Fatalf("expected filtered match in view, got:\n%s", view)
+	}
+	if strings.Contains(view, "Kimi K2.5") {
+		t.Fatalf("expected non-matching option filtered out, got:\n%s", view)
+	}
+}
+
+func TestModelPickerSearchClearRestoresPreviousSelection(t *testing.T) {
+	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.ModelPickerOpen,
+		Popup: &model.SelectionPopup{
+			Title: "Select model",
+			Options: []model.SelectionOption{
+				{ID: "__header__provider:free", Label: "MindSpore CLI Free", Header: true, Disabled: true},
+				{ID: "mindspore-cli-free:kimi-k2.5", Label: "Kimi K2.5"},
+				{ID: "mindspore-cli-free:deepseek-chat", Label: "DeepSeek V3"},
+			},
+			Selected: 1,
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("deep")})
+	app = next.(App)
+	if got, want := app.modelPicker.Selected, 2; got != want {
+		t.Fatalf("Selected after search = %d, want %d", got, want)
+	}
+
+	for range 4 {
+		next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+		app = next.(App)
+	}
+
+	if got, want := app.modelPicker.SearchQuery, ""; got != want {
+		t.Fatalf("SearchQuery after clear = %q, want %q", got, want)
+	}
+	if got, want := app.modelPicker.Selected, 1; got != want {
+		t.Fatalf("Selected after clear = %d, want %d", got, want)
+	}
+}
+
+func TestModelPickerCtrlAOpensConnect(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.ModelPickerOpen,
+		Popup: &model.SelectionPopup{
+			Title:    "Select model",
+			ActionID: "model_picker",
+			Options: []model.SelectionOption{
+				{ID: "__header__Recent", Label: "Recent", Header: true, Disabled: true},
+				{ID: "mindspore-cli-free:kimi-k2.5", Label: "Kimi K2.5"},
+			},
+			Selected: 1,
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyCtrlA})
+	app = next.(App)
+
+	if app.modelPicker != nil {
+		t.Fatal("expected model picker to close on ctrl+a")
+	}
+	select {
+	case got := <-userCh:
+		if got != "/connect" {
+			t.Fatalf("user input = %q, want %q", got, "/connect")
+		}
+	default:
+		t.Fatal("expected /connect shortcut to be sent")
+	}
+}
+
+func TestProviderScopedModelPickerEnterSelectsModel(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = next.(App)
+
+	next, _ = app.handleEvent(model.Event{
+		Type: model.ModelPickerOpen,
+		Popup: &model.SelectionPopup{
+			Title:    "Select model",
+			ActionID: "connect_provider_model_picker:openrouter",
+			Options: []model.SelectionOption{
+				{ID: "openrouter:openai/gpt-4o-mini", Label: "GPT-4o mini"},
+			},
+			Selected: 0,
+		},
+	})
+	app = next.(App)
+
+	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = next.(App)
+
+	if app.modelPicker != nil {
+		t.Fatal("expected provider-scoped model picker to close on enter")
+	}
+	select {
+	case got := <-userCh:
+		if got != "/model openrouter:openai/gpt-4o-mini" {
+			t.Fatalf("user input = %q, want %q", got, "/model openrouter:openai/gpt-4o-mini")
+		}
+	default:
+		t.Fatal("expected selected model command to be sent")
+	}
+}

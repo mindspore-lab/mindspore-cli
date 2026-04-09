@@ -27,7 +27,7 @@ func TestLoadWithEnv_AutoTokenLimitsByModelSeries(t *testing.T) {
 		{name: "claude-4.6-sonnet", model: "claude-sonnet-4.6", wantWindow: 1000000},
 		{name: "claude-4.5-haiku", model: "claude-haiku-4.5", wantWindow: 200000},
 		{name: "kimi-k2", model: "kimi-k2", wantWindow: 128000},
-		{name: "namespaced-kimi-k2.5", model: "moonshotai/kimi-k2.5", wantWindow: 256000},
+		{name: "namespaced-kimi-k2.5", model: "provider/kimi-k2.5", wantWindow: 256000},
 		{name: "deepseek-reasoner", model: "deepseek-reasoner", wantWindow: 128000},
 		{name: "qwen3", model: "qwen3-max", wantWindow: 262144},
 		{name: "qwen3.5", model: "qwen3.5-plus", wantWindow: 1000000},

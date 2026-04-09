@@ -163,41 +163,26 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		}
 	}
 
-	// If LLM is not ready (missing API key), try detecting saved model config.
+	// If LLM is not ready (missing API key), try restoring the new persistent
+	// provider/model selection, then deprecated preset compatibility, then
+	// logged-in default free provider.
 	var needsSetupPopup bool
 	var activePresetID string
 	var savedModelToken string
 	if !llmReady {
-		mode, appCfg := detectModelMode()
-		switch mode {
-		case modelModeMSCLIProvided:
-			savedModelToken = appCfg.ModelToken
-			if preset, ok := resolveBuiltinModelPreset(appCfg.ModelPresetID); ok {
-				config.Model.URL = preset.BaseURL
-				config.Model.Provider = preset.Provider
-				config.Model.Model = preset.Model
-				// Always re-fetch the API key from the server instead of
-				// reusing the cached one — it may have been rotated.
-				apiKey := appCfg.ModelToken
-				if freshKey, fetchErr := fetchPresetAPIKey(preset); fetchErr == nil {
-					apiKey = freshKey
-					// Update the saved config with the fresh key.
-					appCfg.ModelToken = freshKey
-					_ = saveAppConfig(appCfg)
-				}
-				config.Model.Key = apiKey
-				savedModelToken = apiKey
-				configs.RefreshModelTokenDefaults(config, previousModel)
-				provider, err = initProvider(config.Model, llm.ResolveOptions{PreferConfigAPIKey: true})
-				if err == nil {
-					llmReady = true
-					activePresetID = preset.ID
-				}
+		restoreResult, restoreErr := restoreProviderSelection(config)
+		if restoreErr != nil {
+			return nil, fmt.Errorf("restore provider selection: %w", restoreErr)
+		}
+		if restoreResult.Restored {
+			provider, err = initProvider(config.Model, llm.ResolveOptions{
+				PreferConfigAPIKey:  true,
+				PreferConfigBaseURL: true,
+			})
+			if err == nil {
+				llmReady = true
+				activePresetID = restoreResult.ActivePresetID
 			}
-		case modelModeOwnEnv:
-			// Env vars were applied but init still failed for another reason.
-		default:
-			needsSetupPopup = true
 		}
 	}
 

@@ -75,6 +75,7 @@ func InitStyles() {
 	setupErrorStyle = lipgloss.NewStyle().Foreground(t.Error)
 	setupLabelStyle = lipgloss.NewStyle().Foreground(t.TextPrimary)
 	setupBadgeStyle = lipgloss.NewStyle().Foreground(t.TextSecondary)
+	modelPickerDescStyle = lipgloss.NewStyle().Foreground(t.TextMuted)
 	setupBorderStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(t.TextPrimary).
