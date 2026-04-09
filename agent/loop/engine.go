@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
+	"github.com/mindspore-lab/mindspore-cli/configs"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	"github.com/mindspore-lab/mindspore-cli/permission"
 	"github.com/mindspore-lab/mindspore-cli/tools"
@@ -61,8 +62,8 @@ func NewEngine(cfg EngineConfig, provider llm.Provider, tools *tools.Registry) *
 	managerCfg := ctxmanager.DefaultManagerConfig()
 	if cfg.ContextWindow > 0 {
 		managerCfg.ContextWindow = cfg.ContextWindow
+		managerCfg.ReserveTokens = configs.DefaultReserveTokens(managerCfg.ContextWindow)
 	}
-	managerCfg.ReserveTokens = 4000
 	engine.ctxManager = ctxmanager.NewManager(managerCfg)
 	engine.ctxManager.SetSystemPrompt(cfg.SystemPrompt)
 	engine.permission = permission.NewNoOpPermissionService()

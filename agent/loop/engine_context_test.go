@@ -62,6 +62,14 @@ func newEngineForContextTests(provider llm.Provider) *Engine {
 	}, provider, tools.NewRegistry())
 }
 
+func TestNewEngineDefaultsReserveTokensToTenPercentOfContextWindow(t *testing.T) {
+	engine := newEngineForContextTests(&captureProvider{})
+
+	if got, want := engine.ctxManager.TokenUsage().Reserved, 800; got != want {
+		t.Fatalf("ctxManager.TokenUsage().Reserved = %d, want %d", got, want)
+	}
+}
+
 func TestSetContextManagerPreservesSystemPrompt(t *testing.T) {
 	engine := newEngineForContextTests(&captureProvider{})
 

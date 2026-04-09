@@ -20,6 +20,10 @@ func TestNewManager(t *testing.T) {
 		t.Errorf("Expected ContextWindow to be 200000, got %d", mgr.config.ContextWindow)
 	}
 
+	if mgr.config.ReserveTokens != 20000 {
+		t.Errorf("Expected ReserveTokens to be 20000, got %d", mgr.config.ReserveTokens)
+	}
+
 	if mgr.tokenizer == nil {
 		t.Error("Tokenizer should be initialized")
 	}
@@ -154,6 +158,16 @@ func TestTokenUsage(t *testing.T) {
 
 	if usage.ContextWindow != 200000 {
 		t.Errorf("Expected ContextWindow to be 200000, got %d", usage.ContextWindow)
+	}
+}
+
+func TestNewManagerDefaultsReserveTokensToTenPercentOfWindow(t *testing.T) {
+	mgr := NewManager(ManagerConfig{
+		ContextWindow: 16000,
+	})
+
+	if got, want := mgr.TokenUsage().Reserved, 1600; got != want {
+		t.Fatalf("TokenUsage().Reserved = %d, want %d", got, want)
 	}
 }
 

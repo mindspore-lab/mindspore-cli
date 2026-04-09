@@ -30,6 +30,10 @@ func LoadWithEnv() (*Config, error) {
 // ApplyEnvOverrides applies environment variable overrides to the config.
 // Unified MSCLI_* overrides are applied on top of built-in defaults.
 func ApplyEnvOverrides(cfg *Config) {
+	previousContextWindow := cfg.Context.Window
+	contextWindowSet := false
+	contextReserveSet := false
+
 	// Model settings
 	if v := strings.TrimSpace(os.Getenv("MSCLI_MODEL")); v != "" {
 		cfg.Model.Model = v
@@ -88,12 +92,17 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("MSCLI_CONTEXT_WINDOW"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			cfg.Context.Window = i
+			contextWindowSet = true
 		}
 	}
 	if v := os.Getenv("MSCLI_CONTEXT_RESERVE"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			cfg.Context.ReserveTokens = i
+			contextReserveSet = true
 		}
+	}
+	if contextWindowSet && !contextReserveSet {
+		refreshContextReserveDefaults(cfg, previousContextWindow)
 	}
 
 	// Issues server

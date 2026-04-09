@@ -11,6 +11,9 @@ func TestDefaultConfigProvider(t *testing.T) {
 	if got, want := cfg.Model.Provider, "openai-completion"; got != want {
 		t.Fatalf("default provider = %q, want %q", got, want)
 	}
+	if got, want := cfg.Context.ReserveTokens, 20000; got != want {
+		t.Fatalf("default context.reserve_tokens = %d, want %d", got, want)
+	}
 }
 
 func TestLoadWithEnv_UsesDefaultsAndEnvOverrides(t *testing.T) {
@@ -69,6 +72,9 @@ func TestLoadWithEnv_UsesDefaultsAndEnvOverrides(t *testing.T) {
 	}
 	if got, want := cfg.Context.Window, 16000; got != want {
 		t.Fatalf("context.window = %d, want %d", got, want)
+	}
+	if got, want := cfg.Context.ReserveTokens, 1600; got != want {
+		t.Fatalf("context.reserve_tokens = %d, want %d", got, want)
 	}
 	if got, want := cfg.UI.Enabled, false; got != want {
 		t.Fatalf("ui.enabled = %v, want %v", got, want)

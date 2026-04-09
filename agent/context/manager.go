@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mindspore-lab/mindspore-cli/configs"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 )
 
@@ -24,8 +25,8 @@ type ManagerConfig struct {
 // DefaultManagerConfig 返回默认配置
 func DefaultManagerConfig() ManagerConfig {
 	return ManagerConfig{
-		ContextWindow:       200000,
-		ReserveTokens:       4000,
+		ContextWindow:       configs.DefaultContextWindow,
+		ReserveTokens:       configs.DefaultReserveTokens(configs.DefaultContextWindow),
 		CompactionThreshold: 0.9,
 		EnableSmartCompact:  true,
 		CompactStrategy:     CompactStrategyHybrid,
@@ -109,10 +110,10 @@ type Stats struct {
 // NewManager creates a new context manager.
 func NewManager(cfg ManagerConfig) *Manager {
 	if cfg.ContextWindow == 0 {
-		cfg.ContextWindow = 200000
+		cfg.ContextWindow = configs.DefaultContextWindow
 	}
 	if cfg.ReserveTokens == 0 {
-		cfg.ReserveTokens = 4000
+		cfg.ReserveTokens = configs.DefaultReserveTokens(cfg.ContextWindow)
 	}
 	if cfg.CompactionThreshold == 0 {
 		cfg.CompactionThreshold = 0.9
