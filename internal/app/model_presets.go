@@ -15,7 +15,7 @@ import (
 type modelCredentialStrategy string
 
 const (
-	credentialStrategyStatic       modelCredentialStrategy = "static"
+	credentialStrategyStatic      modelCredentialStrategy = "static"
 	credentialStrategyMSCLIServer modelCredentialStrategy = "mscli-server"
 )
 
@@ -114,33 +114,7 @@ func fetchPresetAPIKey(preset builtinModelPreset) (string, error) {
 		if err != nil || strings.TrimSpace(cred.Token) == "" || strings.TrimSpace(cred.ServerURL) == "" {
 			return "", fmt.Errorf("not logged in")
 		}
-		path := strings.TrimSpace(preset.Credential.Path)
-		if path == "" {
-			path = "/model-presets/" + preset.ID + "/credential"
-		}
-		url := strings.TrimRight(strings.TrimSpace(cred.ServerURL), "/") + path
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
-		if err != nil {
-			return "", err
-		}
-		req.Header.Set("Authorization", "Bearer "+cred.Token)
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			return "", err
-		}
-		defer resp.Body.Close()
-		data, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("status %d", resp.StatusCode)
-		}
-		var payload struct {
-			APIKey string `json:"api_key"`
-		}
-		if err := json.Unmarshal(data, &payload); err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(payload.APIKey), nil
+		return requestPresetCredential(context.Background(), preset, cred)
 	default:
 		return "", fmt.Errorf("unsupported strategy %q", preset.Credential.Strategy)
 	}
@@ -165,6 +139,17 @@ func (a *Application) fetchPresetAPIKeyFromServer(ctx context.Context, preset bu
 	if err != nil || strings.TrimSpace(cred.Token) == "" || strings.TrimSpace(cred.ServerURL) == "" {
 		return "", fmt.Errorf("not logged in. run /login <token> first")
 	}
+	apiKey, err := requestPresetCredential(ctx, preset, cred)
+	if err != nil {
+		return "", fmt.Errorf("request preset credential: %w", err)
+	}
+	return apiKey, nil
+}
+
+func requestPresetCredential(ctx context.Context, preset builtinModelPreset, cred *credentials) (string, error) {
+	if cred == nil {
+		return "", fmt.Errorf("credentials unavailable")
+	}
 	path := strings.TrimSpace(preset.Credential.Path)
 	if path == "" {
 		path = "/model-presets/" + preset.ID + "/credential"
@@ -180,13 +165,13 @@ func (a *Application) fetchPresetAPIKeyFromServer(ctx context.Context, preset bu
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("request preset credential: %w", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	data, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("request preset credential failed: status %d", resp.StatusCode)
+		return "", fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var payload struct {
 		APIKey string `json:"api_key"`

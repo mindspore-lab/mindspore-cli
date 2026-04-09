@@ -17,6 +17,7 @@ type TaskInfo struct {
 // ModelInfo holds LLM model metadata for the top bar.
 type ModelInfo struct {
 	Name       string
+	Provider   string
 	CtxUsed    int
 	CtxMax     int
 	TokensUsed int
@@ -97,6 +98,8 @@ const (
 	ToolError            EventType = "ToolError"
 	ClearScreen          EventType = "ClearScreen"
 	ModelUpdate          EventType = "ModelUpdate"
+	ModelBrowserOpen     EventType = "ModelBrowserOpen"
+	ModelBrowserClose    EventType = "ModelBrowserClose"
 	ModelPickerOpen      EventType = "ModelPickerOpen"
 	ModelSetupOpen       EventType = "ModelSetupOpen"
 	ModelSetupClose      EventType = "ModelSetupClose"
@@ -111,28 +114,30 @@ const (
 // Event is sent from the agent loop to the TUI.
 // Implements tea.Msg so Bubble Tea can route it.
 type Event struct {
-	Type        EventType
-	Task        string
-	Message     string
-	RawANSI     bool
-	ToolName    string
-	ToolCallID  string
-	Summary     string
-	Meta        map[string]any
-	ReplayWait  *ReplayWaitData
-	CtxUsed     int
-	CtxMax      int
-	TokensUsed  int
-	Train       *TrainEventData // non-nil for train events only
-	Project     *ProjectStatusView
-	Permission  *PermissionPromptData
-	Permissions *PermissionsViewData
-	Popup       *SelectionPopup // non-nil for popup events only
-	SetupPopup  *SetupPopup     // non-nil for model setup popup events
-	BugView     *BugEventData   // non-nil for bug view events only
-	IssueView   *IssueEventData // non-nil for issue view events only
-	Bug         *bugs.Bug       // reserved for lightweight bug payloads
-	Issue       *issuepkg.Issue // reserved for lightweight issue payloads
+	Type         EventType
+	Task         string
+	Message      string
+	Provider     string
+	RawANSI      bool
+	ToolName     string
+	ToolCallID   string
+	Summary      string
+	Meta         map[string]any
+	ReplayWait   *ReplayWaitData
+	CtxUsed      int
+	CtxMax       int
+	TokensUsed   int
+	Train        *TrainEventData // non-nil for train events only
+	Project      *ProjectStatusView
+	Permission   *PermissionPromptData
+	Permissions  *PermissionsViewData
+	ModelBrowser *ModelBrowserPopup
+	Popup        *SelectionPopup // non-nil for popup events only
+	SetupPopup   *SetupPopup     // non-nil for model setup popup events
+	BugView      *BugEventData   // non-nil for bug view events only
+	IssueView    *IssueEventData // non-nil for issue view events only
+	Bug          *bugs.Bug       // reserved for lightweight bug payloads
+	Issue        *issuepkg.Issue // reserved for lightweight issue payloads
 }
 
 // ReplayWaitData lets replay fast-forward the UI timer while using shorter real delays.
@@ -193,19 +198,24 @@ type State struct {
 }
 
 // NewState returns an initial empty state.
-func NewState(version, workDir, repoURL, modelName string, ctxMax int) State {
+func NewState(version, workDir, repoURL, modelName string, ctxMax int, providerName ...string) State {
 	if modelName == "" {
 		modelName = "No model (/model to configure)"
 	}
 	if ctxMax == 0 {
 		ctxMax = 128000 // Default for models like gpt-4o
 	}
+	currentProvider := ""
+	if len(providerName) > 0 {
+		currentProvider = providerName[0]
+	}
 	return State{
 		Version: version,
 		Tasks:   []TaskInfo{},
 		Model: ModelInfo{
-			Name:   modelName,
-			CtxMax: ctxMax,
+			Name:     modelName,
+			Provider: currentProvider,
+			CtxMax:   ctxMax,
 		},
 		WorkDir:      workDir,
 		RepoURL:      repoURL,

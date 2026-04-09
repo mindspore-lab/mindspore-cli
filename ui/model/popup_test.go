@@ -14,14 +14,14 @@ func TestSetupPopupPresetNavigatesAllItems(t *testing.T) {
 		PresetSelected: 0,
 	}
 
-	// Cursor moves to disabled items (they are visually navigable)
+	// Cursor skips disabled items.
 	popup.MovePresetSelection(1)
 	if popup.PresetSelected != 1 {
 		t.Errorf("expected 1, got %d", popup.PresetSelected)
 	}
 	popup.MovePresetSelection(1)
-	if popup.PresetSelected != 2 {
-		t.Errorf("expected 2, got %d", popup.PresetSelected)
+	if popup.PresetSelected != 0 {
+		t.Errorf("expected wrap to 0, got %d", popup.PresetSelected)
 	}
 	// Wraps around
 	popup.MovePresetSelection(1)

@@ -34,7 +34,12 @@ var hints = []hint{
 // RenderHintBar renders the bottom status bar with model, context, and workdir.
 func RenderHintBar(s model.State, width int) string {
 	sep := hintSepStyle.Render("  ")
-	left := hintKeyStyle.Render(s.Model.Name) + sep +
+	modelDisplay := hintKeyStyle.Render(s.Model.Name)
+	if strings.TrimSpace(s.Model.Provider) != "" {
+		providerStyle := hintKeyStyle.Foreground(lipgloss.Color("245"))
+		modelDisplay += " " + providerStyle.Render(strings.TrimSpace(s.Model.Provider))
+	}
+	left := modelDisplay + sep +
 		hintDescStyle.Render(formatCtxHint(s.Model.CtxUsed, s.Model.CtxMax)) + sep +
 		hintDescStyle.Render(shortenHintPath(s.WorkDir))
 

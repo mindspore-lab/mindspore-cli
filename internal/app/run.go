@@ -24,7 +24,7 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/ui/theme"
 )
 
-const provideAPIKeyFirstMsg = "LLM unavailable: provide api key first, or /login and switch to free model."
+const provideAPIKeyFirstMsg = "LLM unavailable: run /model to configure a provider."
 const interruptActiveTaskToken = "__interrupt_active_task__"
 const internalPermissionsActionPrefix = "\x00permissions:"
 const historyReplayReadyToken = "__history_replay_ready__"
@@ -90,10 +90,11 @@ func (a *Application) runReal() error {
 	render.InitStyles()
 	ui.InitStyles()
 
+	providerDisplay := a.initialProviderDisplayLabel()
 	userCh := make(chan string, 8)
-	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
+	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window, providerDisplay)
 	if a.replayOnly {
-		tui = ui.NewReplay(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
+		tui = ui.NewReplay(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window, providerDisplay)
 	} else {
 		if history, err := loadInputHistoryForWorkdir(a.WorkDir); err == nil {
 			tui = tui.SeedInputHistory(history)
@@ -123,6 +124,26 @@ func (a *Application) runReal() error {
 	_, err := p.Run()
 	close(userCh)
 	return err
+}
+
+func (a *Application) initialProviderDisplayLabel() string {
+	if strings.TrimSpace(a.Config.Model.Model) == "" {
+		return ""
+	}
+	modelState, err := loadModelSelectionState()
+	if err == nil && modelState != nil && modelState.Active != nil {
+		if strings.TrimSpace(modelState.Active.ModelID) == strings.TrimSpace(a.Config.Model.Model) {
+			if appCfg, cfgErr := loadAppConfig(); cfgErr == nil {
+				for _, extra := range appCfg.ExtraProviders {
+					if normalizedProviderID(extra.ID) == normalizedProviderID(modelState.Active.ProviderID) && strings.TrimSpace(extra.Label) != "" {
+						return strings.TrimSpace(extra.Label)
+					}
+				}
+			}
+			return runtimeProviderDisplayLabel(modelState.Active.ProviderID)
+		}
+	}
+	return runtimeProviderDisplayLabel(a.Config.Model.Provider)
 }
 
 func tuiProgramOptions(extra ...tea.ProgramOption) []tea.ProgramOption {
@@ -190,6 +211,21 @@ func (a *Application) processInput(input string) {
 	if strings.HasPrefix(trimmed, modelSetupToken+" ") {
 		parts := strings.Fields(trimmed)
 		a.cmdModelSetup(parts[1:])
+		return
+	}
+	if strings.HasPrefix(trimmed, connectProviderToken+" ") {
+		parts := strings.Fields(trimmed)
+		a.cmdConnect(parts[1:])
+		return
+	}
+	if strings.HasPrefix(trimmed, selectModelToken+" ") {
+		parts := strings.Fields(trimmed)
+		a.cmdSelectModel(parts[1:])
+		return
+	}
+	if strings.HasPrefix(trimmed, deleteProviderToken+" ") {
+		parts := strings.Fields(trimmed)
+		a.cmdDeleteProvider(parts[1:])
 		return
 	}
 

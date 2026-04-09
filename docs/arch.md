@@ -77,6 +77,33 @@ runTask:
 No orchestrator, no planner, no adapter layer. The app calls the engine
 directly. The LLM plans inline within the agent loop.
 
+### Provider And Model Selection
+
+`mscli` now converges provider connection and model selection into `/model`:
+
+```text
+/model
+  -> merged provider catalog:
+       builtin MindSpore CLI Free
+       + models.dev cache/remote catalog
+       + ~/.mscli/config.json extra_providers
+  -> provider pane adds or refreshes connected providers in ~/.mscli/auth.json
+  -> model pane loads usable providers:
+       MindSpore CLI Free when logged in
+       + providers connected in ~/.mscli/auth.json
+  -> persist active/recent/favorite model refs in ~/.mscli/model.json
+  -> translate logical provider selection into current configs.ModelConfig
+  -> Application.SetProvider(...)
+```
+
+Local state files:
+
+- `~/.mscli/credentials.json`: MindSpore CLI login only
+- `~/.mscli/auth.json`: connected provider auth only
+- `~/.mscli/model.json`: active/recent/favorite model refs
+- `~/.mscli/cached/models-dev-api.json`: models.dev cache fallback
+- `~/.mscli/config.json`: deprecated model compatibility plus `extra_providers`
+
 ### Skill activation
 
 Skills are embedded in the binary at build time from the `mindspore-skills` repo.
