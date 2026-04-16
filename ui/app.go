@@ -202,6 +202,7 @@ type App struct {
 	trainFocus    model.TrainPanelID
 	issueView     model.IssueViewState
 	bootActive    bool
+	startupBannerSuppressed bool
 	bootHighlight int
 	bannerPrinted bool
 	queuedInputs  []string
