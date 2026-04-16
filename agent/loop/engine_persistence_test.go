@@ -10,6 +10,7 @@ import (
 
 	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
+	"github.com/mindspore-lab/mindspore-cli/permission"
 	"github.com/mindspore-lab/mindspore-cli/tools"
 )
 
@@ -128,6 +129,36 @@ func (t cancelAwareStreamingStubTool) ExecuteStream(ctx context.Context, raw jso
 	<-ctx.Done()
 	return tools.StringResultWithSummary(t.content, "interrupted"), nil
 }
+
+type rejectingPermissionService struct{}
+
+func (rejectingPermissionService) Request(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
+func (rejectingPermissionService) Check(string, string) permission.PermissionLevel {
+	return permission.PermissionAsk
+}
+
+func (rejectingPermissionService) CheckCommand(string) permission.PermissionLevel {
+	return permission.PermissionAsk
+}
+
+func (rejectingPermissionService) CheckPath(string) permission.PermissionLevel {
+	return permission.PermissionAsk
+}
+
+func (rejectingPermissionService) Grant(string, permission.PermissionLevel) {}
+
+func (rejectingPermissionService) GrantCommand(string, permission.PermissionLevel) {}
+
+func (rejectingPermissionService) GrantPath(string, permission.PermissionLevel) {}
+
+func (rejectingPermissionService) Revoke(string) {}
+
+func (rejectingPermissionService) RevokeCommand(string) {}
+
+func (rejectingPermissionService) RevokePath(string) {}
 
 func newPersistenceRecorder(log *[]string) *TrajectoryRecorder {
 	last := ""
@@ -265,6 +296,83 @@ func TestRunPersistsToolResultBeforeToolRender(t *testing.T) {
 
 	requireOrder(t, log, "tool_call:read", "snapshot:tool_call:read", "ui:ToolCallStart")
 	requireOrder(t, log, "tool_result:read", "snapshot:tool_result:read", "ui:ToolRead")
+}
+
+func TestRunUsesClaudeStyleRejectMessageForDeniedWriteTool(t *testing.T) {
+	args, err := json.Marshal(map[string]string{
+		"path":    "note.md",
+		"content": "# note\n",
+	})
+	if err != nil {
+		t.Fatalf("marshal tool args: %v", err)
+	}
+
+	provider := &scriptedStreamProvider{
+		responses: []*llm.CompletionResponse{
+			{
+				ToolCalls: []llm.ToolCall{{
+					ID:   "call-write-1",
+					Type: "function",
+					Function: llm.ToolCallFunc{
+						Name:      "write",
+						Arguments: args,
+					},
+				}},
+				FinishReason: llm.FinishToolCalls,
+			},
+			{
+				Content:      "waiting for user direction",
+				FinishReason: llm.FinishStop,
+			},
+		},
+	}
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(stubTool{name: "write", content: "should not execute", summary: "unused"})
+
+	engine := NewEngine(EngineConfig{
+		MaxIterations: 2,
+		ContextWindow: 4096,
+	}, provider, registry)
+	engine.SetPermissionService(rejectingPermissionService{})
+
+	var toolResult string
+	engine.SetTrajectoryRecorder(&TrajectoryRecorder{
+		RecordUserInput:  func(string) error { return nil },
+		RecordAssistant:  func(string) error { return nil },
+		RecordToolCall:   func(llm.ToolCall) error { return nil },
+		RecordToolResult: func(_ llm.ToolCall, content string) error { toolResult = content; return nil },
+		PersistSnapshot:  func() error { return nil },
+	})
+
+	events, err := engine.Run(Task{
+		ID:          "write-rejected",
+		Description: "write a markdown note",
+	})
+	if err != nil {
+		t.Fatalf("Run() failed: %v", err)
+	}
+
+	if !strings.Contains(toolResult, "The user doesn't want to proceed with this tool use") {
+		t.Fatalf("tool result missing reject guidance, got %q", toolResult)
+	}
+	if !strings.Contains(toolResult, "STOP what you are doing and ask the user how to proceed") {
+		t.Fatalf("tool result missing ask-user guidance, got %q", toolResult)
+	}
+
+	var sawWriteReject bool
+	for _, ev := range events {
+		if ev.Type != EventToolError {
+			continue
+		}
+		if ev.ToolName == "write" && strings.Contains(ev.Message, "rejected by user") {
+			sawWriteReject = true
+			break
+		}
+	}
+	if !sawWriteReject {
+		t.Fatalf("expected ToolError event for denied write, got %#v", events)
+	}
 }
 
 func TestRunShellStreamingEmitsLiveCommandEvents(t *testing.T) {

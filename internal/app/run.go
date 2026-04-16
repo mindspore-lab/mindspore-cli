@@ -688,6 +688,7 @@ var loopEventTypeMap = map[string]model.EventType{
 	"ContextCompacted":    model.ContextNotice,
 	"ToolRead":            model.ToolRead,
 	"ToolGrep":            model.ToolGrep,
+	"ToolListDir":         model.ToolListDir,
 	"ToolGlob":            model.ToolGlob,
 	"ToolEdit":            model.ToolEdit,
 	"ToolWrite":           model.ToolWrite,

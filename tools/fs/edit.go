@@ -28,7 +28,7 @@ func (t *EditTool) Name() string {
 
 // Description returns the tool description.
 func (t *EditTool) Description() string {
-	return "Edit a file by replacing specific text. Use this for making targeted changes. The old_string must match exactly including whitespace."
+	return "Edit a file by replacing one exact text block. To edit files use edit instead of sed or awk. Use this for targeted file changes after reading the file first. The old_string must match exactly, including whitespace and newlines. Do not use shell redirection, tee, sed -i, or heredoc as a substitute for edit."
 }
 
 // Schema returns the tool parameter schema.

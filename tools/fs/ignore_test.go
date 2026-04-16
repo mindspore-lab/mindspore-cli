@@ -102,6 +102,34 @@ func TestGlobToolSupportsOffsetAndLimit(t *testing.T) {
 	}
 }
 
+func TestGlobToolDoubleStarMatchesRootAndNestedFiles(t *testing.T) {
+	workDir := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(workDir, "train.py"), "print('root')\n")
+	mustWriteTestFile(t, filepath.Join(workDir, "nested", "train.py"), "print('nested')\n")
+
+	params, err := json.Marshal(map[string]any{
+		"pattern": "**/train.py",
+		"path":    ".",
+	})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	result, err := NewGlobTool(workDir).Execute(context.Background(), params)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("Execute result error = %v, want nil", result.Error)
+	}
+	if !strings.Contains(result.Content, "train.py") {
+		t.Fatalf("glob content = %q, want root train.py match", result.Content)
+	}
+	if !strings.Contains(result.Content, filepath.Join("nested", "train.py")) {
+		t.Fatalf("glob content = %q, want nested train.py match", result.Content)
+	}
+}
+
 func TestGlobToolDefaultsLimitTo100(t *testing.T) {
 	workDir := t.TempDir()
 	for i := 0; i < 120; i++ {

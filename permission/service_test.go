@@ -150,6 +150,49 @@ func TestRuleConfig_BashOperatorAwareMatching(t *testing.T) {
 	}
 }
 
+func TestRequest_ReadOnlyShellCommandBypassesInteractivePrompt(t *testing.T) {
+	svc := NewDefaultPermissionService(configs.PermissionsConfig{
+		DefaultLevel: "ask",
+	})
+	svc.SetUI(stubPermissionUI{granted: false, remember: false})
+
+	granted, err := svc.Request(context.Background(), "shell", "ls -la", "")
+	if err != nil {
+		t.Fatalf("Request() err = %v", err)
+	}
+	if !granted {
+		t.Fatal("Request() granted = false, want true for read-only shell command")
+	}
+}
+
+func TestCheck_ShellFileAuthoringDoesNotInheritReadOnlyAllowance(t *testing.T) {
+	svc := NewDefaultPermissionService(configs.PermissionsConfig{
+		DefaultLevel: "ask",
+	})
+
+	if got := svc.Check("shell", "echo hi > note.md"); got != PermissionAsk {
+		t.Fatalf("Check(shell redirect write) = %v, want %v", got, PermissionAsk)
+	}
+	if got := svc.Check("shell", "cat <<'EOF' > note.md\nhello\nEOF"); got != PermissionAsk {
+		t.Fatalf("Check(shell heredoc write) = %v, want %v", got, PermissionAsk)
+	}
+}
+
+func TestRequest_ShellFileAuthoringRespectsWriteDeny(t *testing.T) {
+	svc := NewDefaultPermissionService(configs.PermissionsConfig{
+		DefaultLevel: "ask",
+	})
+	svc.Grant("write", PermissionDeny)
+
+	granted, err := svc.Request(context.Background(), "shell", "cat <<'EOF' > note.md\nhello\nEOF", "")
+	if err == nil {
+		t.Fatal("Request() err = nil, want denial error")
+	}
+	if granted {
+		t.Fatal("Request() granted = true, want false")
+	}
+}
+
 func TestRuleConfig_BashFindPatternMatchesQuoteAndGroupingVariants(t *testing.T) {
 	svc := NewDefaultPermissionService(configs.PermissionsConfig{
 		DefaultLevel: "ask",

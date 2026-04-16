@@ -442,8 +442,8 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 		return err
 	}
 	if !granted {
-		errMsg := fmt.Sprintf("Permission denied for tool: %s", toolName)
-		notice, err := ex.addToolResultWithFallback(tc.ID, errMsg)
+		toolResultMsg := "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and ask the user how to proceed."
+		notice, err := ex.addToolResultWithFallback(tc.ID, toolResultMsg)
 		if err != nil {
 			return err
 		}
@@ -451,7 +451,10 @@ func (ex *executor) executeToolCall(ctx context.Context, tc llm.ToolCall) error 
 			return err
 		}
 		ex.emitContextCompactionNotice(notice)
-		ex.addEvent(NewEvent(EventToolError, errMsg))
+		errEv := NewEvent(EventToolError, "rejected by user")
+		errEv.ToolName = toolName
+		errEv.ToolCallID = tc.ID
+		ex.addEvent(errEv)
 		return nil
 	}
 
@@ -574,6 +577,7 @@ func interruptedToolResultContent(partialOutput string) string {
 var toolEventMap = map[string]string{
 	"read":       EventToolRead,
 	"grep":       EventToolGrep,
+	"list_dir":   EventToolListDir,
 	"glob":       EventToolGlob,
 	"edit":       EventToolEdit,
 	"write":      EventToolWrite,
@@ -785,6 +789,8 @@ func describeToolCall(toolName string, raw json.RawMessage) string {
 		return getString("command")
 	case "read", "edit", "write":
 		return getString("path", "file_path")
+	case "list_dir":
+		return getString("path")
 	case "grep":
 		pattern := getString("pattern")
 		path := getString("path")
@@ -825,6 +831,7 @@ You help ML engineers and AI infra developers get training jobs running, diagnos
 
 You have access to the following tools:
 - read: Read file contents
+- list_dir: List directory contents and structure
 - write: Create or overwrite files
 - edit: Edit files by replacing text
 - grep: Search for patterns in files
@@ -836,12 +843,13 @@ Guidelines:
 1. Use tools to gather information before making changes
 2. Always read files before editing them
 3. Make minimal, focused changes
-4. Use grep and glob to explore the codebase
+4. Prefer dedicated tools over shell whenever a dedicated tool can do the job
 5. Run tests with shell to verify changes
-6. Before any write call, verify arguments contain BOTH "path" and "content"; if either is missing, do not call write yet.
-7. Never call write with empty JSON arguments ({}).
-8. When a user describes a training problem (failure, accuracy, performance), load the appropriate diagnosis skill.
-9. When a user asks to migrate or port a model, load migrate-agent.
+6. If the user rejects a tool permission request, do not try to bypass that denial with another tool or shell pattern. Stop and ask the user how to proceed.
+7. Before any write call, verify arguments contain BOTH "path" and "content"; if either is missing, do not call write yet.
+8. Never call write with empty JSON arguments ({}).
+9. When a user describes a training problem (failure, accuracy, performance), load the appropriate diagnosis skill.
+10. When a user asks to migrate or port a model, load migrate-agent.
 
 IMPORTANT: When you have gathered enough information to answer the user's question, you MUST provide your final answer directly WITHOUT using any more tools. Do not keep calling tools indefinitely - provide a clear, concise response once you have the information needed.
 

@@ -68,6 +68,8 @@ func ruleFromToolLiteral(tool string) string {
 		return "Bash"
 	case "read", "grep", "glob":
 		return "Read"
+	case "list_dir":
+		return "Read"
 	case "edit":
 		return "Edit"
 	case "write":
@@ -133,7 +135,7 @@ func matchRule(rule PermissionRule, tool, action, path string) bool {
 
 func isReadTool(tool string) bool {
 	switch tool {
-	case "read", "glob", "grep":
+	case "read", "glob", "grep", "list_dir":
 		return true
 	default:
 		return false

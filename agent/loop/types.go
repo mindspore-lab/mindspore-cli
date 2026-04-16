@@ -68,6 +68,7 @@ const (
 	EventTokenUpdate         = "TokenUpdate"
 	EventToolRead            = "ToolRead"
 	EventToolGrep            = "ToolGrep"
+	EventToolListDir         = "ToolListDir"
 	EventToolGlob            = "ToolGlob"
 	EventToolEdit            = "ToolEdit"
 	EventToolWrite           = "ToolWrite"

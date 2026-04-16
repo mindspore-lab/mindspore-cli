@@ -32,7 +32,7 @@ func (t *ShellTool) Name() string {
 
 // Description returns the tool description.
 func (t *ShellTool) Description() string {
-	return "Execute a shell command. Use this for running tests, building, git operations, etc. Commands have a timeout and destructive operations may require confirmation."
+	return "Execute a shell command for tasks that truly require a shell, such as running tests, builds, git commands, or launching programs. Reserve using the shell exclusively for system commands and terminal operations that require shell execution. If you are unsure and there is a relevant dedicated tool, default to using the dedicated tool and only fallback on using the shell if it is absolutely necessary. Prefer dedicated tools for file reading, file discovery, directory structure exploration, and file editing. Do not use shell redirection, heredoc, tee, sed -i, or similar patterns to create or edit files when write or edit can do the job."
 }
 
 // Schema returns the tool parameter schema.

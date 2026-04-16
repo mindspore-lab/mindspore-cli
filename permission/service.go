@@ -175,8 +175,19 @@ func (s *DefaultPermissionService) SetStore(store PermissionStore) {
 
 // Request requests permission.
 func (s *DefaultPermissionService) Request(ctx context.Context, tool, action, path string) (bool, error) {
+	shellIntent := shellIntentGeneral
+	if tool == "shell" {
+		shellIntent = classifyShellCommand(action)
+		if shellIntent == shellIntentFileAuthoring && (s.Check("write", "") == PermissionDeny || s.Check("edit", "") == PermissionDeny) {
+			return false, fmt.Errorf("shell file authoring is blocked; use write/edit tool permissions")
+		}
+	}
+
 	// 1. 检查工具级别权限
 	toolLevel := s.Check(tool, action)
+	if tool == "shell" && shellIntent == shellIntentReadOnlyExplore {
+		toolLevel = PermissionAllowAlways
+	}
 	level := toolLevel
 	cmdLevel := PermissionAllowAlways
 	pathLevel := PermissionAllowAlways
@@ -313,7 +324,7 @@ func (s *DefaultPermissionService) Check(tool, action string) PermissionLevel {
 	}
 
 	// Check read/write patterns
-	if tool == "read" || tool == "glob" {
+	if tool == "read" || tool == "glob" || tool == "grep" || tool == "list_dir" {
 		return PermissionAllowAlways
 	}
 
@@ -371,6 +382,90 @@ var safeReadOnlyCommands = map[string]bool{
 	"md5sum": true, "sha256sum": true, "sha1sum": true,
 	"tar": true, "gzip": true, "gunzip": true, "zcat": true,
 	"true": true, "false": true, "test": true,
+}
+
+type shellIntent string
+
+const (
+	shellIntentGeneral         shellIntent = "general"
+	shellIntentReadOnlyExplore shellIntent = "read_only_explore"
+	shellIntentFileAuthoring   shellIntent = "file_authoring"
+)
+
+var readOnlyExploreCommands = map[string]bool{
+	"ls": true, "ll": true, "la": true,
+	"find": true, "tree": true, "pwd": true,
+	"stat": true, "realpath": true, "basename": true, "dirname": true,
+	"rg": true,
+}
+
+func classifyShellCommand(command string) shellIntent {
+	command = normalizeCommandInput(command)
+	if strings.TrimSpace(command) == "" {
+		return shellIntentGeneral
+	}
+
+	parts := splitShellCommand(command)
+	if len(parts) == 0 {
+		parts = []string{command}
+	}
+
+	allReadOnly := true
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if isShellFileAuthoringCommand(part) {
+			return shellIntentFileAuthoring
+		}
+		if !isReadOnlyExploreCommand(part) {
+			allReadOnly = false
+		}
+	}
+	if allReadOnly {
+		return shellIntentReadOnlyExplore
+	}
+	return shellIntentGeneral
+}
+
+func isReadOnlyExploreCommand(command string) bool {
+	command = strings.TrimSpace(normalizeCommandInput(command))
+	if command == "" || isShellFileAuthoringCommand(command) {
+		return false
+	}
+	name := extractCommandName(command)
+	if !readOnlyExploreCommands[name] {
+		return false
+	}
+	if name == "rg" && !strings.Contains(command, "--files") {
+		return false
+	}
+	return true
+}
+
+func isShellFileAuthoringCommand(command string) bool {
+	command = strings.TrimSpace(normalizeCommandInput(command))
+	if command == "" {
+		return false
+	}
+	lower := strings.ToLower(command)
+	if strings.Contains(command, ">>") || strings.Contains(command, " >") || strings.Contains(command, "> ") {
+		return true
+	}
+	if strings.Contains(command, "<<") {
+		return true
+	}
+	if strings.Contains(lower, " tee ") || strings.HasPrefix(lower, "tee ") {
+		return true
+	}
+	if strings.HasPrefix(lower, "sed ") && strings.Contains(lower, " -i") {
+		return true
+	}
+	if strings.HasPrefix(lower, "perl ") && strings.Contains(lower, "-pi") {
+		return true
+	}
+	return false
 }
 
 func (s *DefaultPermissionService) checkShellCommandSingle(command string) PermissionLevel {

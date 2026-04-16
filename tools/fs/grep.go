@@ -30,7 +30,7 @@ func (t *GrepTool) Name() string {
 
 // Description returns the tool description.
 func (t *GrepTool) Description() string {
-	return "Search for patterns in files using regular expressions. Returns matching lines with file names and line numbers."
+	return "Search file contents using regular expressions and return matching lines with file names and line numbers. To search the content of files, use grep instead of grep or rg. Use this for content search only. Prefer glob for finding files by path pattern and read after you know the exact file to inspect."
 }
 
 // Schema returns the tool parameter schema.

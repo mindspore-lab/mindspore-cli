@@ -29,7 +29,7 @@ func (t *WriteTool) Name() string {
 
 // Description returns the tool description.
 func (t *WriteTool) Description() string {
-	return "Create a new file or overwrite an existing file with new content. Arguments must be a JSON object containing required fields path and content."
+	return "Create a new file or overwrite an existing file with full new content. To create files use write instead of cat with heredoc or echo redirection. Use this only for file authoring. Arguments must be a JSON object containing the exact required fields path and content. Do not use file_path or filename unless handling legacy compatibility, and do not use shell redirection, tee, or heredoc to create files instead of write."
 }
 
 // Schema returns the tool parameter schema.

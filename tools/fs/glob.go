@@ -30,7 +30,7 @@ func (t *GlobTool) Name() string {
 
 // Description returns the tool description.
 func (t *GlobTool) Description() string {
-	return "Find files matching a glob pattern. Use this to explore project structure and find specific file types."
+	return "Find files by file name or path pattern. To search for files use glob instead of find or ls. Use this when you know the kind of path you want, such as '**/*.go' or '**/train.py'. Prefer list_dir for summarizing directory structure and grep for searching file contents."
 }
 
 // Schema returns the tool parameter schema.
@@ -208,6 +208,11 @@ func compileDoubleStarPattern(pattern string) (*regexp.Regexp, error) {
 		switch ch {
 		case '*':
 			if i+1 < len(pattern) && pattern[i+1] == '*' {
+				if i+2 < len(pattern) && pattern[i+2] == '/' {
+					b.WriteString(`(?:.*/)?`)
+					i += 2
+					continue
+				}
 				b.WriteString(".*")
 				i++
 				continue

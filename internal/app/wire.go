@@ -666,6 +666,7 @@ func initTools(cfg *configs.Config, workDir string) *tools.Registry {
 	registry := tools.NewRegistry()
 
 	registry.MustRegister(fs.NewReadTool(workDir))
+	registry.MustRegister(fs.NewListDirTool(workDir))
 	registry.MustRegister(fs.NewWriteTool(workDir))
 	registry.MustRegister(fs.NewEditTool(workDir))
 	registry.MustRegister(fs.NewGrepTool(workDir))

@@ -514,7 +514,7 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message) tea.Cmd
 		return nil
 	case model.CmdFinished:
 		return a.printResolvedTool(ev)
-	case model.ToolRead, model.ToolGrep, model.ToolGlob, model.ToolEdit, model.ToolWrite, model.ToolSkill, model.ToolInterrupted, model.ToolWarning, model.ToolError, model.ToolReplay:
+	case model.ToolRead, model.ToolGrep, model.ToolListDir, model.ToolGlob, model.ToolEdit, model.ToolWrite, model.ToolSkill, model.ToolInterrupted, model.ToolWarning, model.ToolError, model.ToolReplay:
 		return a.printResolvedTool(ev)
 	case model.ClearScreen:
 		return clearMessage()

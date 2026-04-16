@@ -87,6 +87,7 @@ const (
 	TokenUpdate          EventType = "TokenUpdate"
 	ToolRead             EventType = "ToolRead"
 	ToolGrep             EventType = "ToolGrep"
+	ToolListDir          EventType = "ToolListDir"
 	ToolGlob             EventType = "ToolGlob"
 	ToolEdit             EventType = "ToolEdit"
 	ToolWrite            EventType = "ToolWrite"

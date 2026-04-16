@@ -319,6 +319,26 @@ func TestConvertLoopEvent_PreservesMeta(t *testing.T) {
 	}
 }
 
+func TestConvertLoopEvent_MapsToolListDir(t *testing.T) {
+	ev := loop.Event{
+		Type:     "ToolListDir",
+		ToolName: "list_dir",
+		Message:  "showing 1-2 of 2 entries\ncmd/\nREADME.md",
+		Summary:  "showing 1-2 of 2 entries",
+	}
+
+	got := convertLoopEvent(ev)
+	if got == nil {
+		t.Fatal("convertLoopEvent(ToolListDir) = nil, want non-nil")
+	}
+	if got.Type != model.ToolListDir {
+		t.Fatalf("convertLoopEvent type = %v, want %v", got.Type, model.ToolListDir)
+	}
+	if got.Message != ev.Message {
+		t.Fatalf("convertLoopEvent message = %q, want %q", got.Message, ev.Message)
+	}
+}
+
 func TestConvertLoopEvent_MapsToolInterrupted(t *testing.T) {
 	ev := loop.Event{
 		Type:       loop.EventToolInterrupted,

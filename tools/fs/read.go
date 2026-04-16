@@ -29,7 +29,7 @@ func (t *ReadTool) Name() string {
 
 // Description returns the tool description.
 func (t *ReadTool) Description() string {
-	return "Read the contents of a file. Use this when you need to examine file contents."
+	return "Read the contents of a file when you already know the exact file path. To read files use read instead of cat, head, tail, or sed. Prefer list_dir to inspect directory structure, glob to find files by path pattern, and grep to search file contents across files."
 }
 
 // Schema returns the tool parameter schema.

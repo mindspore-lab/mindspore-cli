@@ -1196,6 +1196,18 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			Display: model.DisplayCollapsed, Content: ev.Message, Summary: ev.Summary,
 		})
 
+	case model.ToolListDir:
+		a.replayWait = nil
+		a.backgroundModelWork = false
+		a.state = a.clearThinking()
+		stats := a.state.Stats
+		stats.Searches++
+		a.state = a.state.WithStats(stats)
+		a.state = a.resolveToolEvent(ev, model.Message{
+			Kind: model.MsgTool, ToolName: "List", ToolArgs: ev.Message,
+			Display: model.DisplayCollapsed, Content: ev.Message, Summary: ev.Summary,
+		})
+
 	case model.ToolGlob:
 		a.replayWait = nil
 		a.backgroundModelWork = false
@@ -2618,7 +2630,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			Summary:    firstNonEmpty(ev.Summary, pending.Summary),
 			Meta:       firstNonNilMeta(ev.Meta, pending.Meta),
 		}
-	case model.ToolGrep, model.ToolGlob, model.ToolSkill:
+	case model.ToolGrep, model.ToolListDir, model.ToolGlob, model.ToolSkill:
 		return model.Message{
 			Kind:       model.MsgTool,
 			ToolName:   pending.ToolName,
@@ -2704,6 +2716,8 @@ func displayToolName(name string) string {
 		return "Read"
 	case "grep":
 		return "Grep"
+	case "list_dir":
+		return "List"
 	case "glob":
 		return "Glob"
 	case "edit":
