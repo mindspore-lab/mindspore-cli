@@ -150,6 +150,24 @@ func TestRuleConfig_BashOperatorAwareMatching(t *testing.T) {
 	}
 }
 
+func TestAskUserQuestion_DefaultAllowButExplicitRulesStillApply(t *testing.T) {
+	svc := NewDefaultPermissionService(configs.PermissionsConfig{
+		DefaultLevel: "ask",
+		Deny:         []string{"AskUserQuestion"},
+	})
+
+	if got := svc.Check("AskUserQuestion", ""); got != PermissionDeny {
+		t.Fatalf("Check(AskUserQuestion) = %v, want %v with explicit deny rule", got, PermissionDeny)
+	}
+
+	plain := NewDefaultPermissionService(configs.PermissionsConfig{
+		DefaultLevel: "ask",
+	})
+	if got := plain.Check("AskUserQuestion", ""); got != PermissionAllowAlways {
+		t.Fatalf("default Check(AskUserQuestion) = %v, want %v", got, PermissionAllowAlways)
+	}
+}
+
 func TestRuleConfig_BashFindPatternMatchesQuoteAndGroupingVariants(t *testing.T) {
 	svc := NewDefaultPermissionService(configs.PermissionsConfig{
 		DefaultLevel: "ask",

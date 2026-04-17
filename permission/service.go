@@ -312,6 +312,10 @@ func (s *DefaultPermissionService) Check(tool, action string) PermissionLevel {
 		return level
 	}
 
+	if strings.EqualFold(strings.TrimSpace(tool), "AskUserQuestion") {
+		return PermissionAllowAlways
+	}
+
 	// Check read/write patterns
 	if tool == "read" || tool == "glob" {
 		return PermissionAllowAlways

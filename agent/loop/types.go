@@ -72,6 +72,7 @@ const (
 	EventToolEdit            = "ToolEdit"
 	EventToolWrite           = "ToolWrite"
 	EventToolSkill           = "ToolSkill"
+	EventToolAskUserQuestion = "ToolAskUserQuestion"
 	EventAnalysisReady       = "AnalysisReady"
 	EventDone                = "Done"
 )

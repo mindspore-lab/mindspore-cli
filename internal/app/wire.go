@@ -24,6 +24,7 @@ import (
 	"github.com/mindspore-lab/mindspore-cli/permission"
 	rshell "github.com/mindspore-lab/mindspore-cli/runtime/shell"
 	"github.com/mindspore-lab/mindspore-cli/tools"
+	askuserquestion "github.com/mindspore-lab/mindspore-cli/tools/ask_user_question"
 	"github.com/mindspore-lab/mindspore-cli/tools/fs"
 	"github.com/mindspore-lab/mindspore-cli/tools/shell"
 	skillstool "github.com/mindspore-lab/mindspore-cli/tools/skills"
@@ -53,6 +54,7 @@ type Application struct {
 	ctxManager              *agentctx.Manager
 	permService             permission.PermissionService
 	permissionUI            *PermissionPromptUI
+	questionUI              *AskUserQuestionPromptUI
 	permissionSettingsIssue *permissionSettingsIssue
 	session                 *session.Session
 	replayBacklog           []model.Event
@@ -287,7 +289,9 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	engine.SetLLMDebugDumper(llmDebugDumper)
 	permService := permission.NewDefaultPermissionService(config.Permissions)
 	permissionUI := NewPermissionPromptUI(eventCh)
+	questionUI := NewAskUserQuestionPromptUI(eventCh)
 	permService.SetUI(permissionUI)
+	toolRegistry.MustRegister(askuserquestion.NewTool(questionUI))
 	var (
 		permSettingsIssue *permissionSettingsIssue
 		sessionStoreReady bool
@@ -324,6 +328,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		ctxManager:              ctxManager,
 		permService:             permService,
 		permissionUI:            permissionUI,
+		questionUI:              questionUI,
 		permissionSettingsIssue: permSettingsIssue,
 		session:                 runtimeSession,
 		replayBacklog:           replayBacklog,

@@ -205,6 +205,7 @@ type App struct {
 	queuedInputs  []string
 
 	permissionPrompt *permissionPromptState
+	askUserQuestionPrompt *askUserQuestionPromptState
 	permissionsView  *permissionsViewState
 	toolsExpanded    *bool
 	modelPicker      *model.SelectionPopup
@@ -557,6 +558,10 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		default:
 			return a, nil
 		}
+	}
+
+	if a.askUserQuestionPrompt != nil {
+		return a.handleAskUserQuestionKey(msg)
 	}
 
 	if a.permissionsView != nil {
@@ -1131,6 +1136,18 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		a.state = a.clearThinking()
 		a.permissionPrompt = toPermissionPromptState(ev)
 
+	case model.AskUserQuestionPrompt:
+		a.replayWait = nil
+		a.backgroundModelWork = false
+		a.state = a.clearThinking()
+		a.askUserQuestionPrompt = toAskUserQuestionPromptState(ev)
+
+	case model.AskUserQuestionClose:
+		a.replayWait = nil
+		a.backgroundModelWork = false
+		a.state = a.clearThinking()
+		a.askUserQuestionPrompt = nil
+
 	case model.PermissionsView:
 		a.replayWait = nil
 		a.backgroundModelWork = false
@@ -1248,6 +1265,16 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		} else {
 			a.state = a.state.WithMessage(msg)
 		}
+
+	case model.ToolAskUserQuestion:
+		a.replayWait = nil
+		a.backgroundModelWork = false
+		a.state = a.clearThinking()
+		a.askUserQuestionPrompt = nil
+		a.state = a.resolveToolEvent(ev, model.Message{
+			Kind: model.MsgTool, ToolName: displayToolName(ev.ToolName), ToolArgs: ev.Message,
+			Display: model.DisplayCollapsed, Content: ev.Message, Summary: ev.Summary,
+		})
 
 	case model.ToolWarning:
 		a.replayWait = nil
@@ -2416,6 +2443,8 @@ func (a App) pendingToolMessage(ev model.Event) model.Message {
 	case "load_skill":
 		toolName = "Skill"
 		summary = "loading skill..."
+	case "AskUserQuestion":
+		summary = "waiting for answers..."
 	}
 	content := ev.Message
 	if ev.ToolName == "shell" && !strings.HasPrefix(strings.TrimSpace(content), "$ ") {
@@ -2618,7 +2647,7 @@ func finalizeToolMessage(pending model.Message, ev model.Event) model.Message {
 			Summary:    firstNonEmpty(ev.Summary, pending.Summary),
 			Meta:       firstNonNilMeta(ev.Meta, pending.Meta),
 		}
-	case model.ToolGrep, model.ToolGlob, model.ToolSkill:
+	case model.ToolGrep, model.ToolGlob, model.ToolSkill, model.ToolAskUserQuestion:
 		return model.Message{
 			Kind:       model.MsgTool,
 			ToolName:   pending.ToolName,

@@ -579,6 +579,7 @@ var toolEventMap = map[string]string{
 	"write":      EventToolWrite,
 	"shell":      EventCmdFinished,
 	"load_skill": EventToolSkill,
+	"AskUserQuestion": EventToolAskUserQuestion,
 }
 
 func (ex *executor) addStreamingToolEvent(toolName, toolCallID string, update tools.StreamEvent) {
@@ -809,13 +810,47 @@ func describeToolCall(toolName string, raw json.RawMessage) string {
 		}
 	case "load_skill":
 		return getString("name")
-	default:
-		preview := strings.TrimSpace(string(raw))
-		if preview == "" {
-			return toolName
+	case "AskUserQuestion":
+		type questionArg struct {
+			Header   string `json:"header"`
+			Question string `json:"question"`
 		}
-		return preview
+		var args struct {
+			Questions []questionArg `json:"questions"`
+		}
+		if err := json.Unmarshal(raw, &args); err == nil {
+			parts := make([]string, 0, len(args.Questions))
+			for _, question := range args.Questions {
+				if header := strings.TrimSpace(question.Header); header != "" {
+					parts = append(parts, header)
+					continue
+				}
+				if text := strings.TrimSpace(question.Question); text != "" {
+					parts = append(parts, text)
+				}
+			}
+			switch len(parts) {
+			case 0:
+				switch count := len(args.Questions); count {
+				case 1:
+					return "1 question"
+				case 0:
+				default:
+					return fmt.Sprintf("%d questions", count)
+				}
+			case 1:
+				return parts[0]
+			default:
+				return fmt.Sprintf("%s (+%d more)", parts[0], len(parts)-1)
+			}
+		}
 	}
+
+	preview := strings.TrimSpace(string(raw))
+	if preview == "" {
+		return toolName
+	}
+	return preview
 }
 
 func DefaultSystemPrompt() string {
@@ -830,6 +865,7 @@ You have access to the following tools:
 - grep: Search for patterns in files
 - glob: Find files matching patterns
 - shell: Execute shell commands
+- AskUserQuestion: Ask the user clarifying multiple-choice questions
 - load_skill: Load a skill's detailed instructions. Call this when the user's task matches an available skill listed below.
 
 Guidelines:
@@ -842,6 +878,7 @@ Guidelines:
 7. Never call write with empty JSON arguments ({}).
 8. When a user describes a training problem (failure, accuracy, performance), load the appropriate diagnosis skill.
 9. When a user asks to migrate or port a model, load migrate-agent.
+10. If you are blocked on user preferences, ambiguous requirements, or implementation choices, use AskUserQuestion instead of guessing.
 
 IMPORTANT: When you have gathered enough information to answer the user's question, you MUST provide your final answer directly WITHOUT using any more tools. Do not keep calling tools indefinitely - provide a clear, concise response once you have the information needed.
 

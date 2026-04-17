@@ -186,6 +186,9 @@ func (a *Application) processInput(input string) {
 	if a.permissionUI != nil && a.permissionUI.HandleInput(trimmed) {
 		return
 	}
+	if a.questionUI != nil && a.questionUI.HandleInput(trimmed) {
+		return
+	}
 
 	if strings.HasPrefix(trimmed, modelSetupToken+" ") {
 		parts := strings.Fields(trimmed)
@@ -692,6 +695,7 @@ var loopEventTypeMap = map[string]model.EventType{
 	"ToolEdit":            model.ToolEdit,
 	"ToolWrite":           model.ToolWrite,
 	"ToolSkill":           model.ToolSkill,
+	"ToolAskUserQuestion": model.ToolAskUserQuestion,
 	"ToolError":           model.ToolError,
 	"ToolInterrupted":     model.ToolInterrupted,
 	"CmdStarted":          model.CmdStarted,
