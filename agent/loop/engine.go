@@ -879,6 +879,7 @@ Guidelines:
 8. When a user describes a training problem (failure, accuracy, performance), load the appropriate diagnosis skill.
 9. When a user asks to migrate or port a model, load migrate-agent.
 10. If you are blocked on user preferences, ambiguous requirements, or implementation choices, use AskUserQuestion instead of guessing.
+11. When using AskUserQuestion, pass one to four concrete options and never add an explicit Other or manual-input option because the UI provides Other automatically.
 
 IMPORTANT: When you have gathered enough information to answer the user's question, you MUST provide your final answer directly WITHOUT using any more tools. Do not keep calling tools indefinitely - provide a clear, concise response once you have the information needed.
 

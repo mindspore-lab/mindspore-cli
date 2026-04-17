@@ -64,7 +64,7 @@ func (t *Tool) Name() string {
 
 // Description returns the tool description for the model.
 func (t *Tool) Description() string {
-	return "Ask the user one to four multiple-choice questions to clarify requirements, gather preferences, or choose between implementation options. Users can always pick Other to provide custom text."
+	return "Ask the user one to four multiple-choice questions to clarify requirements, gather preferences, or choose between implementation options. Provide one to four concrete options per question and never add an explicit Other/manual-input option because the UI always provides Other for custom text."
 }
 
 // Schema returns the nested JSON schema used for tool calling.
@@ -97,7 +97,7 @@ func (t *Tool) Schema() llm.ToolSchema {
 			},
 			"options": {
 				Type:        "array",
-				Description: "Two to four options for the user to choose from.",
+				Description: "One to four concrete options for the user to choose from. Do not include an explicit Other or manual-input option because the UI adds Other automatically.",
 				Items:       &optionSchema,
 			},
 			"multiSelect": {
@@ -127,6 +127,7 @@ func (t *Tool) Execute(ctx context.Context, params json.RawMessage) (*tools.Resu
 	if err := tools.ParseParams(params, &req); err != nil {
 		return tools.ErrorResult(err), nil
 	}
+	req = normalizeRequest(req)
 	if err := validateRequest(req); err != nil {
 		return tools.ErrorResult(err), nil
 	}
@@ -167,6 +168,60 @@ func (t *Tool) Execute(ctx context.Context, params json.RawMessage) (*tools.Resu
 	return tools.StringResultWithSummary(strings.Join(lines, "\n"), summary), nil
 }
 
+func normalizeRequest(req PromptRequest) PromptRequest {
+	normalized := PromptRequest{
+		Questions: make([]Question, 0, len(req.Questions)),
+	}
+	for _, question := range req.Questions {
+		normalized = appendNormalizedQuestion(normalized, question)
+	}
+	return normalized
+}
+
+func appendNormalizedQuestion(req PromptRequest, question Question) PromptRequest {
+	req.Questions = append(req.Questions, Question{
+		Header:      strings.TrimSpace(question.Header),
+		Question:    strings.TrimSpace(question.Question),
+		Options:     normalizeQuestionOptions(question.Options),
+		MultiSelect: question.MultiSelect,
+	})
+	return req
+}
+
+func normalizeQuestionOptions(options []QuestionOption) []QuestionOption {
+	normalized := make([]QuestionOption, 0, len(options))
+	for _, option := range options {
+		label := strings.TrimSpace(option.Label)
+		description := strings.TrimSpace(option.Description)
+		if isBuiltInOtherOption(label, description) {
+			continue
+		}
+		normalized = append(normalized, QuestionOption{
+			Label:       label,
+			Description: description,
+		})
+	}
+	return normalized
+}
+
+func isBuiltInOtherOption(label, description string) bool {
+	normalizedLabel := normalizeOptionToken(label)
+	switch normalizedLabel {
+	case "other", "use manual input", "manual input", "manual entry", "enter a custom value manually", "custom input":
+		return true
+	}
+
+	normalizedDescription := normalizeOptionToken(description)
+	return strings.HasPrefix(normalizedLabel, "other") && (strings.Contains(normalizedDescription, "custom") || strings.Contains(normalizedDescription, "manual"))
+}
+
+func normalizeOptionToken(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	replacer := strings.NewReplacer("-", " ", "_", " ", "/", " ", "(", " ", ")", " ", ",", " ", ".", " ", ":", " ")
+	value = replacer.Replace(value)
+	return strings.Join(strings.Fields(value), " ")
+}
+
 func validateRequest(req PromptRequest) error {
 	if len(req.Questions) < 1 || len(req.Questions) > 4 {
 		return fmt.Errorf("questions must contain 1 to 4 entries")
@@ -186,8 +241,8 @@ func validateRequest(req PromptRequest) error {
 		}
 		seenQuestions[text] = struct{}{}
 
-		if len(question.Options) < 2 || len(question.Options) > 4 {
-			return fmt.Errorf("questions[%d].options must contain 2 to 4 entries", i)
+		if len(question.Options) < 1 || len(question.Options) > 4 {
+			return fmt.Errorf("questions[%d].options must contain 1 to 4 concrete entries", i)
 		}
 
 		seenLabels := make(map[string]struct{}, len(question.Options))

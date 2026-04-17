@@ -133,6 +133,44 @@ func TestToolExecute_ValidatesRequest(t *testing.T) {
 	}
 }
 
+func TestToolExecute_StripsExplicitOtherOptionAndKeepsCustomInputPath(t *testing.T) {
+	ui := &stubPromptUI{
+		resp: PromptResponse{
+			Answers: []PromptAnswer{
+				{Question: "Which CANN path should we use?", Answer: "/home/cann_custom_path/8.5.0/ascend-toolkit/set_env.sh"},
+			},
+		},
+	}
+	tool := NewTool(ui)
+	params := mustJSON(t, PromptRequest{
+		Questions: []Question{{
+			Header:   "CANN Path",
+			Question: "Which CANN path should we use?",
+			Options: []QuestionOption{
+				{Label: "/usr/local/Ascend/ascend-toolkit/latest", Description: "Typical CANN toolkit installation path."},
+				{Label: "Other", Description: "I will type a custom path."},
+			},
+		}},
+	})
+
+	result, err := tool.Execute(context.Background(), params)
+	if err != nil {
+		t.Fatalf("Execute() err = %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("Execute() result.Error = %v", result.Error)
+	}
+	if got := len(ui.req.Questions[0].Options); got != 1 {
+		t.Fatalf("normalized option count = %d, want 1 concrete option after stripping explicit Other", got)
+	}
+	if got := ui.req.Questions[0].Options[0].Label; got != "/usr/local/Ascend/ascend-toolkit/latest" {
+		t.Fatalf("remaining option label = %q, want toolkit path", got)
+	}
+	if !strings.Contains(result.Content, `"/home/cann_custom_path/8.5.0/ascend-toolkit/set_env.sh"`) {
+		t.Fatalf("result.Content missing custom path answer:\n%s", result.Content)
+	}
+}
+
 func mustJSON(t *testing.T, v any) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(v)
