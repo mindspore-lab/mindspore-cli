@@ -214,6 +214,10 @@ func TestAskUserQuestionPrompt_TypingStartsChatInputImmediately(t *testing.T) {
 
 	if view := app.renderMainView(); !strings.Contains(view, askUserQuestionChatLabel) {
 		t.Fatalf("rendered view missing chat label:\n%s", view)
+	} else if !strings.Contains(view, "Type your custom answer and press Enter") {
+		t.Fatalf("rendered view missing custom-answer prompt:\n%s", view)
+	} else if !strings.Contains(view, "start typing here") {
+		t.Fatalf("rendered view missing always-visible chat placeholder:\n%s", view)
 	}
 
 	for _, r := range []rune("/custom/cann") {

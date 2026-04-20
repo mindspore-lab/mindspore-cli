@@ -241,6 +241,16 @@ func (p *askUserQuestionPromptState) beginCustomAnswerInput(seed string) {
 	p.textValue += seed
 }
 
+func (p *askUserQuestionPromptState) customAnswerValue() string {
+	if p == nil || p.current < 0 || p.current >= len(p.answers) {
+		return ""
+	}
+	if p.textInput {
+		return p.textValue
+	}
+	return p.answers[p.current].other
+}
+
 func (p *askUserQuestionPromptState) hasAnswerForCurrentQuestion() bool {
 	if p == nil || p.current < 0 || p.current >= len(p.answers) {
 		return false
@@ -340,13 +350,8 @@ func renderAskUserQuestionPromptPopup(p *askUserQuestionPromptState) string {
 		lines = append(lines, renderAskUserQuestionOptionLine(question.MultiSelect, p.selectedOption == i, p.answers[p.current].selected[i], option.Label, option.Description, selectedStyle, normalStyle, descStyle)...)
 	}
 	lines = append(lines, renderAskUserQuestionOptionLine(question.MultiSelect, p.isOtherSelected(), strings.TrimSpace(p.answers[p.current].other) != "", askUserQuestionChatLabel, askUserQuestionChatDescription, selectedStyle, normalStyle, descStyle)...)
-
-	if p.textInput {
-		lines = append(lines, "", subtitleStyle.Render("Type your custom answer and press Enter"))
-		lines = append(lines, inputStyle.Render(renderAskUserQuestionInputValue(p.textValue)))
-	} else if other := strings.TrimSpace(p.answers[p.current].other); other != "" {
-		lines = append(lines, "", subtitleStyle.Render(askUserQuestionChatLabel+": "+other))
-	}
+	lines = append(lines, "", subtitleStyle.Render("Type your custom answer and press Enter"))
+	lines = append(lines, inputStyle.Render(renderAskUserQuestionInputValue(p.customAnswerValue(), p.textInput)))
 
 	lines = append(lines, "")
 	if question.MultiSelect {
@@ -388,11 +393,17 @@ func renderAskUserQuestionOptionLine(multiSelect, isCursor, isSelected bool, lab
 	return lines
 }
 
-func renderAskUserQuestionInputValue(value string) string {
+func renderAskUserQuestionInputValue(value string, active bool) string {
 	if strings.TrimSpace(value) == "" {
-		return " "
+		if active {
+			return "|"
+		}
+		return "start typing here"
 	}
-	return value + "|"
+	if active {
+		return value + "|"
+	}
+	return value
 }
 
 func askUserQuestionTextInputSeed(msg tea.KeyMsg, multiSelect bool) (string, bool) {
