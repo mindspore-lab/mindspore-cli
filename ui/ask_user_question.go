@@ -18,8 +18,6 @@ type askUserQuestionPromptState struct {
 	current        int
 	selectedOption int
 	answers        []askUserQuestionAnswerState
-	textInput      bool
-	textValue      string
 }
 
 type askUserQuestionAnswerState struct {
@@ -38,8 +36,8 @@ type askUserQuestionAnswerPayload struct {
 }
 
 const (
-	askUserQuestionChatLabel       = "Chat about this"
-	askUserQuestionChatDescription = "Type your own answer directly."
+	askUserQuestionChatLabel       = "Type something here"
+	askUserQuestionChatDescription = ""
 )
 
 func toAskUserQuestionPromptState(ev model.Event) *askUserQuestionPromptState {
@@ -64,10 +62,11 @@ func toAskUserQuestionPromptState(ev model.Event) *askUserQuestionPromptState {
 	}
 
 	return &askUserQuestionPromptState{
-		title:        valueOrString(strings.TrimSpace(data.Title), "Answer Questions"),
-		submitPrefix: strings.TrimSpace(data.SubmitPrefix),
-		questions:    questions,
-		answers:      answers,
+		title:          valueOrString(strings.TrimSpace(data.Title), "Answer Questions"),
+		submitPrefix:   strings.TrimSpace(data.SubmitPrefix),
+		questions:      questions,
+		answers:        answers,
+		selectedOption: 0,
 	}
 }
 
@@ -80,46 +79,7 @@ func (a App) handleAskUserQuestionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	if p.textInput {
-		switch msg.String() {
-		case "enter":
-			text := strings.TrimSpace(p.textValue)
-			if text == "" {
-				return a, nil
-			}
-			answer := &p.answers[p.current]
-			if !p.currentQuestion().MultiSelect {
-				answer.selected = map[int]bool{}
-			}
-			answer.other = text
-			p.textInput = false
-			p.textValue = ""
-			if !p.currentQuestion().MultiSelect {
-				return a.finishCurrentAskUserQuestion()
-			}
-			return a, nil
-		case "backspace":
-			runes := []rune(p.textValue)
-			if len(runes) > 0 {
-				p.textValue = string(runes[:len(runes)-1])
-			}
-			return a, nil
-		case "esc":
-			p.textInput = false
-			p.textValue = ""
-			return a, nil
-		default:
-			if msg.Type == tea.KeyRunes {
-				p.textValue += string(msg.Runes)
-			} else if msg.Type == tea.KeySpace {
-				p.textValue += " "
-			}
-			return a, nil
-		}
-	}
-
-	if seed, ok := askUserQuestionTextInputSeed(msg, p.currentQuestion().MultiSelect); ok {
-		p.beginCustomAnswerInput(seed)
+	if p.handleInputOptionEdit(msg) {
 		return a, nil
 	}
 
@@ -134,12 +94,10 @@ func (a App) handleAskUserQuestionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		p.selectedOption = (p.selectedOption + 1) % p.optionCount()
 		return a, nil
 	case "space":
-		if !p.currentQuestion().MultiSelect {
+		if p.isInputFocused() {
 			return a, nil
 		}
-		if p.isOtherSelected() {
-			p.textInput = true
-			p.textValue = p.answers[p.current].other
+		if !p.currentQuestion().MultiSelect {
 			return a, nil
 		}
 		answer := &p.answers[p.current]
@@ -150,13 +108,14 @@ func (a App) handleAskUserQuestionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "enter":
-		if p.isOtherSelected() {
-			if p.currentQuestion().MultiSelect && strings.TrimSpace(p.answers[p.current].other) != "" {
-				return a.finishCurrentAskUserQuestion()
+		if p.isInputFocused() {
+			if !p.canSubmitInputOption() {
+				return a, nil
 			}
-			p.textInput = true
-			p.textValue = p.answers[p.current].other
-			return a, nil
+			if !p.currentQuestion().MultiSelect {
+				p.currentAnswer().selected = map[int]bool{}
+			}
+			return a.finishCurrentAskUserQuestion()
 		}
 		answer := &p.answers[p.current]
 		if p.currentQuestion().MultiSelect {
@@ -190,8 +149,6 @@ func (a App) finishCurrentAskUserQuestion() (tea.Model, tea.Cmd) {
 	if p.current < len(p.questions)-1 {
 		p.current++
 		p.selectedOption = 0
-		p.textInput = false
-		p.textValue = ""
 		return a, nil
 	}
 
@@ -227,28 +184,65 @@ func (p *askUserQuestionPromptState) optionCount() int {
 	return len(p.currentQuestion().Options) + 1
 }
 
-func (p *askUserQuestionPromptState) isOtherSelected() bool {
+func (p *askUserQuestionPromptState) isInputFocused() bool {
 	return p != nil && p.selectedOption == len(p.currentQuestion().Options)
 }
 
-func (p *askUserQuestionPromptState) beginCustomAnswerInput(seed string) {
-	if p == nil {
-		return
+func (p *askUserQuestionPromptState) currentAnswer() *askUserQuestionAnswerState {
+	if p == nil || p.current < 0 || p.current >= len(p.answers) {
+		return nil
 	}
-	p.textInput = true
-	p.selectedOption = len(p.currentQuestion().Options)
-	p.textValue = p.answers[p.current].other
-	p.textValue += seed
+	return &p.answers[p.current]
 }
 
-func (p *askUserQuestionPromptState) customAnswerValue() string {
-	if p == nil || p.current < 0 || p.current >= len(p.answers) {
+func (p *askUserQuestionPromptState) customAnswer() string {
+	answer := p.currentAnswer()
+	if answer == nil {
 		return ""
 	}
-	if p.textInput {
-		return p.textValue
+	return answer.other
+}
+
+func (p *askUserQuestionPromptState) canSubmitInputOption() bool {
+	answer := p.currentAnswer()
+	if answer == nil {
+		return false
 	}
-	return p.answers[p.current].other
+	if strings.TrimSpace(answer.other) != "" {
+		return true
+	}
+	return p.currentQuestion().MultiSelect && len(answer.selected) > 0
+}
+
+func (p *askUserQuestionPromptState) handleInputOptionEdit(msg tea.KeyMsg) bool {
+	if p == nil || !p.isInputFocused() {
+		return false
+	}
+
+	answer := p.currentAnswer()
+	if answer == nil {
+		return false
+	}
+
+	switch {
+	case msg.Type == tea.KeyRunes && len(msg.Runes) > 0:
+		answer.other += string(msg.Runes)
+	case msg.Type == tea.KeySpace:
+		answer.other += " "
+	case msg.String() == "backspace":
+		runes := []rune(answer.other)
+		if len(runes) == 0 {
+			return true
+		}
+		answer.other = string(runes[:len(runes)-1])
+	default:
+		return false
+	}
+
+	if !p.currentQuestion().MultiSelect {
+		answer.selected = map[int]bool{}
+	}
+	return true
 }
 
 func (p *askUserQuestionPromptState) hasAnswerForCurrentQuestion() bool {
@@ -319,7 +313,8 @@ func renderAskUserQuestionPromptPopup(p *askUserQuestionPromptState) string {
 	selectedStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	normalStyle := lipgloss.NewStyle().Foreground(t.TextPrimary)
 	descStyle := lipgloss.NewStyle().Foreground(t.TextSecondary)
-	inputStyle := lipgloss.NewStyle().Foreground(t.TextPrimary).Border(lipgloss.RoundedBorder()).BorderForeground(t.Accent).Padding(0, 1)
+	inlineInputStyle := lipgloss.NewStyle().Foreground(t.TextPrimary)
+	inlineInputInactiveStyle := lipgloss.NewStyle().Foreground(t.TextMuted)
 	hintStyle := lipgloss.NewStyle().Foreground(t.TextMuted).Italic(true)
 
 	question := p.currentQuestion()
@@ -349,15 +344,19 @@ func renderAskUserQuestionPromptPopup(p *askUserQuestionPromptState) string {
 	for i, option := range question.Options {
 		lines = append(lines, renderAskUserQuestionOptionLine(question.MultiSelect, p.selectedOption == i, p.answers[p.current].selected[i], option.Label, option.Description, selectedStyle, normalStyle, descStyle)...)
 	}
-	lines = append(lines, renderAskUserQuestionOptionLine(question.MultiSelect, p.isOtherSelected(), strings.TrimSpace(p.answers[p.current].other) != "", askUserQuestionChatLabel, askUserQuestionChatDescription, selectedStyle, normalStyle, descStyle)...)
-	lines = append(lines, "", subtitleStyle.Render("Type your custom answer and press Enter"))
-	lines = append(lines, inputStyle.Render(renderAskUserQuestionInputValue(p.customAnswerValue(), p.textInput)))
+	lines = append(lines, renderAskUserQuestionOptionLine(question.MultiSelect, p.isInputFocused(), strings.TrimSpace(p.answers[p.current].other) != "", askUserQuestionChatLabel, askUserQuestionChatDescription, selectedStyle, normalStyle, descStyle)...)
+	lines = append(lines, renderAskUserQuestionInlineInputLine(
+		p.customAnswer(),
+		p.isInputFocused(),
+		inlineInputStyle,
+		inlineInputInactiveStyle,
+	))
 
 	lines = append(lines, "")
 	if question.MultiSelect {
-		lines = append(lines, hintStyle.Render("up/down move | space toggle | enter continue | type to chat | esc cancel"))
+		lines = append(lines, hintStyle.Render("up/down move | space toggle | enter continue | esc cancel"))
 	} else {
-		lines = append(lines, hintStyle.Render("up/down move | enter confirm | type to chat | esc cancel"))
+		lines = append(lines, hintStyle.Render("up/down move | enter confirm | esc cancel"))
 	}
 
 	content := strings.Join(lines, "\n")
@@ -376,21 +375,32 @@ func renderAskUserQuestionOptionLine(multiSelect, isCursor, isSelected bool, lab
 		style = selectedStyle
 	}
 
-	choice := "( )"
+	choice := ""
 	if multiSelect {
 		choice = "[ ]"
 		if isSelected {
 			choice = "[x]"
 		}
-	} else if isSelected {
-		choice = "(*)"
 	}
 
-	lines := []string{cursor + style.Render(choice+" "+label)}
+	prefix := ""
+	if choice != "" {
+		prefix = choice + " "
+	}
+
+	lines := []string{cursor + style.Render(prefix+label)}
 	if strings.TrimSpace(description) != "" {
 		lines = append(lines, "   "+descStyle.Render(description))
 	}
 	return lines
+}
+
+func renderAskUserQuestionInlineInputLine(value string, active bool, activeStyle, inactiveStyle lipgloss.Style) string {
+	rendered := renderAskUserQuestionInputValue(value, active)
+	if active {
+		return "   " + activeStyle.Render(rendered)
+	}
+	return "   " + inactiveStyle.Render(rendered)
 }
 
 func renderAskUserQuestionInputValue(value string, active bool) string {
@@ -398,22 +408,12 @@ func renderAskUserQuestionInputValue(value string, active bool) string {
 		if active {
 			return "|"
 		}
-		return "start typing here"
+		return "start typing"
 	}
 	if active {
 		return value + "|"
 	}
 	return value
-}
-
-func askUserQuestionTextInputSeed(msg tea.KeyMsg, multiSelect bool) (string, bool) {
-	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
-		return string(msg.Runes), true
-	}
-	if !multiSelect && msg.Type == tea.KeySpace {
-		return " ", true
-	}
-	return "", false
 }
 
 func itoa(v int) string {

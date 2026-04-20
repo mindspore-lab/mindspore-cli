@@ -171,8 +171,6 @@ func TestAskUserQuestionPrompt_OtherAnswerSubmitsCustomText(t *testing.T) {
 	app = nextModel.(App)
 	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyDown})
 	app = nextModel.(App)
-	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	app = nextModel.(App)
 	for _, r := range []rune("custom scope") {
 		keyType := tea.KeyRunes
 		if r == ' ' {
@@ -190,7 +188,46 @@ func TestAskUserQuestionPrompt_OtherAnswerSubmitsCustomText(t *testing.T) {
 	}
 }
 
-func TestAskUserQuestionPrompt_TypingStartsChatInputImmediately(t *testing.T) {
+func TestAskUserQuestionPrompt_EmptyCustomAnswerDoesNotSubmit(t *testing.T) {
+	userCh := make(chan string, 1)
+	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
+	app.bootActive = false
+
+	next, _ := app.handleEvent(model.Event{
+		Type: model.AskUserQuestionPrompt,
+		AskUserQuestion: &model.AskUserQuestionPromptData{
+			Title:        "Answer Questions",
+			SubmitPrefix: "ask:",
+			Questions: []model.AskUserQuestionView{{
+				Header:   "Scope",
+				Question: "Which scope should we optimize first?",
+				Options: []model.AskUserQuestionOption{
+					{Label: "backend", Description: "Optimize backend first"},
+					{Label: "frontend", Description: "Optimize frontend first"},
+				},
+			}},
+		},
+	})
+	app = next.(App)
+
+	nextModel, _ := app.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	app = nextModel.(App)
+	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	app = nextModel.(App)
+	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	app = nextModel.(App)
+
+	select {
+	case token := <-userCh:
+		t.Fatalf("unexpected submission for empty custom answer: %q", token)
+	default:
+	}
+	if app.askUserQuestionPrompt == nil {
+		t.Fatal("askUserQuestionPrompt should stay open when custom answer is empty")
+	}
+}
+
+func TestAskUserQuestionPrompt_CustomAnswerPersistsAcrossNavigation(t *testing.T) {
 	userCh := make(chan string, 1)
 	app := New(nil, userCh, "test", ".", "", "demo-model", 4096)
 	app.bootActive = false
@@ -214,10 +251,25 @@ func TestAskUserQuestionPrompt_TypingStartsChatInputImmediately(t *testing.T) {
 
 	if view := app.renderMainView(); !strings.Contains(view, askUserQuestionChatLabel) {
 		t.Fatalf("rendered view missing chat label:\n%s", view)
-	} else if !strings.Contains(view, "Type your custom answer and press Enter") {
-		t.Fatalf("rendered view missing custom-answer prompt:\n%s", view)
-	} else if !strings.Contains(view, "start typing here") {
-		t.Fatalf("rendered view missing always-visible chat placeholder:\n%s", view)
+	} else if !strings.Contains(view, "start typing") {
+		t.Fatalf("rendered view should show the inline chat placeholder from the start:\n%s", view)
+	}
+
+	nextModel, _ := app.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	app = nextModel.(App)
+	if got := app.askUserQuestionPrompt.answers[0].other; got != "" {
+		t.Fatalf("custom answer = %q, want empty while focus stays on normal option", got)
+	}
+
+	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	app = nextModel.(App)
+	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	app = nextModel.(App)
+
+	if view := app.renderMainView(); !strings.Contains(view, "> "+askUserQuestionChatLabel) {
+		t.Fatalf("rendered view should place the cursor on chat input after navigation:\n%s", view)
+	} else if !strings.Contains(view, "   |") {
+		t.Fatalf("rendered view should show an active inline cursor after selecting chat:\n%s", view)
 	}
 
 	for _, r := range []rune("/custom/cann") {
@@ -225,10 +277,23 @@ func TestAskUserQuestionPrompt_TypingStartsChatInputImmediately(t *testing.T) {
 		if r == ' ' {
 			keyType = tea.KeySpace
 		}
-		nextModel, _ := app.handleKey(tea.KeyMsg{Type: keyType, Runes: []rune{r}})
+		nextModel, _ = app.handleKey(tea.KeyMsg{Type: keyType, Runes: []rune{r}})
 		app = nextModel.(App)
 	}
-	nextModel, _ := app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyUp})
+	app = nextModel.(App)
+	if got := app.askUserQuestionPrompt.answers[0].other; got != "/custom/cann" {
+		t.Fatalf("custom answer after moving away = %q, want %q", got, "/custom/cann")
+	}
+
+	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	app = nextModel.(App)
+	if view := app.renderMainView(); !strings.Contains(view, "   /custom/cann|") {
+		t.Fatalf("rendered view should preserve custom text after moving away and back:\n%s", view)
+	}
+
+	nextModel, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	app = nextModel.(App)
 
 	token := readAskUserQuestionToken(t, userCh)
