@@ -27,8 +27,6 @@ properties:
     type: array
     items:
       type: string
-  occurrence_count:
-    type: integer
   affects_operators:
     type: array
     items:
@@ -48,23 +46,6 @@ properties:
         type: number
   description:
     type: string
-  issue_refs:
-    type: array
-    items:
-      type: object
-      properties:
-        issue_id:
-          type: string
-        title:
-          type: string
-        url:
-          type: string
-        project:
-          type: string
-        component:
-          type: string
-        backend:
-          type: string
   fix:
     type: object
     properties:

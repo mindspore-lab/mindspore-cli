@@ -1,5 +1,5 @@
 kind: known_issue
-id: accuracy-operator-softmax-fp16-drift
+id: fp16-softmax-drift
 symptom: accuracy
 severity: high
 lifecycle:
@@ -9,7 +9,6 @@ source:
 confidence:
   level: bootstrap
 tags: [softmax, fp16, accuracy, drift, ascend, dtype]
-occurrence_count: 1
 affects_operators: [softmax]
 affects_platforms: [ascend-910b]
 detection:
