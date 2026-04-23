@@ -14,6 +14,9 @@ func TestLoadWithEnv_AutoTokenLimitsByModel(t *testing.T) {
 	if got, want := cfg.Context.Window, 400000; got != want {
 		t.Fatalf("context.window = %d, want %d", got, want)
 	}
+	if got, want := cfg.Context.ReserveTokens, 40000; got != want {
+		t.Fatalf("context.reserve_tokens = %d, want %d", got, want)
+	}
 }
 
 func TestLoadWithEnv_AutoTokenLimitsByModelSeries(t *testing.T) {
@@ -63,6 +66,9 @@ func TestLoadWithEnv_EnvOverridesAutoTokenLimits(t *testing.T) {
 	if got, want := cfg.Context.Window, 16000; got != want {
 		t.Fatalf("context.window = %d, want %d", got, want)
 	}
+	if got, want := cfg.Context.ReserveTokens, 1600; got != want {
+		t.Fatalf("context.reserve_tokens = %d, want %d", got, want)
+	}
 }
 
 func TestApplyModelTokenDefaults_CustomModelProfiles(t *testing.T) {
@@ -107,6 +113,9 @@ func TestRefreshModelTokenDefaults_UpdatesAutoValuesOnModelSwitch(t *testing.T) 
 	if got, want := cfg.Context.Window, 1050000; got != want {
 		t.Fatalf("context.window = %d, want %d", got, want)
 	}
+	if got, want := cfg.Context.ReserveTokens, 105000; got != want {
+		t.Fatalf("context.reserve_tokens = %d, want %d", got, want)
+	}
 }
 
 func TestRefreshModelTokenDefaults_PreservesExplicitOverridesOnModelSwitch(t *testing.T) {
@@ -114,11 +123,15 @@ func TestRefreshModelTokenDefaults_PreservesExplicitOverridesOnModelSwitch(t *te
 	cfg.Model.Model = "gpt-5"
 	applyModelTokenDefaults(cfg, DefaultConfig().Context.Window)
 	cfg.Context.Window = 55555
+	cfg.Context.ReserveTokens = 777
 
 	cfg.Model.Model = "gpt-5.4"
 	RefreshModelTokenDefaults(cfg, "gpt-5")
 
 	if got, want := cfg.Context.Window, 55555; got != want {
 		t.Fatalf("context.window = %d, want %d", got, want)
+	}
+	if got, want := cfg.Context.ReserveTokens, 777; got != want {
+		t.Fatalf("context.reserve_tokens = %d, want %d", got, want)
 	}
 }

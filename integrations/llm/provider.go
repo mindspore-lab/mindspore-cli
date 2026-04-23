@@ -115,6 +115,32 @@ type Usage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	Raw              json.RawMessage
+}
+
+// Clone returns a deep copy of the usage payload.
+func (u Usage) Clone() Usage {
+	u.Raw = cloneRawJSON(u.Raw)
+	return u
+}
+
+// IsZero reports whether the usage has no canonical counts and no raw payload.
+func (u Usage) IsZero() bool {
+	return u.PromptTokens == 0 && u.CompletionTokens == 0 && u.TotalTokens == 0 && len(u.Raw) == 0
+}
+
+func cloneRawJSON(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	cloned := make(json.RawMessage, len(raw))
+	copy(cloned, raw)
+	return cloned
+}
+
+func ptrUsage(u Usage) *Usage {
+	copy := u.Clone()
+	return &copy
 }
 
 // ModelInfo represents information about an available model.

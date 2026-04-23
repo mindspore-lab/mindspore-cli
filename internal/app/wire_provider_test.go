@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/mindspore-lab/mindspore-cli/agent/loop"
 	"github.com/mindspore-lab/mindspore-cli/agent/session"
@@ -115,6 +117,34 @@ func TestWireBootstrapKeyAndURLOverrideEnvDuringProviderInit(t *testing.T) {
 	}
 }
 
+func TestInitToolsShellInjectsPythonUnbufferedEnv(t *testing.T) {
+	t.Setenv("PYTHONUNBUFFERED", "")
+
+	registry := initTools(configs.DefaultConfig(), t.TempDir())
+	tool, ok := registry.Get("shell")
+	if !ok {
+		t.Fatal("expected shell tool to be registered")
+	}
+
+	params, err := json.Marshal(map[string]any{
+		"command": `printf '%s' "$PYTHONUNBUFFERED"`,
+	})
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+
+	result, err := tool.Execute(context.Background(), params)
+	if err != nil {
+		t.Fatalf("shell.Execute() error = %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("unexpected shell result error: %v", result.Error)
+	}
+	if got, want := strings.TrimSpace(result.Content), "1"; got != want {
+		t.Fatalf("PYTHONUNBUFFERED = %q, want %q", got, want)
+	}
+}
+
 func TestWireFreshSessionDoesNotCreateSessionDirBeforeLiveLLMActivity(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -141,6 +171,59 @@ func TestWireFreshSessionDoesNotCreateSessionDirBeforeLiveLLMActivity(t *testing
 	sessionDir := filepath.Dir(app.session.Path())
 	if _, err := os.Stat(sessionDir); !os.IsNotExist(err) {
 		t.Fatalf("expected fresh session dir to stay absent before live llm activity, got %v", err)
+	}
+}
+
+func TestWireCleansExpiredSessionsOnStartup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MSCLI_PROVIDER", "")
+	t.Setenv("MSCLI_API_KEY", "")
+	t.Setenv("MSCLI_BASE_URL", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	origPath := appConfigPathOverride
+	appConfigPathOverride = configPath
+	t.Cleanup(func() { appConfigPathOverride = origPath })
+	if err := saveAppConfig(&appConfig{SessionRetentionDays: 1}); err != nil {
+		t.Fatalf("saveAppConfig() err = %v", err)
+	}
+
+	workDir := t.TempDir()
+	t.Chdir(workDir)
+
+	stale, err := session.Create(workDir, "system prompt")
+	if err != nil {
+		t.Fatalf("session.Create() err = %v", err)
+	}
+	if err := stale.AppendUserInput("hello"); err != nil {
+		t.Fatalf("AppendUserInput() err = %v", err)
+	}
+	if err := stale.Activate(); err != nil {
+		t.Fatalf("Activate() err = %v", err)
+	}
+	if err := stale.Close(); err != nil {
+		t.Fatalf("Close() err = %v", err)
+	}
+
+	staleDir := filepath.Dir(stale.Path())
+	staleTime := time.Now().Add(-48 * time.Hour)
+	for _, path := range []string{staleDir, stale.Path(), filepath.Join(staleDir, "snapshot.json")} {
+		if err := os.Chtimes(path, staleTime, staleTime); err != nil {
+			t.Fatalf("Chtimes(%s) err = %v", path, err)
+		}
+	}
+
+	if _, err := Wire(BootstrapConfig{}); err != nil {
+		t.Fatalf("Wire() error = %v", err)
+	}
+	if _, err := os.Stat(staleDir); !os.IsNotExist(err) {
+		t.Fatalf("expected stale session dir removed on startup, got %v", err)
 	}
 }
 

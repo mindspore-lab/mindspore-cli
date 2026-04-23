@@ -47,7 +47,7 @@ const liveShellPreviewOutputLines = 8
 // maybePrintBanner prints the startup banner once, deferred until
 // no modal popup is blocking the normal buffer.
 func (a *App) maybePrintBanner() tea.Cmd {
-	if a.bannerPrinted || a.bootActive || a.setupPopup != nil || a.modelPicker != nil {
+	if a.bannerPrinted || a.bootActive || a.startupBannerSuppressed || a.setupPopup != nil || a.modelPicker != nil || a.sessionPicker != nil {
 		return nil
 	}
 	a.bannerPrinted = true
@@ -281,6 +281,52 @@ func (a App) printMessage(msg model.Message) tea.Cmd {
 	return tea.Println(rendered)
 }
 
+func (a App) historyMessagesForRender(expanded, includeLive bool) []model.Message {
+	messages := make([]model.Message, 0, len(a.state.Messages))
+	for _, msg := range a.state.Messages {
+		if !includeLive && (msg.Pending || msg.Streaming) {
+			continue
+		}
+		if msg.Kind == model.MsgTool && !expanded {
+			msg = a.truncateToolForPrint(msg)
+		}
+		messages = append(messages, msg)
+	}
+	return messages
+}
+
+func (a App) renderTranscriptHistory(expanded, includeLive bool) string {
+	history := a.historyMessagesForRender(expanded, includeLive)
+	if len(history) == 0 {
+		return ""
+	}
+	state := a.state
+	state.Messages = history
+	if !includeLive {
+		state = state.WithThinking(false).ClearWait()
+	}
+	rendered := panels.RenderMessages(state, a.thinking.View(), a.thinking.FrameView(), a.renderWidth(), a.trainView.Active)
+	return strings.TrimRight(rendered, "\n")
+}
+
+func (a App) reprintHistoryOnResize() tea.Cmd {
+	if a.bootActive || a.modalAltScreen || a.startupBannerSuppressed || a.issueView.Active() {
+		return nil
+	}
+
+	cmds := []tea.Cmd{
+		tea.ClearScreen,
+		tea.Printf("\x1b[3J"),
+	}
+	for _, line := range a.clearHeadingLines("") {
+		cmds = append(cmds, tea.Println(line))
+	}
+	if history := a.renderTranscriptHistory(false, false); strings.TrimSpace(history) != "" {
+		cmds = append(cmds, tea.Println(""), tea.Println(history))
+	}
+	return tea.Sequence(cmds...)
+}
+
 func (a App) printAgentDelta(delta string) tea.Cmd {
 	// Buffer deltas silently. The live area shows a streaming indicator.
 	// The full glamour-rendered message prints when AgentReply arrives.
@@ -358,19 +404,6 @@ func (a App) truncateToolForPrint(msg model.Message) model.Message {
 	}
 	msg.Content = truncateToolContentForTool(msg.ToolName, msg.Content)
 	return msg
-}
-
-// reprintLastTool re-prints the most recent tool message with current
-// expand/collapse state. Called when the user presses Ctrl+O.
-func (a App) reprintLastTool() tea.Cmd {
-	for i := len(a.state.Messages) - 1; i >= 0; i-- {
-		msg := a.state.Messages[i]
-		if msg.Kind == model.MsgTool && !msg.Pending && !msg.Streaming {
-			msg = a.truncateToolForPrint(msg)
-			return a.printMessage(msg)
-		}
-	}
-	return nil
 }
 
 func (a App) printShellHeader(ev model.Event) tea.Cmd {
@@ -477,14 +510,15 @@ func (a App) fallbackPrint(prevLen int) tea.Cmd {
 	return combineCmds(cmds...)
 }
 
-func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message) tea.Cmd {
+func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message, suppressUserPrint bool) tea.Cmd {
 	prevLen := len(prevMessages)
 
 	switch ev.Type {
 	case model.UserInput:
-		// User input is already printed by handleKey on Enter.
-		// Don't print again when the engine echoes it back.
-		return nil
+		if suppressUserPrint {
+			return nil
+		}
+		return a.printUserInput(ev.Message)
 	case model.AgentReply:
 		// If deltas were already streamed, flush remaining buffer only.
 		for i := len(prevMessages) - 1; i >= 0; i-- {
@@ -517,7 +551,7 @@ func (a App) eventPrintCmd(ev model.Event, prevMessages []model.Message) tea.Cmd
 	case model.ToolRead, model.ToolGrep, model.ToolGlob, model.ToolEdit, model.ToolWrite, model.ToolSkill, model.ToolInterrupted, model.ToolWarning, model.ToolError, model.ToolReplay:
 		return a.printResolvedTool(ev)
 	case model.ClearScreen:
-		return clearMessage()
+		return a.clearMessage(ev.Summary)
 	default:
 		return a.fallbackPrint(prevLen)
 	}
@@ -638,8 +672,25 @@ func combineCmds(cmds ...tea.Cmd) tea.Cmd {
 	}
 }
 
-func clearMessage() tea.Cmd {
-	return tea.Println(metaStyle.Render("conversation cleared"))
+func (a App) clearHeadingLines(resumeHint string) []string {
+	lines := []string{
+		RenderBanner(a.state.Version, a.state.WorkDir, a.state.RepoURL, a.state.Model.Name, a.state.Model.CtxMax),
+	}
+	if hint := strings.TrimSpace(resumeHint); hint != "" {
+		lines = append(lines, metaStyle.Render(hint))
+	}
+	return lines
+}
+
+func (a App) clearMessage(resumeHint string) tea.Cmd {
+	cmds := []tea.Cmd{
+		tea.ClearScreen,
+		tea.Printf("\x1b[3J"),
+	}
+	for _, line := range a.clearHeadingLines(resumeHint) {
+		cmds = append(cmds, tea.Println(line))
+	}
+	return tea.Sequence(cmds...)
 }
 
 func timestampLabel(now time.Time) string {

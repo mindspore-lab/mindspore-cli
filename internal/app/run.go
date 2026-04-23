@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
 	"github.com/mindspore-lab/mindspore-cli/agent/loop"
 	"github.com/mindspore-lab/mindspore-cli/agent/session"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
@@ -28,6 +30,31 @@ const provideAPIKeyFirstMsg = "LLM unavailable: provide api key first, or /login
 const interruptActiveTaskToken = "__interrupt_active_task__"
 const internalPermissionsActionPrefix = "\x00permissions:"
 const historyReplayReadyToken = "__history_replay_ready__"
+
+const (
+	bootstrapFlagDescURL    = "LLM API base URL"
+	bootstrapFlagDescModel  = "Model name"
+	bootstrapFlagDescAPIKey = "API key"
+	bootstrapFlagDescDebug  = "Dump raw LLM requests/responses into the session directory"
+)
+
+type bootstrapHelpTopic string
+
+const (
+	bootstrapHelpTopicRoot   bootstrapHelpTopic = "root"
+	bootstrapHelpTopicResume bootstrapHelpTopic = "resume"
+	bootstrapHelpTopicReplay bootstrapHelpTopic = "replay"
+)
+
+type bootstrapHelpError struct {
+	topic bootstrapHelpTopic
+}
+
+func (e bootstrapHelpError) Error() string {
+	return "help requested"
+}
+
+var cliStdout io.Writer = os.Stdout
 
 var waitReplayDelay = func(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
@@ -47,12 +74,22 @@ var waitReplayDelay = func(ctx context.Context, d time.Duration) error {
 // Run parses CLI args, wires dependencies, and starts the application.
 func Run(args []string) error {
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-v") {
-		fmt.Println(version.Version)
-		return nil
+		_, err := fmt.Fprintln(cliStdout, version.Version)
+		return err
+	}
+
+	if len(args) > 0 && args[0] == "help" {
+		_, err := io.WriteString(cliStdout, renderBootstrapHelp(bootstrapHelpTopicRoot))
+		return err
 	}
 
 	cfg, err := parseBootstrapConfig(args)
 	if err != nil {
+		var helpErr bootstrapHelpError
+		if errors.As(err, &helpErr) {
+			_, writeErr := io.WriteString(cliStdout, renderBootstrapHelp(helpErr.topic))
+			return writeErr
+		}
 		return err
 	}
 
@@ -91,17 +128,20 @@ func (a *Application) runReal() error {
 	ui.InitStyles()
 
 	userCh := make(chan string, 8)
-	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
-	if a.replayOnly {
-		tui = ui.NewReplay(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
-	} else {
-		if history, err := loadInputHistoryForWorkdir(a.WorkDir); err == nil {
-			tui = tui.SeedInputHistory(history)
-		}
-		tui = tui.WithInputHistoryAppender(func(text string) {
-			_ = appendInputHistory(a.WorkDir, text)
-		})
+	debugMode := a.llmDebugDumper != nil
+	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window, debugMode)
+	if a.replayOnly || a.startupSessionPicker != nil {
+		tui = ui.NewReplay(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window, debugMode)
 	}
+	if a.startupSessionPicker != nil {
+		tui = tui.WithStartupBannerSuppressed()
+	}
+	if history, err := loadInputHistoryForWorkdir(a.WorkDir); err == nil {
+		tui = tui.SeedInputHistory(history)
+	}
+	tui = tui.WithInputHistoryAppender(func(text string) {
+		_ = appendInputHistory(a.WorkDir, text)
+	})
 	p := tea.NewProgram(tui, tuiProgramOptions()...)
 
 	// Emit saved login so the topbar shows the user immediately.
@@ -116,8 +156,12 @@ func (a *Application) runReal() error {
 	if a.permissionSettingsIssue != nil && !a.replayOnly {
 		a.emitPermissionSettingsPrompt("")
 	}
-	if a.needsSetupPopup {
+	if a.needsSetupPopup && a.startupSessionPicker == nil && !a.deferHistoryReplay && !a.replayOnly {
 		a.emitModelSetupPopup(false) // canEscape=false on first boot
+	}
+	if a.startupSessionPicker != nil && a.permissionSettingsIssue == nil {
+		a.openSessionPicker(a.startupSessionPicker.Mode, a.startupSessionPicker.ReplaySpeed)
+		a.startupSessionPicker = nil
 	}
 
 	_, err := p.Run()
@@ -225,6 +269,10 @@ func (a *Application) handlePermissionSettingsPromptInput(input string) {
 				Type:    model.AgentReply,
 				Message: "Continuing without the invalid permission settings file.",
 			}
+		}
+		if a.startupSessionPicker != nil {
+			a.openSessionPicker(a.startupSessionPicker.Mode, a.startupSessionPicker.ReplaySpeed)
+			a.startupSessionPicker = nil
 		}
 	default:
 		a.emitPermissionSettingsPrompt("Please choose 1 or 2.")
@@ -343,6 +391,9 @@ func (a *Application) interruptActiveTasks() bool {
 }
 
 func (a *Application) replayHistory() {
+	if a.replayOnly {
+		defer a.finishReplayMode()
+	}
 	if len(a.replayTimeline) > 0 {
 		a.replayHistoryTimeline()
 		return
@@ -354,6 +405,15 @@ func (a *Application) replayHistory() {
 		return
 	}
 	a.emitTokenUsageSnapshot()
+}
+
+func (a *Application) finishReplayMode() {
+	if a == nil {
+		return
+	}
+	a.replayOnly = false
+	a.replayTimeline = nil
+	a.replayBacklog = nil
 }
 
 func (a *Application) startReplayHistory() {
@@ -473,15 +533,34 @@ func (a *Application) emitTokenUsageSnapshot() {
 	if a == nil || a.EventCh == nil || a.ctxManager == nil {
 		return
 	}
-	usage := a.ctxManager.TokenUsage()
-	if usage.ContextWindow <= 0 {
+	details := a.displayTokenUsageDetails()
+	if details.ContextWindow <= 0 {
 		return
 	}
 	a.EventCh <- model.Event{
 		Type:    model.TokenUpdate,
-		CtxUsed: usage.Current,
-		CtxMax:  usage.ContextWindow,
+		CtxUsed: details.Current,
+		CtxMax:  details.ContextWindow,
 	}
+}
+
+func (a *Application) displayTokenUsageDetails() agentctx.TokenUsageDetails {
+	if a == nil || a.ctxManager == nil {
+		return agentctx.TokenUsageDetails{}
+	}
+
+	details := a.ctxManager.TokenUsageDetails()
+	if details.Source != agentctx.TokenUsageSourceLocalEstimate {
+		return details
+	}
+	if len(a.ctxManager.GetNonSystemMessages()) > 0 {
+		return details
+	}
+
+	details.Current = 0
+	details.LocalEstimatedTotal = 0
+	details.Available = details.ContextWindow - details.Reserved
+	return details
 }
 
 func (a *Application) addContextMessages(msgs ...llm.Message) error {
@@ -501,7 +580,11 @@ func (a *Application) persistSessionSnapshot() error {
 	if a == nil || a.session == nil || a.ctxManager == nil {
 		return nil
 	}
-	return a.session.SaveSnapshot(a.currentSystemPrompt(), a.ctxManager.GetNonSystemMessages())
+	return a.session.SaveSnapshotWithUsage(
+		a.currentSystemPrompt(),
+		a.ctxManager.GetNonSystemMessages(),
+		providerUsageSnapshotFromDetails(a.ctxManager.TokenUsageDetails()),
+	)
 }
 
 func (a *Application) noteLiveLLMActivity() error {
@@ -526,12 +609,23 @@ func (a *Application) exitResumeHint() string {
 	if !a.sessionLLMActivity.Load() {
 		return ""
 	}
+	return cliResumeHintForSession(a.session.ID())
+}
 
-	sessionID := strings.TrimSpace(a.session.ID())
+func cliResumeHintForSession(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return ""
 	}
-	return fmt.Sprintf("Resume this session with: mscli resume %s", sessionID)
+	return fmt.Sprintf("Resume the previous conversation with: mscli resume %s", sessionID)
+}
+
+func inlineResumeHintForSession(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return ""
+	}
+	return fmt.Sprintf("Resume the previous conversation with: /resume %s", sessionID)
 }
 
 func (a *Application) recordUnavailableTurn(userInput, assistantReply string) error {
@@ -576,10 +670,12 @@ func (a *Application) emitToolError(toolName, format string, args ...any) {
 
 func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	if len(args) > 0 && args[0] == "replay" {
-		fs := flag.NewFlagSet("mindspore-cli replay", flag.ContinueOnError)
-		fs.SetOutput(os.Stderr)
-		debug := fs.Bool("debug", false, "Dump raw LLM requests/responses into the session directory")
+		fs := newBootstrapFlagSet("mscli replay")
+		debug := fs.Bool("debug", false, bootstrapFlagDescDebug)
 		if err := fs.Parse(args[1:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return BootstrapConfig{}, bootstrapHelpError{topic: bootstrapHelpTopicReplay}
+			}
 			return BootstrapConfig{}, err
 		}
 		target, speed, err := parseReplayTargetAndSpeed(fs.Args())
@@ -595,13 +691,12 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	}
 
 	if len(args) > 0 && args[0] == "resume" {
-		fs := flag.NewFlagSet("mscli resume", flag.ContinueOnError)
-		fs.SetOutput(os.Stderr)
-		url := fs.String("url", "", "LLM API base URL")
-		modelFlag := fs.String("model", "", "Model name")
-		apiKey := fs.String("api-key", "", "API key")
-		debug := fs.Bool("debug", false, "Dump raw LLM requests/responses into the session directory")
+		fs := newBootstrapFlagSet("mscli resume")
+		url, modelFlag, apiKey, debug := registerCommonBootstrapFlags(fs)
 		if err := fs.Parse(args[1:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return BootstrapConfig{}, bootstrapHelpError{topic: bootstrapHelpTopicResume}
+			}
 			return BootstrapConfig{}, err
 		}
 		rest := fs.Args()
@@ -621,14 +716,13 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 		return cfg, nil
 	}
 
-	fs := flag.NewFlagSet("mscli", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	url := fs.String("url", "", "LLM API base URL")
-	modelFlag := fs.String("model", "", "Model name")
-	apiKey := fs.String("api-key", "", "API key")
-	debug := fs.Bool("debug", false, "Dump raw LLM requests/responses into the session directory")
+	fs := newBootstrapFlagSet("mscli")
+	url, modelFlag, apiKey, debug := registerCommonBootstrapFlags(fs)
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return BootstrapConfig{}, bootstrapHelpError{topic: bootstrapHelpTopicRoot}
+		}
 		return BootstrapConfig{}, err
 	}
 	if len(fs.Args()) > 0 {
@@ -645,7 +739,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 
 func parseReplayTargetAndSpeed(args []string) (string, float64, error) {
 	usageErr := func() error {
-		return fmt.Errorf("usage: mindspore-cli replay [sess_xxx|trajectory.json|trajectory.jsonl] [speed]")
+		return fmt.Errorf("usage: mscli replay [sess_xxx|trajectory.json|trajectory.jsonl] [speed]")
 	}
 
 	switch len(args) {
@@ -664,6 +758,118 @@ func parseReplayTargetAndSpeed(args []string) (string, float64, error) {
 		return args[0], speed, nil
 	default:
 		return "", 0, usageErr()
+	}
+}
+
+func newBootstrapFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	return fs
+}
+
+func registerCommonBootstrapFlags(fs *flag.FlagSet) (url, modelFlag, apiKey *string, debug *bool) {
+	url = fs.String("url", "", bootstrapFlagDescURL)
+	modelFlag = fs.String("model", "", bootstrapFlagDescModel)
+	apiKey = fs.String("api-key", "", bootstrapFlagDescAPIKey)
+	debug = fs.Bool("debug", false, bootstrapFlagDescDebug)
+	return url, modelFlag, apiKey, debug
+}
+
+func renderBootstrapHelp(topic bootstrapHelpTopic) string {
+	switch topic {
+	case bootstrapHelpTopicResume:
+		return `Resume a saved session and continue chatting in the current workdir.
+
+Usage:
+  mscli resume [flags] [sess_xxx]
+
+Arguments:
+  sess_xxx    Optional session ID. Omit to open the session picker UI.
+
+Flags:
+  --url string
+        ` + bootstrapFlagDescURL + `
+  --model string
+        ` + bootstrapFlagDescModel + `
+  --api-key string
+        ` + bootstrapFlagDescAPIKey + `
+  --debug
+        ` + bootstrapFlagDescDebug + `
+  -h, --help
+        Show help for resume
+
+Examples:
+  mscli resume
+  mscli resume sess_123
+`
+	case bootstrapHelpTopicReplay:
+		return `Replay a saved session or recorded trajectory, then keep chatting.
+
+Usage:
+  mscli replay [flags] [sess_xxx|trajectory.json|trajectory.jsonl] [speed]
+
+Arguments:
+  sess_xxx|trajectory.json|trajectory.jsonl
+        Optional replay target. Omit to open the session picker UI.
+  speed
+        Optional replay speed multiplier such as 0.5x, 1.5x, or 2x.
+
+Flags:
+  --debug
+        ` + bootstrapFlagDescDebug + `
+  -h, --help
+        Show help for replay
+
+Examples:
+  mscli replay
+  mscli replay sess_123
+  mscli replay trajectory.json 2x
+`
+	default:
+		return `MindSpore CLI starts the training-focused agent UI for MindSpore workflows.
+
+Usage:
+  mscli [flags] [command]
+
+Commands:
+  resume    Resume a saved session; opens the session picker UI by default
+  replay    Replay a saved session or trajectory; opens the session picker UI by default
+
+Flags:
+  --url string
+        ` + bootstrapFlagDescURL + `
+  --model string
+        ` + bootstrapFlagDescModel + `
+  --api-key string
+        ` + bootstrapFlagDescAPIKey + `
+  --debug
+        ` + bootstrapFlagDescDebug + `
+  -h, --help
+        Show help for mscli
+  -v, --version
+        Print version
+
+In-app commands:
+  After launch, type / to browse slash commands such as /model, /resume, /replay,
+  /diagnose, and /fix.
+
+Examples:
+  mscli
+  MSCLI_PROVIDER=openai-completion MSCLI_API_KEY=sk-... MSCLI_MODEL=gpt-4o mscli
+  mscli resume sess_xxx
+  mscli replay sess_xxx
+  mscli replay trajectory.json 2x
+
+Environment:
+  MSCLI_PROVIDER
+        Provider name for BYO model startup. Use with MSCLI_API_KEY and MSCLI_MODEL.
+  MSCLI_API_KEY
+        API key for BYO model startup.
+  MSCLI_MODEL
+        Model name for BYO model startup.
+  MSCLI_BASE_URL
+        Optional base URL override for compatible providers.
+`
 	}
 }
 

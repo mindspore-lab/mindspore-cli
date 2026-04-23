@@ -74,12 +74,15 @@ func TestReadToolFinalization_HidesContent(t *testing.T) {
 	}
 }
 
-func TestCtrlO_OpensToolOutputViewer(t *testing.T) {
+func TestCtrlO_OpensTranscriptViewer(t *testing.T) {
 	app := New(make(chan model.Event), nil, "dev", ".", "", "model", 1024)
 	app.bootActive = false
 	app.width = 80
 	app.height = 24
 	app.state.Messages = []model.Message{{
+		Kind:    model.MsgUser,
+		Content: "show the file",
+	}, {
 		Kind:     model.MsgTool,
 		ToolName: "Write",
 		ToolArgs: "x.md",
@@ -89,31 +92,63 @@ func TestCtrlO_OpensToolOutputViewer(t *testing.T) {
 		}, "\n"),
 	}}
 
-	// Ctrl+O opens the tool output viewer
+	// Ctrl+O opens the transcript viewer.
 	next, _ := app.handleKey(tea.KeyMsg{Type: tea.KeyCtrlO})
 	updated := next.(App)
-	if updated.toolOutputView == nil {
-		t.Fatal("expected tool output view to be open after ctrl+o")
-	}
-	if updated.toolOutputView.msg.ToolName != "Write" {
-		t.Fatalf("expected Write tool in viewer, got %q", updated.toolOutputView.msg.ToolName)
+	if updated.transcriptView == nil {
+		t.Fatal("expected transcript view to be open after ctrl+o")
 	}
 
-	// View should show full content
+	// View should show the full transcript, not only the latest tool body.
 	view := updated.View()
-	if !strings.Contains(view, "f") || !strings.Contains(view, "g") {
-		t.Fatalf("expected full content in viewer, got:\n%s", view)
+	if !strings.Contains(view, "show the file") || !strings.Contains(view, "f") || !strings.Contains(view, "g") {
+		t.Fatalf("expected full history in viewer, got:\n%s", view)
 	}
 
-	// Ctrl+O again closes it (goes through handleToolOutputViewKey)
+	// Ctrl+O again closes it (goes through handleTranscriptViewKey).
 	next, _ = updated.handleKey(tea.KeyMsg{Type: tea.KeyCtrlO})
 	closed := next.(App)
-	if closed.toolOutputView != nil {
-		t.Fatal("expected tool output view to be closed after second ctrl+o")
+	if closed.transcriptView != nil {
+		t.Fatal("expected transcript view to be closed after second ctrl+o")
 	}
 }
 
-func TestCtrlO_OpensStreamingToolOutputViewerAndTracksLiveUpdates(t *testing.T) {
+func TestCtrlO_TranscriptViewerIncludesAllToolHistory(t *testing.T) {
+	app := New(make(chan model.Event), nil, "dev", ".", "", "model", 1024)
+	app.bootActive = false
+	app.width = 100
+	app.height = 30
+	app.state.Messages = []model.Message{
+		{Kind: model.MsgUser, Content: "first command"},
+		{
+			Kind:     model.MsgTool,
+			ToolName: "Bash",
+			ToolArgs: "$ echo first",
+			Display:  model.DisplayCollapsed,
+			Content:  "first-output",
+			Summary:  "completed",
+		},
+		{Kind: model.MsgAgent, Content: "now second"},
+		{
+			Kind:     model.MsgTool,
+			ToolName: "Bash",
+			ToolArgs: "$ echo second",
+			Display:  model.DisplayCollapsed,
+			Content:  "second-output",
+			Summary:  "completed",
+		},
+	}
+
+	next, _ := app.handleKey(tea.KeyMsg{Type: tea.KeyCtrlO})
+	app = next.(App)
+
+	view := testANSIPattern.ReplaceAllString(app.View(), "")
+	if !strings.Contains(view, "first-output") || !strings.Contains(view, "second-output") {
+		t.Fatalf("expected transcript viewer to include all tool history, got:\n%s", view)
+	}
+}
+
+func TestCtrlO_OpensTranscriptViewerAndTracksStreamingToolUpdates(t *testing.T) {
 	app := New(nil, nil, "test", ".", "", "demo-model", 4096)
 	app.bootActive = false
 
@@ -146,16 +181,13 @@ func TestCtrlO_OpensStreamingToolOutputViewerAndTracksLiveUpdates(t *testing.T) 
 	next, _ = app.handleKey(tea.KeyMsg{Type: tea.KeyCtrlO})
 	app = next.(App)
 
-	if app.toolOutputView == nil {
-		t.Fatal("expected ctrl+o to open viewer for streaming tool output")
-	}
-	if got, want := app.toolOutputView.toolCallID, "call-shell-live"; got != want {
-		t.Fatalf("toolCallID = %q, want %q", got, want)
+	if app.transcriptView == nil {
+		t.Fatal("expected ctrl+o to open transcript viewer")
 	}
 
 	view := testANSIPattern.ReplaceAllString(app.View(), "")
 	if !strings.Contains(view, "line-1") {
-		t.Fatalf("expected initial streamed output in viewer, got:\n%s", view)
+		t.Fatalf("expected initial streamed output in transcript viewer, got:\n%s", view)
 	}
 
 	next, _ = app.handleEvent(model.Event{
@@ -168,7 +200,7 @@ func TestCtrlO_OpensStreamingToolOutputViewerAndTracksLiveUpdates(t *testing.T) 
 
 	view = testANSIPattern.ReplaceAllString(app.View(), "")
 	if !strings.Contains(view, "line-2") {
-		t.Fatalf("expected viewer to refresh with new streamed output, got:\n%s", view)
+		t.Fatalf("expected transcript viewer to refresh with new streamed output, got:\n%s", view)
 	}
 }
 

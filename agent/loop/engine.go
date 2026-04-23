@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ctxmanager "github.com/mindspore-lab/mindspore-cli/agent/context"
+	"github.com/mindspore-lab/mindspore-cli/configs"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	"github.com/mindspore-lab/mindspore-cli/permission"
 	"github.com/mindspore-lab/mindspore-cli/tools"
@@ -61,8 +62,8 @@ func NewEngine(cfg EngineConfig, provider llm.Provider, tools *tools.Registry) *
 	managerCfg := ctxmanager.DefaultManagerConfig()
 	if cfg.ContextWindow > 0 {
 		managerCfg.ContextWindow = cfg.ContextWindow
+		managerCfg.ReserveTokens = configs.DefaultReserveTokens(managerCfg.ContextWindow)
 	}
-	managerCfg.ReserveTokens = 4000
 	engine.ctxManager = ctxmanager.NewManager(managerCfg)
 	engine.ctxManager.SetSystemPrompt(cfg.SystemPrompt)
 	engine.permission = permission.NewNoOpPermissionService()
@@ -375,6 +376,9 @@ func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResp
 	if err != nil {
 		return false, err
 	}
+	if notice == nil {
+		ex.syncContextTokenUsage(resp.Usage)
+	}
 	if ex.engine.recorder != nil {
 		if strings.TrimSpace(resp.Content) != "" && ex.engine.recorder.RecordAssistant != nil {
 			if err := ex.engine.recorder.RecordAssistant(resp.Content); err != nil {
@@ -633,6 +637,19 @@ func (ex *executor) trackUsage(u llm.Usage) {
 	ex.totalUsage.PromptTokens += u.PromptTokens
 	ex.totalUsage.CompletionTokens += u.CompletionTokens
 	ex.totalUsage.TotalTokens += u.TotalTokens
+}
+
+func (ex *executor) syncContextTokenUsage(u llm.Usage) {
+	if ex.engine == nil || ex.engine.ctxManager == nil {
+		return
+	}
+
+	providerName := ""
+	if ex.engine.provider != nil {
+		providerName = ex.engine.provider.Name()
+	}
+
+	ex.engine.ctxManager.SetProviderTokenUsage(providerName, u)
 }
 
 func (ex *executor) persistSnapshot() error {

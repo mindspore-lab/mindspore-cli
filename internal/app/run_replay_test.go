@@ -372,3 +372,24 @@ func TestProcessInputHistoryReplayReadyIgnoredWhenReplayNotDeferred(t *testing.T
 	case <-time.After(50 * time.Millisecond):
 	}
 }
+
+func TestReplayHistoryLeavesReplayModeWhenPlaybackFinishes(t *testing.T) {
+	t0 := time.Date(2026, time.March, 27, 12, 0, 0, 0, time.UTC)
+	app := &Application{
+		EventCh:    make(chan model.Event, 4),
+		replayOnly: true,
+		replayTimeline: []session.ReplayFrame{
+			{Timestamp: t0, Event: model.Event{Type: model.UserInput, Message: "hello"}},
+			{Timestamp: t0.Add(10 * time.Millisecond), Event: model.Event{Type: model.AgentReply, Message: "hi"}},
+		},
+	}
+
+	app.replayHistory()
+
+	if app.replayOnly {
+		t.Fatal("expected replay mode to end after playback")
+	}
+	if len(app.replayTimeline) != 0 {
+		t.Fatalf("expected replay timeline to be cleared, got %d item(s)", len(app.replayTimeline))
+	}
+}

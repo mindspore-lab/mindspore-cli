@@ -4,7 +4,7 @@ import "math/rand"
 
 var tips = []string{
 	"Use /report to submit feedback",
-	"Press ctrl+o to view full tool output",
+	"Press ctrl+o to view full history",
 	"Use /model to switch models",
 	"Use ↑/↓ to recall input history",
 	"Use /compact to free up context space",

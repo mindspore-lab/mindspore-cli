@@ -173,6 +173,48 @@ func (s *DefaultPermissionService) SetStore(store PermissionStore) {
 	}
 }
 
+// ResetSessionState clears session-scoped permission state and detaches any
+// session-backed store so a new runtime session starts cleanly.
+func (s *DefaultPermissionService) ResetSessionState() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.denyRules = filterCompiledRulesBySourceNoLock(s.denyRules, ruleSourceSession, ruleSourceState)
+	s.askRules = filterCompiledRulesBySourceNoLock(s.askRules, ruleSourceSession, ruleSourceState)
+	s.allowRules = filterCompiledRulesBySourceNoLock(s.allowRules, ruleSourceSession, ruleSourceState)
+	s.policies = make(map[string]PermissionLevel)
+	s.commandPolicies = make(map[string]PermissionLevel)
+	s.pathPatterns = make([]PathPermission, 0)
+	s.store = nil
+}
+
+func filterCompiledRulesBySourceNoLock(in []compiledRule, sources ...string) []compiledRule {
+	if len(in) == 0 {
+		return in
+	}
+
+	blocked := make(map[string]struct{}, len(sources))
+	for _, source := range sources {
+		source = strings.ToLower(strings.TrimSpace(source))
+		if source == "" {
+			continue
+		}
+		blocked[source] = struct{}{}
+	}
+	if len(blocked) == 0 {
+		return in
+	}
+
+	out := in[:0]
+	for _, rule := range in {
+		if _, ok := blocked[strings.ToLower(strings.TrimSpace(rule.Source))]; ok {
+			continue
+		}
+		out = append(out, rule)
+	}
+	return out
+}
+
 // Request requests permission.
 func (s *DefaultPermissionService) Request(ctx context.Context, tool, action, path string) (bool, error) {
 	// 1. 检查工具级别权限

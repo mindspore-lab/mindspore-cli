@@ -19,6 +19,7 @@ type ModelInfo struct {
 	CtxUsed    int
 	CtxMax     int
 	TokensUsed int
+	Debug      bool
 }
 
 // MessageKind distinguishes chat message types.
@@ -99,6 +100,7 @@ const (
 	ModelPickerOpen      EventType = "ModelPickerOpen"
 	ModelSetupOpen       EventType = "ModelSetupOpen"
 	ModelSetupClose      EventType = "ModelSetupClose"
+	SessionPickerOpen    EventType = "SessionPickerOpen"
 	ModelSetupTokenError EventType = "ModelSetupTokenError"
 	MouseModeToggle      EventType = "MouseModeToggle"
 	IssueUserUpdate      EventType = "IssueUserUpdate"
@@ -128,6 +130,7 @@ type Event struct {
 	Permissions *PermissionsViewData
 	Popup       *SelectionPopup // non-nil for popup events only
 	SetupPopup  *SetupPopup     // non-nil for model setup popup events
+	SessionPicker *SessionPicker
 	IssueView   *IssueEventData // non-nil for issue view events only
 	Issue       *issuepkg.Issue // reserved for lightweight issue payloads
 }

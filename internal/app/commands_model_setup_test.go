@@ -15,6 +15,9 @@ func TestCmdModelSetup_VerifiesUserAndConfiguresModel(t *testing.T) {
 	origPath := appConfigPathOverride
 	appConfigPathOverride = dir + "/config.json"
 	t.Cleanup(func() { appConfigPathOverride = origPath })
+	if err := saveAppConfig(&appConfig{SessionRetentionDays: 21}); err != nil {
+		t.Fatalf("saveAppConfig: %v", err)
+	}
 
 	// Mock server: /me returns user info, /model-presets/... returns API key.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +84,9 @@ func TestCmdModelSetup_VerifiesUserAndConfiguresModel(t *testing.T) {
 	}
 	if acfg.ModelPresetID != "kimi-k2.5-free" {
 		t.Errorf("ModelPresetID = %q, want 'kimi-k2.5-free'", acfg.ModelPresetID)
+	}
+	if acfg.SessionRetentionDays != 21 {
+		t.Errorf("SessionRetentionDays = %d, want %d", acfg.SessionRetentionDays, 21)
 	}
 
 	// Verify user state

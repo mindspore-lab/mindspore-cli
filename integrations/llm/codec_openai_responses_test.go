@@ -13,7 +13,7 @@ func TestOpenAIResponsesStreamIteratorSignalsBackgroundWorkWhenToolArgsFollowTex
 		`data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"path\":\"README.md\""}`,
 		`data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":",\"content\":\"hello\"}"}`,
 		`data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"fc_123","call_id":"call_123","name":"write","arguments":"{\"path\":\"README.md\",\"content\":\"hello\"}"}}`,
-		`data: {"type":"response.completed","response":{"id":"resp_123","model":"gpt-test","usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}`,
+		`data: {"type":"response.completed","response":{"id":"resp_123","model":"gpt-test","usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14,"output_tokens_details":{"reasoning_tokens":2}}}}`,
 		`data: [DONE]`,
 	}, "\n") + "\n"
 
@@ -46,5 +46,19 @@ func TestOpenAIResponsesStreamIteratorSignalsBackgroundWorkWhenToolArgsFollowTex
 	}
 	if toolChunk == nil || len(toolChunk.ToolCalls) != 1 {
 		t.Fatalf("third chunk = %#v, want tool call chunk", toolChunk)
+	}
+
+	finalChunk, err := it.Next()
+	if err != nil {
+		t.Fatalf("fourth Next() error = %v", err)
+	}
+	if finalChunk == nil || finalChunk.Usage == nil {
+		t.Fatalf("fourth chunk = %#v, want usage chunk", finalChunk)
+	}
+	if got, want := finalChunk.Usage.PromptTokens, 10; got != want {
+		t.Fatalf("finalChunk.Usage.PromptTokens = %d, want %d", got, want)
+	}
+	if got, want := string(finalChunk.Usage.Raw), `{"input_tokens":10,"output_tokens":4,"total_tokens":14,"output_tokens_details":{"reasoning_tokens":2}}`; got != want {
+		t.Fatalf("finalChunk.Usage.Raw = %s, want %s", got, want)
 	}
 }

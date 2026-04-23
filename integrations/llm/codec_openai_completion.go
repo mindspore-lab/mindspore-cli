@@ -29,15 +29,21 @@ func (c *openAICodec) encodeRequest(req *CompletionRequest, stream bool) (openAI
 		model = "gpt-4o-mini"
 	}
 
+	var streamOptions *openAIStreamOptions
+	if stream {
+		streamOptions = &openAIStreamOptions{IncludeUsage: true}
+	}
+
 	return openAIChatCompletionRequest{
-		Model:       model,
-		Messages:    c.encodeMessages(req.Messages),
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-		TopP:        req.TopP,
-		Stop:        req.Stop,
-		Tools:       c.encodeTools(req.Tools),
-		Stream:      stream,
+		Model:         model,
+		Messages:      c.encodeMessages(req.Messages),
+		Temperature:   req.Temperature,
+		MaxTokens:     req.MaxTokens,
+		TopP:          req.TopP,
+		Stop:          req.Stop,
+		Tools:         c.encodeTools(req.Tools),
+		Stream:        stream,
+		StreamOptions: streamOptions,
 	}, nil
 }
 
@@ -110,11 +116,7 @@ func (c *openAICodec) decodeCompletionResponse(resp openAIChatCompletionResponse
 		Model:        resp.Model,
 		Content:      choice.Message.Content,
 		FinishReason: FinishReason(choice.FinishReason),
-		Usage: Usage{
-			PromptTokens:     resp.Usage.PromptTokens,
-			CompletionTokens: resp.Usage.CompletionTokens,
-			TotalTokens:      resp.Usage.TotalTokens,
-		},
+		Usage:        resp.Usage.toUsage(),
 	}
 
 	if len(choice.Message.ToolCalls) == 0 {
@@ -174,14 +176,19 @@ type openAIToolCallFunction struct {
 }
 
 type openAIChatCompletionRequest struct {
-	Model       string          `json:"model"`
-	Messages    []openAIMessage `json:"messages"`
-	Temperature *float32        `json:"temperature,omitempty"`
-	MaxTokens   *int            `json:"max_tokens,omitempty"`
-	TopP        float32         `json:"top_p,omitempty"`
-	Stop        []string        `json:"stop,omitempty"`
-	Tools       []openAITool    `json:"tools,omitempty"`
-	Stream      bool            `json:"stream"`
+	Model         string               `json:"model"`
+	Messages      []openAIMessage      `json:"messages"`
+	Temperature   *float32             `json:"temperature,omitempty"`
+	MaxTokens     *int                 `json:"max_tokens,omitempty"`
+	TopP          float32              `json:"top_p,omitempty"`
+	Stop          []string             `json:"stop,omitempty"`
+	Tools         []openAITool         `json:"tools,omitempty"`
+	Stream        bool                 `json:"stream"`
+	StreamOptions *openAIStreamOptions `json:"stream_options,omitempty"`
+}
+
+type openAIStreamOptions struct {
+	IncludeUsage bool `json:"include_usage,omitempty"`
 }
 
 type openAIChatCompletionResponse struct {
@@ -200,9 +207,37 @@ type openAIChoice struct {
 }
 
 type openAIUsage struct {
+	PromptTokens     int             `json:"prompt_tokens"`
+	CompletionTokens int             `json:"completion_tokens"`
+	TotalTokens      int             `json:"total_tokens"`
+	Raw              json.RawMessage `json:"-"`
+}
+
+type openAIUsagePayload struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+}
+
+func (u *openAIUsage) UnmarshalJSON(data []byte) error {
+	var payload openAIUsagePayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	u.PromptTokens = payload.PromptTokens
+	u.CompletionTokens = payload.CompletionTokens
+	u.TotalTokens = payload.TotalTokens
+	u.Raw = cloneRawJSON(data)
+	return nil
+}
+
+func (u openAIUsage) toUsage() Usage {
+	return Usage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      u.TotalTokens,
+		Raw:              cloneRawJSON(u.Raw),
+	}
 }
 
 type openAIStreamResponse struct {
@@ -257,12 +292,7 @@ func (it *openAIStreamIterator) Next() (*StreamChunk, error) {
 		if err != nil {
 			if err == io.EOF {
 				it.done = true
-				if it.accumulated.Content != "" || len(it.accumulated.ToolCalls) > 0 {
-					return &StreamChunk{
-						Content:   it.accumulated.Content,
-						ToolCalls: it.accumulated.ToolCalls,
-					}, io.EOF
-				}
+				return nil, io.EOF
 			}
 			return nil, err
 		}
@@ -273,12 +303,6 @@ func (it *openAIStreamIterator) Next() (*StreamChunk, error) {
 		}
 		if line == "data: [DONE]" {
 			it.done = true
-			if it.accumulated.Content != "" || len(it.accumulated.ToolCalls) > 0 {
-				return &StreamChunk{
-					Content:   it.accumulated.Content,
-					ToolCalls: it.accumulated.ToolCalls,
-				}, nil
-			}
 			return nil, io.EOF
 		}
 		if !strings.HasPrefix(line, "data: ") {
@@ -288,6 +312,11 @@ func (it *openAIStreamIterator) Next() (*StreamChunk, error) {
 		var resp openAIStreamResponse
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &resp); err != nil {
 			continue
+		}
+		if resp.Usage != nil && len(resp.Choices) == 0 {
+			return &StreamChunk{
+				Usage: ptrUsage(resp.Usage.toUsage()),
+			}, nil
 		}
 		if len(resp.Choices) == 0 {
 			continue
@@ -307,14 +336,9 @@ func (it *openAIStreamIterator) Next() (*StreamChunk, error) {
 		}
 		if choice.FinishReason != nil {
 			chunk.FinishReason = FinishReason(*choice.FinishReason)
-			it.done = true
 		}
 		if resp.Usage != nil {
-			chunk.Usage = &Usage{
-				PromptTokens:     resp.Usage.PromptTokens,
-				CompletionTokens: resp.Usage.CompletionTokens,
-				TotalTokens:      resp.Usage.TotalTokens,
-			}
+			chunk.Usage = ptrUsage(resp.Usage.toUsage())
 		}
 
 		return chunk, nil

@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -172,34 +173,36 @@ const (
 
 // App is the TUI root model.
 type App struct {
-	state               model.State
-	viewport            components.Viewport
-	input               components.TextInput
-	thinking            components.ThinkingSpinner
-	width               int
-	height              int
-	eventCh             <-chan model.Event
-	userCh              chan<- string // sends user input to the engine bridge
-	lastInterrupt       time.Time     // track last ctrl+c for double-press exit
-	mouseEnabled        bool
-	replayWait          *model.ReplayWaitData
-	modalAltScreen      bool
-	deltaMu             *sync.Mutex
-	deltaBuf            *strings.Builder // buffers agent deltas until a full line is ready
-	deltaStarted        *bool            // true after the first agent delta line is printed
-	eventListening      *int32           // atomic flag: 1 = waitForEvent goroutine is active
-	cmdOutputStarted    *bool            // true after first shell output line is printed
-	cmdOutputLines      *int             // lines printed so far for current shell command
-	followBottom        bool
-	unreadCount         int
-	lastMsgCount        int
-	backgroundModelWork bool
+	state                   model.State
+	viewport                components.Viewport
+	input                   components.TextInput
+	thinking                components.ThinkingSpinner
+	width                   int
+	height                  int
+	eventCh                 <-chan model.Event
+	userCh                  chan<- string // sends user input to the engine bridge
+	lastInterrupt           time.Time     // track last ctrl+c for double-press exit
+	mouseEnabled            bool
+	replayWait              *model.ReplayWaitData
+	modalAltScreen          bool
+	deltaMu                 *sync.Mutex
+	deltaBuf                *strings.Builder // buffers agent deltas until a full line is ready
+	deltaStarted            *bool            // true after the first agent delta line is printed
+	eventListening          *int32           // atomic flag: 1 = waitForEvent goroutine is active
+	cmdOutputStarted        *bool            // true after first shell output line is printed
+	cmdOutputLines          *int             // lines printed so far for current shell command
+	followBottom            bool
+	unreadCount             int
+	lastMsgCount            int
+	suppressUserEventPrints int
+	backgroundModelWork     bool
 
 	// Train mode
 	trainView     model.TrainViewState
 	trainFocus    model.TrainPanelID
 	issueView     model.IssueViewState
 	bootActive    bool
+	startupBannerSuppressed bool
 	bootHighlight int
 	bannerPrinted bool
 	queuedInputs  []string
@@ -209,24 +212,25 @@ type App struct {
 	toolsExpanded    *bool
 	modelPicker      *model.SelectionPopup
 	setupPopup       *model.SetupPopup
+	sessionPicker    *model.SessionPicker
 	appendHistoryFn  func(string)
 
-	// Tool output viewer (alt-screen overlay, toggled via Ctrl+O)
-	toolOutputView *toolOutputViewState
+	// Transcript viewer (alt-screen overlay, toggled via Ctrl+O)
+	transcriptView *transcriptViewState
 }
 
-// toolOutputViewState holds state for the alt-screen tool output viewer.
-type toolOutputViewState struct {
-	toolCallID string
-	msg        model.Message
-	scrollOff  int // vertical scroll offset (line index)
+// transcriptViewState holds state for the alt-screen transcript viewer.
+type transcriptViewState struct {
+	scrollOff int // vertical scroll offset (line index)
 }
 
 // New creates a new App driven by the given event channel.
 // userCh may be nil — user input won't be forwarded.
-func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
+func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int, debug ...bool) App {
+	state := model.NewState(version, workDir, repoURL, modelName, ctxMax)
+	state.Model.Debug = len(debug) > 0 && debug[0]
 	return App{
-		state:            model.NewState(version, workDir, repoURL, modelName, ctxMax),
+		state:            state,
 		input:            components.NewTextInput().WithFileSuggestions(workDir),
 		thinking:         components.NewThinkingSpinner(),
 		eventCh:          ch,
@@ -244,8 +248,8 @@ func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL,
 }
 
 // NewReplay creates a TUI instance that starts directly in chat view for playback.
-func NewReplay(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
-	app := New(ch, userCh, version, workDir, repoURL, modelName, ctxMax)
+func NewReplay(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int, debug ...bool) App {
+	app := New(ch, userCh, version, workDir, repoURL, modelName, ctxMax, debug...)
 	app.bootActive = false
 	return app
 }
@@ -253,6 +257,12 @@ func NewReplay(ch <-chan model.Event, userCh chan<- string, version, workDir, re
 // SeedInputHistory preloads persisted prompt history into the current composer.
 func (a App) SeedInputHistory(values []string) App {
 	a.input = a.input.SeedHistory(values)
+	return a
+}
+
+// WithStartupBannerSuppressed defers the inline startup banner until the caller re-enables it.
+func (a App) WithStartupBannerSuppressed() App {
+	a.startupBannerSuppressed = true
 	return a
 }
 
@@ -302,6 +312,13 @@ func (a App) Init() tea.Cmd {
 		}),
 		a.waitForEvent,
 	)
+}
+
+func replayPickerCommandSpeed(speed float64) string {
+	if speed <= 0 || speed == 1 {
+		return ""
+	}
+	return strconv.FormatFloat(speed, 'f', -1, 64) + "x"
 }
 
 func (a App) chatHeight() int {
@@ -363,7 +380,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.resizeActiveLayout()
-		return a, nil
+		return a, a.reprintHistoryOnResize()
 
 	case bootTickMsg:
 		if !a.bootActive {
@@ -449,7 +466,7 @@ func (a *App) wantsModalAltScreen() bool {
 	if a == nil {
 		return false
 	}
-	return a.modelPicker != nil || a.setupPopup != nil || a.toolOutputView != nil
+	return a.modelPicker != nil || a.setupPopup != nil || a.sessionPicker != nil || a.transcriptView != nil
 }
 
 func (a *App) syncModalAltScreen() tea.Cmd {
@@ -495,9 +512,9 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.printMessage(interruptMsg)
 	}
 
-	// Tool output viewer intercepts all keys when active.
-	if a.toolOutputView != nil {
-		return a.handleToolOutputViewKey(msg)
+	// Transcript viewer intercepts all keys when active.
+	if a.transcriptView != nil {
+		return a.handleTranscriptViewKey(msg)
 	}
 
 	if a.issueView.Active() {
@@ -505,16 +522,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if msg.String() == "ctrl+o" {
-		if a.toolOutputView != nil {
-			a.toolOutputView = nil
-		} else {
-			if toolMsg, ok := a.latestToolMessage(); ok {
-				a.toolOutputView = &toolOutputViewState{
-					toolCallID: toolMsg.ToolCallID,
-					msg:        toolMsg,
-				}
-			}
-		}
+		a.openTranscriptView()
 		return a, a.syncModalAltScreen()
 	}
 
@@ -770,6 +778,63 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Multi-step model setup popup navigation
+	if a.sessionPicker != nil {
+		switch msg.String() {
+		case "up", "left":
+			a.sessionPicker.MoveSelection(-1)
+			return a, nil
+		case "down", "right":
+			a.sessionPicker.MoveSelection(1)
+			return a, nil
+		case "enter":
+			if len(a.sessionPicker.Items) == 0 {
+				a.sessionPicker = nil
+				a.startupBannerSuppressed = false
+				exitAlt := a.syncModalAltScreen()
+				banner := a.maybePrintBanner()
+				if exitAlt != nil && banner != nil {
+					return a, tea.Sequence(exitAlt, banner)
+				}
+				return a, combineCmds(exitAlt, banner)
+			}
+			item := a.sessionPicker.Items[a.sessionPicker.Selected]
+			mode := a.sessionPicker.Mode
+			speed := a.sessionPicker.ReplaySpeed
+			a.sessionPicker = nil
+			a.startupBannerSuppressed = false
+			if a.userCh != nil {
+				command := "/resume " + item.ID
+				if mode == model.SessionPickerReplay {
+					command = "/replay " + item.ID
+					if speedLabel := replayPickerCommandSpeed(speed); speedLabel != "" {
+						command += " " + speedLabel
+					}
+				}
+				select {
+				case a.userCh <- command:
+				default:
+				}
+			}
+			exitAlt := a.syncModalAltScreen()
+			banner := a.maybePrintBanner()
+			if exitAlt != nil && banner != nil {
+				return a, tea.Sequence(exitAlt, banner)
+			}
+			return a, combineCmds(exitAlt, banner)
+		case "esc":
+			a.sessionPicker = nil
+			a.startupBannerSuppressed = false
+			exitAlt := a.syncModalAltScreen()
+			banner := a.maybePrintBanner()
+			if exitAlt != nil && banner != nil {
+				return a, tea.Sequence(exitAlt, banner)
+			}
+			return a, combineCmds(exitAlt, banner)
+		}
+		return a, nil
+	}
+
+	// Multi-step model setup popup navigation
 	if a.setupPopup != nil {
 		switch a.setupPopup.Screen {
 		case model.SetupScreenModeSelect:
@@ -967,6 +1032,9 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		if a.shouldQueueInput(val) {
+			if !strings.HasPrefix(val, "/") {
+				a.suppressUserEventPrints++
+			}
 			a.queuedInputs = append(a.queuedInputs, val)
 			a = a.rememberInput(val)
 			a.input = a.input.Reset()
@@ -980,6 +1048,9 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !strings.HasPrefix(val, "/") && !shouldDeferUserEcho(val) {
 			a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: val})
 			a.state = a.startWait(model.WaitModel)
+		}
+		if !strings.HasPrefix(val, "/") {
+			a.suppressUserEventPrints++
 		}
 		a = a.rememberInput(val)
 		a.input = a.input.Reset()
@@ -1071,9 +1142,14 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	prevMessages := append([]model.Message(nil), a.state.Messages...)
 
 	var eventCmd tea.Cmd
+	suppressUserPrint := false
 
 	switch ev.Type {
 	case model.UserInput:
+		if a.suppressUserEventPrints > 0 {
+			a.suppressUserEventPrints--
+			suppressUserPrint = true
+		}
 		if last := len(a.state.Messages) - 1; last >= 0 && a.state.Messages[last].Kind == model.MsgUser {
 			msgs := append([]model.Message{}, a.state.Messages...)
 			msgs[last].Content = ev.Message
@@ -1298,9 +1374,32 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	case model.ClearScreen:
 		a.replayWait = nil
-		a.state = a.state.ClearWait()
-		a.state.Messages = []model.Message{
-			{Kind: model.MsgAgent, Content: ev.Message},
+		a.state = a.clearThinking()
+		a.startupBannerSuppressed = false
+		a.bannerPrinted = true
+		a.state.Messages = nil
+		a.input = a.input.ClearSlashMode()
+		a.viewport = a.viewport.Clear()
+		a.followBottom = true
+		a.unreadCount = 0
+		if a.deltaBuf != nil {
+			a.deltaBuf.Reset()
+		}
+		if a.deltaStarted != nil {
+			*a.deltaStarted = false
+		}
+		if a.cmdOutputStarted != nil {
+			*a.cmdOutputStarted = false
+		}
+		if a.cmdOutputLines != nil {
+			*a.cmdOutputLines = 0
+		}
+		if strings.TrimSpace(ev.Summary) != "" {
+			a.state = a.state.WithMessage(model.Message{
+				Kind:    model.MsgAgent,
+				Content: ev.Summary,
+				Display: model.DisplayNotice,
+			})
 		}
 
 	case model.ModelUpdate:
@@ -1335,6 +1434,14 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			eventCmd = combineCmds(eventCmd, tea.Sequence(exitAlt, banner))
 		} else {
 			eventCmd = combineCmds(eventCmd, exitAlt, banner)
+		}
+
+	case model.SessionPickerOpen:
+		if ev.SessionPicker != nil {
+			cp := *ev.SessionPicker
+			cp.Items = append([]model.SessionPickerItem(nil), ev.SessionPicker.Items...)
+			a.sessionPicker = &cp
+			eventCmd = combineCmds(eventCmd, a.syncModalAltScreen())
 		}
 
 	case model.ModelSetupTokenError:
@@ -1678,7 +1785,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	}
 
 	a = a.maybeDispatchQueuedInput()
-	printCmd := a.eventPrintCmd(ev, prevMessages)
+	printCmd := a.eventPrintCmd(ev, prevMessages, suppressUserPrint)
 	eventCmd = combineCmds(eventCmd, printCmd, a.maybePrintBanner())
 	if eventCmd != nil {
 		// Sequence ensures tea.Println output is processed before
@@ -2834,39 +2941,55 @@ func collapsedPreviewLines(toolName string) int {
 	}
 }
 
-// ── Tool output viewer (alt-screen overlay) ────────────────────────
+// ── Transcript viewer (alt-screen overlay) ─────────────────────────
 
 var (
-	toolViewTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
-	toolViewHintStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true)
-	toolViewLineStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	transcriptViewTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
+	transcriptViewHintStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true)
+	transcriptViewLineStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
-// handleToolOutputViewKey handles keys while the tool output viewer is open.
-func (a App) handleToolOutputViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	v := a.toolOutputView
-	contentHeight := a.toolOutputContentHeight()
+func (a *App) openTranscriptView() {
+	a.transcriptView = &transcriptViewState{}
+	a.scrollTranscriptToBottom()
+}
+
+func (a *App) scrollTranscriptToBottom() {
+	if a == nil || a.transcriptView == nil {
+		return
+	}
+	max := a.transcriptContentHeight() - a.transcriptViewportHeight()
+	if max < 0 {
+		max = 0
+	}
+	a.transcriptView.scrollOff = max
+}
+
+// handleTranscriptViewKey handles keys while the transcript viewer is open.
+func (a App) handleTranscriptViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	v := a.transcriptView
+	contentHeight := a.transcriptContentHeight()
 
 	switch msg.String() {
 	case "ctrl+o", "q", "esc":
-		a.toolOutputView = nil
+		a.transcriptView = nil
 		return a, a.syncModalAltScreen()
 	case "up", "k":
 		if v.scrollOff > 0 {
 			v.scrollOff--
 		}
 	case "down", "j":
-		if v.scrollOff < contentHeight-a.toolOutputViewportHeight() {
+		if v.scrollOff < contentHeight-a.transcriptViewportHeight() {
 			v.scrollOff++
 		}
 	case "pgup", "b":
-		v.scrollOff -= a.toolOutputViewportHeight()
+		v.scrollOff -= a.transcriptViewportHeight()
 		if v.scrollOff < 0 {
 			v.scrollOff = 0
 		}
 	case "pgdown", "f", " ":
-		v.scrollOff += a.toolOutputViewportHeight()
-		max := contentHeight - a.toolOutputViewportHeight()
+		v.scrollOff += a.transcriptViewportHeight()
+		max := contentHeight - a.transcriptViewportHeight()
 		if max < 0 {
 			max = 0
 		}
@@ -2876,7 +2999,7 @@ func (a App) handleToolOutputViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "home", "g":
 		v.scrollOff = 0
 	case "end", "G":
-		max := contentHeight - a.toolOutputViewportHeight()
+		max := contentHeight - a.transcriptViewportHeight()
 		if max < 0 {
 			max = 0
 		}
@@ -2885,7 +3008,7 @@ func (a App) handleToolOutputViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) toolOutputViewportHeight() int {
+func (a App) transcriptViewportHeight() int {
 	// 3 lines reserved: title bar, bottom divider, hint bar
 	h := a.height - 3
 	if h < 1 {
@@ -2894,66 +3017,45 @@ func (a App) toolOutputViewportHeight() int {
 	return h
 }
 
-func (a App) latestToolMessage() (model.Message, bool) {
-	for i := len(a.state.Messages) - 1; i >= 0; i-- {
-		msg := a.state.Messages[i]
-		if msg.Kind == model.MsgTool {
-			return msg, true
-		}
-	}
-	return model.Message{}, false
-}
-
-func (a App) toolOutputMessage() model.Message {
-	if a.toolOutputView == nil {
-		return model.Message{}
-	}
-	if toolCallID := strings.TrimSpace(a.toolOutputView.toolCallID); toolCallID != "" {
-		if msg, ok := findToolMessage(a.state.Messages, toolCallID); ok {
-			return msg
-		}
-	}
-	return a.toolOutputView.msg
-}
-
-func (a App) toolOutputContentLines() []string {
-	if a.toolOutputView == nil {
+func (a App) transcriptContentLines() []string {
+	if a.transcriptView == nil {
 		return nil
 	}
-	content := strings.TrimSpace(a.toolOutputMessage().Content)
+	content := strings.TrimSpace(a.renderTranscriptHistory(true, true))
 	if content == "" {
-		return []string{"(no output)"}
+		return []string{"(no history)"}
 	}
 	return strings.Split(content, "\n")
 }
 
-func (a App) toolOutputContentHeight() int {
-	return len(a.toolOutputContentLines())
+func (a App) transcriptContentHeight() int {
+	return len(a.transcriptContentLines())
 }
 
-// renderToolOutputView renders the full-screen tool output viewer.
-func (a App) renderToolOutputView() string {
-	v := a.toolOutputView
+// renderTranscriptView renders the full-screen transcript viewer.
+func (a App) renderTranscriptView() string {
+	v := a.transcriptView
 	if v == nil {
 		return ""
 	}
-	msg := a.toolOutputMessage()
 	w := a.width
 	if w < 10 {
 		w = 10
 	}
-	vpHeight := a.toolOutputViewportHeight()
-	allLines := a.toolOutputContentLines()
+	vpHeight := a.transcriptViewportHeight()
+	allLines := a.transcriptContentLines()
 	totalLines := len(allLines)
+	maxScroll := totalLines - vpHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if v.scrollOff > maxScroll {
+		v.scrollOff = maxScroll
+	}
 
 	// Title bar
-	toolName := strings.TrimSpace(msg.ToolName)
-	toolArgs := strings.TrimSpace(msg.ToolArgs)
-	if toolArgs == "" {
-		toolArgs = strings.TrimSpace(msg.Summary)
-	}
-	title := toolViewTitleStyle.Render(fmt.Sprintf(" %s(%s)", toolName, toolArgs))
-	lineInfo := toolViewHintStyle.Render(fmt.Sprintf(" %d/%d ", v.scrollOff+1, totalLines))
+	title := transcriptViewTitleStyle.Render(fmt.Sprintf(" Transcript (%d messages)", len(a.state.Messages)))
+	lineInfo := transcriptViewHintStyle.Render(fmt.Sprintf(" %d/%d ", v.scrollOff+1, totalLines))
 	titlePad := w - lipgloss.Width(title) - lipgloss.Width(lineInfo)
 	if titlePad < 0 {
 		titlePad = 0
@@ -2977,8 +3079,8 @@ func (a App) renderToolOutputView() string {
 	}
 
 	// Bottom bar
-	divider := toolViewLineStyle.Render(strings.Repeat("─", w))
-	hint := toolViewHintStyle.Render(" ctrl+o/q/esc: close  j/k: scroll  pgup/pgdn: page  g/G: top/bottom")
+	divider := transcriptViewLineStyle.Render(strings.Repeat("─", w))
+	hint := transcriptViewHintStyle.Render(" ctrl+o/q/esc: close  j/k: scroll  pgup/pgdn: page  g/G: top/bottom")
 
 	parts := []string{titleBar, divider}
 	parts = append(parts, visible...)
@@ -3259,13 +3361,20 @@ func (a App) View() string {
 		return a.renderMainView()
 	}
 
-	// Tool output viewer — full-screen scrollable view of tool output.
-	if a.toolOutputView != nil {
-		return a.renderToolOutputView()
+	// Transcript viewer — full-screen scrollable view of the full UI history.
+	if a.transcriptView != nil {
+		return a.renderTranscriptView()
 	}
 
 	// Temporary alt screen for modal popups — render only the popup on a blank backdrop.
-	blank := strings.Repeat("\n", a.height-1)
+	blankLines := a.height - 1
+	if blankLines < 0 {
+		blankLines = 0
+	}
+	blank := strings.Repeat("\n", blankLines)
+	if a.sessionPicker != nil {
+		return panels.RenderSessionPicker(a.sessionPicker, a.width, a.height)
+	}
 	if a.trainView.Active && a.trainView.SelectionPopup != nil {
 		return overlayPopup(blank, panels.RenderSelectionPopup(a.trainView.SelectionPopup), a.width, a.height)
 	}

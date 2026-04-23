@@ -81,6 +81,18 @@ func InitStyles() {
 		Padding(0, 2)
 	tokenCursorStyle = lipgloss.NewStyle().Background(t.TextPrimary).Foreground(t.SurfaceDim)
 	tokenTextStyle = lipgloss.NewStyle().Foreground(t.TextPrimary)
+	sessionPickerTitleStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	sessionPickerNormalStyle = lipgloss.NewStyle().Foreground(t.TextPrimary).Bold(true)
+	sessionPickerSelectedStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	sessionPickerMetaStyle = lipgloss.NewStyle().Foreground(t.TextSecondary)
+	sessionPickerSelectedMetaStyle = lipgloss.NewStyle().Foreground(t.AccentAlt)
+	sessionPickerPreviewStyle = lipgloss.NewStyle().Foreground(t.TextPrimary)
+	sessionPickerHintStyle = lipgloss.NewStyle().Foreground(t.TextMuted).Italic(true)
+	sessionPickerEmptyStyle = lipgloss.NewStyle().Foreground(t.TextMuted)
+	sessionPickerBorderStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.TextPrimary).
+		Padding(1, 2)
 
 	// ── train_setup.go ───────────────────────────────────────────
 	trainTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(t.Warning)

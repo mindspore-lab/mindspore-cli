@@ -13,9 +13,10 @@ func TestAppConfigRoundTrip(t *testing.T) {
 	t.Cleanup(func() { appConfigPathOverride = origPath })
 
 	cfg := &appConfig{
-		ModelMode:     "mscli-provided",
-		ModelPresetID: "kimi-k2.5-free",
-		ModelToken:    "sk-test-token-123",
+		ModelMode:            "mscli-provided",
+		ModelPresetID:        "kimi-k2.5-free",
+		ModelToken:           "sk-test-token-123",
+		SessionRetentionDays: 45,
 	}
 	if err := saveAppConfig(cfg); err != nil {
 		t.Fatalf("saveAppConfig: %v", err)
@@ -34,6 +35,9 @@ func TestAppConfigRoundTrip(t *testing.T) {
 	if loaded.ModelToken != cfg.ModelToken {
 		t.Errorf("ModelToken = %q, want %q", loaded.ModelToken, cfg.ModelToken)
 	}
+	if loaded.SessionRetentionDays != cfg.SessionRetentionDays {
+		t.Errorf("SessionRetentionDays = %d, want %d", loaded.SessionRetentionDays, cfg.SessionRetentionDays)
+	}
 }
 
 func TestLoadAppConfigMissing(t *testing.T) {
@@ -49,5 +53,8 @@ func TestLoadAppConfigMissing(t *testing.T) {
 	}
 	if cfg.ModelMode != "" {
 		t.Errorf("expected empty ModelMode, got %q", cfg.ModelMode)
+	}
+	if got, want := cfg.sessionRetentionDays(), defaultSessionRetentionDays; got != want {
+		t.Errorf("sessionRetentionDays() = %d, want %d", got, want)
 	}
 }

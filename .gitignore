@@ -34,3 +34,4 @@ scripts/download-stats.sh
 # IDE files
 .vscode/
 .cursor/
+.codex

@@ -463,6 +463,66 @@ func TestAnthropicStreamIteratorFallsBackToStartInputWhenPartialJSONInvalid(t *t
 	}
 }
 
+func TestAnthropicStreamIteratorPrefersFinalUsageSnapshot(t *testing.T) {
+	stream := strings.Join([]string{
+		mustAnthropicSSEEvent(t, "message_start", anthropicStreamMessageStartEvent{
+			Message: struct {
+				ID    string         `json:"id"`
+				Model string         `json:"model"`
+				Usage anthropicUsage `json:"usage"`
+			}{
+				ID:    "msg_567",
+				Model: "claude-test",
+				Usage: anthropicUsage{InputTokens: 1554},
+			},
+		}),
+		mustAnthropicSSEEvent(t, "content_block_start", anthropicStreamContentBlockStartEvent{
+			Index: 0,
+			ContentBlock: anthropicContentBlock{
+				Type: "text",
+				Text: "",
+			},
+		}),
+		mustAnthropicSSEEvent(t, "content_block_delta", anthropicStreamContentBlockDeltaEvent{
+			Index: 0,
+			Delta: struct {
+				Type        string `json:"type"`
+				Text        string `json:"text,omitempty"`
+				PartialJSON string `json:"partial_json,omitempty"`
+			}{
+				Type: "text_delta",
+				Text: "hello",
+			},
+		}),
+		`event: message_delta
+data: {"delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":1660,"output_tokens":149,"prompt_tokens":1660,"completion_tokens":149,"total_tokens":1809,"cached_tokens":0}}
+
+`,
+		"event: message_stop\n\n",
+	}, "")
+
+	firstChunk, finalChunk := runAnthropicStreamAndAssertNoPanic(t, stream)
+
+	if firstChunk == nil {
+		t.Fatal("first chunk = nil, want content chunk")
+	}
+	if got, want := firstChunk.Content, "hello"; got != want {
+		t.Fatalf("firstChunk.Content = %q, want %q", got, want)
+	}
+	if got, want := finalChunk.Usage.PromptTokens, 1660; got != want {
+		t.Fatalf("finalChunk.Usage.PromptTokens = %d, want %d", got, want)
+	}
+	if got, want := finalChunk.Usage.CompletionTokens, 149; got != want {
+		t.Fatalf("finalChunk.Usage.CompletionTokens = %d, want %d", got, want)
+	}
+	if got, want := finalChunk.Usage.TotalTokens, 1809; got != want {
+		t.Fatalf("finalChunk.Usage.TotalTokens = %d, want %d", got, want)
+	}
+	if got, want := string(finalChunk.Usage.Raw), `{"input_tokens":1660,"output_tokens":149,"prompt_tokens":1660,"completion_tokens":149,"total_tokens":1809,"cached_tokens":0}`; got != want {
+		t.Fatalf("finalChunk.Usage.Raw = %s, want %s", got, want)
+	}
+}
+
 func runAnthropicStreamAndAssertNoPanic(t *testing.T, stream string) (*StreamChunk, *StreamChunk) {
 	t.Helper()
 

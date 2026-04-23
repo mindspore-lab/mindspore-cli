@@ -7,9 +7,11 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	agentctx "github.com/mindspore-lab/mindspore-cli/agent/context"
 	"github.com/mindspore-lab/mindspore-cli/integrations/llm"
 	issuepkg "github.com/mindspore-lab/mindspore-cli/internal/issues"
 	projectpkg "github.com/mindspore-lab/mindspore-cli/internal/project"
@@ -31,8 +33,14 @@ func (a *Application) handleCommand(input string) {
 		a.cmdExit()
 	case "/compact":
 		a.cmdCompact()
+	case "/ctx":
+		a.cmdCtx()
 	case "/clear":
 		a.cmdClear()
+	case "/resume":
+		a.cmdResume(args)
+	case "/replay":
+		a.cmdReplay(args)
 	case "/permissions":
 		a.cmdPermissions(nil)
 	case "/yolo":
@@ -374,12 +382,17 @@ func (a *Application) cmdModelSetup(args []string) {
 	}
 
 	// Step 5: Save model mode to config.json (token is in credentials.json).
-	if err := saveAppConfig(&appConfig{
-		ModelMode:     modelModeMSCLIProvided,
-		ModelPresetID: preset.ID,
-		ModelToken:    token,
-	}); err != nil {
+	appCfg, loadErr := loadAppConfig()
+	if loadErr != nil {
+		appCfg = &appConfig{}
+	}
+	appCfg.ModelMode = modelModeMSCLIProvided
+	appCfg.ModelPresetID = preset.ID
+	appCfg.ModelToken = token
+	if err := saveAppConfig(appCfg); err != nil {
 		a.emitToolError("config", "model applied but failed to save config: %v", err)
+	} else if loadErr != nil {
+		a.emitToolError("config", "model applied but failed to preserve existing config: %v", loadErr)
 	}
 
 	// Step 6: Emit UI updates.
@@ -470,8 +483,215 @@ func (a *Application) cmdCompact() {
 	}
 }
 
+func (a *Application) cmdCtx() {
+	if a.ctxManager == nil {
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Context usage is not available.",
+		}
+		return
+	}
+
+	a.emitTokenUsageSnapshot()
+	a.EventCh <- model.Event{
+		Type:    model.AgentReply,
+		Message: formatContextUsageMessage(a.displayTokenUsageDetails()),
+	}
+}
+
+func formatContextUsageMessage(details agentctx.TokenUsageDetails) string {
+	lines := []string{
+		"Context usage:",
+		"",
+		fmt.Sprintf("  Current:   %d", details.Current),
+		fmt.Sprintf("  Window:    %d", details.ContextWindow),
+		fmt.Sprintf("  Reserved:  %d", details.Reserved),
+		fmt.Sprintf("  Available: %d", details.Available),
+	}
+
+	if details.Source == agentctx.TokenUsageSourceProvider {
+		if stats := formatProviderUsageStats(details.ProviderUsage, details.ProviderTokenScope); len(stats) > 0 {
+			lines = append(lines, "", "Provider usage stats:")
+			lines = append(lines, stats...)
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func formatProviderUsageStats(usage llm.Usage, scope agentctx.ProviderTokenScope) []string {
+	filtered := filterProviderUsageStats(flattenUsageRaw(usage.Raw), scope)
+	if len(filtered) > 0 {
+		return filtered
+	}
+
+	lines := make([]string, 0, 3)
+	switch scope {
+	case agentctx.ProviderTokenScopeTotal:
+		if usage.PromptTokens > 0 {
+			lines = append(lines, fmt.Sprintf("  prompt_tokens: %d", usage.PromptTokens))
+		}
+	case agentctx.ProviderTokenScopePrompt:
+		if usage.CompletionTokens > 0 {
+			lines = append(lines, fmt.Sprintf("  completion_tokens: %d", usage.CompletionTokens))
+		}
+		if usage.TotalTokens > 0 {
+			lines = append(lines, fmt.Sprintf("  total_tokens: %d", usage.TotalTokens))
+		}
+	default:
+		if usage.PromptTokens > 0 {
+			lines = append(lines, fmt.Sprintf("  prompt_tokens: %d", usage.PromptTokens))
+		}
+		if usage.CompletionTokens > 0 {
+			lines = append(lines, fmt.Sprintf("  completion_tokens: %d", usage.CompletionTokens))
+		}
+		if usage.TotalTokens > 0 {
+			lines = append(lines, fmt.Sprintf("  total_tokens: %d", usage.TotalTokens))
+		}
+	}
+	return lines
+}
+
+func flattenUsageRaw(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return []string{fmt.Sprintf("  raw: %s", string(raw))}
+	}
+
+	var lines []string
+	appendFlattenedUsageStats(&lines, "", value)
+	return lines
+}
+
+func appendFlattenedUsageStats(lines *[]string, prefix string, value any) {
+	switch v := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			nextPrefix := key
+			if prefix != "" {
+				nextPrefix = prefix + "." + key
+			}
+			appendFlattenedUsageStats(lines, nextPrefix, v[key])
+		}
+	case []any:
+		if prefix == "" {
+			data, _ := json.Marshal(v)
+			*lines = append(*lines, fmt.Sprintf("  value: %s", string(data)))
+			return
+		}
+		data, _ := json.Marshal(v)
+		*lines = append(*lines, fmt.Sprintf("  %s: %s", prefix, string(data)))
+	case nil:
+		if prefix != "" {
+			*lines = append(*lines, fmt.Sprintf("  %s: null", prefix))
+		}
+	case string:
+		if prefix != "" {
+			*lines = append(*lines, fmt.Sprintf("  %s: %s", prefix, v))
+		}
+	case bool:
+		if prefix != "" {
+			*lines = append(*lines, fmt.Sprintf("  %s: %t", prefix, v))
+		}
+	case float64:
+		if prefix != "" {
+			*lines = append(*lines, fmt.Sprintf("  %s: %v", prefix, v))
+		}
+	default:
+		if prefix != "" {
+			data, _ := json.Marshal(v)
+			*lines = append(*lines, fmt.Sprintf("  %s: %s", prefix, string(data)))
+		}
+	}
+}
+
+func filterProviderUsageStats(lines []string, scope agentctx.ProviderTokenScope) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+
+	skipPrefixes := map[string]struct{}{}
+	switch scope {
+	case agentctx.ProviderTokenScopePrompt:
+		skipPrefixes["prompt_tokens:"] = struct{}{}
+		skipPrefixes["input_tokens:"] = struct{}{}
+	case agentctx.ProviderTokenScopeTotal:
+		skipPrefixes["total_tokens:"] = struct{}{}
+	}
+
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		skip := false
+		for prefix := range skipPrefixes {
+			if strings.HasPrefix(trimmed, prefix) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			filtered = append(filtered, line)
+		}
+	}
+	return filtered
+}
+
 func (a *Application) cmdClear() {
-	a.EventCh <- model.Event{Type: model.ClearScreen, Message: "Chat history cleared."}
+	previousSessionID := ""
+	if a.session != nil {
+		previousSessionID = strings.TrimSpace(a.session.ID())
+		if err := a.session.Activate(); err != nil {
+			a.EventCh <- model.Event{
+				Type:     model.ToolError,
+				ToolName: "session",
+				Message:  fmt.Sprintf("Failed to preserve the current conversation: %v", err),
+			}
+			return
+		}
+		if err := a.persistSessionSnapshot(); err != nil {
+			a.EventCh <- model.Event{
+				Type:     model.ToolError,
+				ToolName: "session",
+				Message:  fmt.Sprintf("Failed to preserve the current conversation: %v", err),
+			}
+			return
+		}
+	}
+	a.interruptReplay()
+	a.interruptActiveTasks()
+	if err := a.rotateSession(); err != nil {
+		a.EventCh <- model.Event{
+			Type:     model.ToolError,
+			ToolName: "session",
+			Message:  fmt.Sprintf("Failed to start a fresh conversation: %v", err),
+		}
+		return
+	}
+	if a.ctxManager != nil {
+		a.ctxManager.Clear()
+	}
+	if err := a.persistSessionSnapshot(); err != nil {
+		a.EventCh <- model.Event{
+			Type:     model.ToolError,
+			ToolName: "session",
+			Message:  fmt.Sprintf("Failed to persist session snapshot: %v", err),
+		}
+	}
+	a.emitTokenUsageSnapshot()
+	a.EventCh <- model.Event{
+		Type:    model.ClearScreen,
+		Message: "Chat history cleared.",
+		Summary: inlineResumeHintForSession(previousSessionID),
+	}
 }
 
 func (a *Application) cmdPermissions(args []string) {
@@ -879,4 +1099,3 @@ func defaultSkillRequest(skillName string) string {
 		skillName,
 	)
 }
-

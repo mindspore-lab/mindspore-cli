@@ -35,9 +35,9 @@ var builtinModelTokenProfiles = map[string]ModelTokenProfile{
 
 	// Moonshot Kimi family.
 	"kimi-k2.5": {MaxTokens: 32768, ContextWindow: 256000},
-	"kimi-2.5": {MaxTokens: 32768, ContextWindow: 256000},
+	"kimi-2.5":  {MaxTokens: 32768, ContextWindow: 256000},
 	"kimi-k2":   {MaxTokens: 32000, ContextWindow: 128000},
-	"kimi-2":   {MaxTokens: 32000, ContextWindow: 128000},
+	"kimi-2":    {MaxTokens: 32000, ContextWindow: 128000},
 
 	// MiniMax family.
 	"minimax-m2.7": {MaxTokens: 204800, ContextWindow: 204800},
@@ -59,8 +59,10 @@ func applyModelTokenDefaults(cfg *Config, defaultContextWindow int) {
 		return
 	}
 
+	previousWindow := cfg.Context.Window
 	if cfg.Context.Window == defaultContextWindow && profile.ContextWindow > 0 {
 		cfg.Context.Window = profile.ContextWindow
+		refreshContextReserveDefaults(cfg, previousWindow)
 	}
 }
 
@@ -72,16 +74,34 @@ func RefreshModelTokenDefaults(cfg *Config, previousModel string) {
 		return
 	}
 
-	defaults := DefaultConfig()
 	previousProfile, previousProfileMatched := matchModelTokenProfile(previousModel, cfg.ModelProfiles)
 	nextProfile, nextProfileMatched := matchModelTokenProfile(cfg.Model.Model, cfg.ModelProfiles)
 
-	if shouldRefreshAutoTokenValue(cfg.Context.Window, defaults.Context.Window, previousProfile.ContextWindow, previousProfileMatched) {
-		cfg.Context.Window = defaults.Context.Window
+	previousWindow := cfg.Context.Window
+	if shouldRefreshAutoTokenValue(cfg.Context.Window, DefaultContextWindow, previousProfile.ContextWindow, previousProfileMatched) {
+		cfg.Context.Window = DefaultContextWindow
 		if nextProfileMatched && nextProfile.ContextWindow > 0 {
 			cfg.Context.Window = nextProfile.ContextWindow
 		}
+		refreshContextReserveDefaults(cfg, previousWindow)
 	}
+}
+
+func refreshContextReserveDefaults(cfg *Config, previousWindow int) {
+	if cfg == nil {
+		return
+	}
+
+	if !shouldRefreshAutoTokenValue(
+		cfg.Context.ReserveTokens,
+		DefaultReserveTokens(DefaultContextWindow),
+		DefaultReserveTokens(previousWindow),
+		previousWindow > 0,
+	) {
+		return
+	}
+
+	cfg.Context.ReserveTokens = DefaultReserveTokens(cfg.Context.Window)
 }
 
 func shouldRefreshAutoTokenValue(currentValue, defaultValue, previousProfileValue int, previousProfileMatched bool) bool {

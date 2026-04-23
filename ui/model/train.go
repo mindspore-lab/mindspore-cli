@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // Train-specific UI event types.
 const (
 	TrainModeOpen      EventType = "TrainModeOpen"
@@ -242,15 +244,15 @@ type SetupScreen int
 
 const (
 	SetupScreenModeSelect   SetupScreen = iota // "mscli-provided" vs "your own model"
-	SetupScreenPresetPicker                     // pick from preset list
-	SetupScreenTokenInput                       // enter token for selected preset
-	SetupScreenEnvInfo                          // show env var examples
+	SetupScreenPresetPicker                    // pick from preset list
+	SetupScreenTokenInput                      // enter token for selected preset
+	SetupScreenEnvInfo                         // show env var examples
 )
 
 // SetupPopup holds the full state of the multi-step model setup popup.
 type SetupPopup struct {
 	Screen         SetupScreen
-	ModeSelected   int    // 0 = mscli-provided, 1 = your own model
+	ModeSelected   int // 0 = mscli-provided, 1 = your own model
 	PresetOptions  []SelectionOption
 	PresetSelected int
 	SelectedPreset SelectionOption // set when user picks a preset
@@ -259,6 +261,28 @@ type SetupPopup struct {
 	CurrentMode    string // "mscli-provided", "own", or "" — for (current) badge
 	CurrentPreset  string // preset ID currently active — for (current) badge
 	CanEscape      bool   // false on first boot (no config to fall back to)
+}
+
+type SessionPickerMode string
+
+const (
+	SessionPickerResume SessionPickerMode = "resume"
+	SessionPickerReplay SessionPickerMode = "replay"
+)
+
+type SessionPicker struct {
+	Mode         SessionPickerMode
+	Items        []SessionPickerItem
+	Selected     int
+	ReplaySpeed  float64
+	EmptyMessage string
+}
+
+type SessionPickerItem struct {
+	ID             string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	FirstUserInput string
 }
 
 // MoveModeSelection moves the mode cursor by delta, wrapping around 2 options.
@@ -274,6 +298,15 @@ func (p *SetupPopup) MovePresetSelection(delta int) {
 		return
 	}
 	p.PresetSelected = (p.PresetSelected + delta%n + n) % n
+}
+
+// MoveSelection moves the session picker cursor by delta, wrapping around all items.
+func (p *SessionPicker) MoveSelection(delta int) {
+	n := len(p.Items)
+	if n == 0 {
+		return
+	}
+	p.Selected = (p.Selected + delta%n + n) % n
 }
 
 type TrainMetricsView struct {

@@ -124,11 +124,7 @@ func (c *openAIResponsesCodec) decodeCompletionResponse(resp openAIResponsesResp
 	result := &CompletionResponse{
 		ID:    resp.ID,
 		Model: resp.Model,
-		Usage: Usage{
-			PromptTokens:     resp.Usage.InputTokens,
-			CompletionTokens: resp.Usage.OutputTokens,
-			TotalTokens:      resp.Usage.TotalTokens,
-		},
+		Usage: resp.Usage.toUsage(),
 	}
 
 	if result.Usage.TotalTokens == 0 {
@@ -255,9 +251,37 @@ type openAIResponsesMessagePart struct {
 }
 
 type openAIResponsesUsage struct {
+	InputTokens  int             `json:"input_tokens"`
+	OutputTokens int             `json:"output_tokens"`
+	TotalTokens  int             `json:"total_tokens"`
+	Raw          json.RawMessage `json:"-"`
+}
+
+type openAIResponsesUsagePayload struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 	TotalTokens  int `json:"total_tokens"`
+}
+
+func (u *openAIResponsesUsage) UnmarshalJSON(data []byte) error {
+	var payload openAIResponsesUsagePayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	u.InputTokens = payload.InputTokens
+	u.OutputTokens = payload.OutputTokens
+	u.TotalTokens = payload.TotalTokens
+	u.Raw = cloneRawJSON(data)
+	return nil
+}
+
+func (u openAIResponsesUsage) toUsage() Usage {
+	return Usage{
+		PromptTokens:     u.InputTokens,
+		CompletionTokens: u.OutputTokens,
+		TotalTokens:      u.TotalTokens,
+		Raw:              cloneRawJSON(u.Raw),
+	}
 }
 
 type openAIResponsesStreamEvent struct {
@@ -346,11 +370,7 @@ func (it *openAIResponsesStreamIterator) Next() (*StreamChunk, error) {
 				Model:        resp.Model,
 				ToolCalls:    toolCalls,
 				FinishReason: final.FinishReason,
-				Usage: &Usage{
-					PromptTokens:     resp.Usage.InputTokens,
-					CompletionTokens: resp.Usage.OutputTokens,
-					TotalTokens:      resp.Usage.TotalTokens,
-				},
+				Usage:        ptrUsage(resp.Usage.toUsage()),
 			}
 			if chunk.Usage.TotalTokens == 0 {
 				chunk.Usage.TotalTokens = chunk.Usage.PromptTokens + chunk.Usage.CompletionTokens
