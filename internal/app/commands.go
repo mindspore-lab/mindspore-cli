@@ -44,6 +44,8 @@ func (a *Application) handleCommand(input string) {
 		a.cmdProjectInput(cmd.Remainder)
 	case "/login":
 		a.cmdLogin(args)
+	case "/logout":
+		a.cmdLogout()
 	case "/feedback":
 		expanded, err := a.expandReportInput(cmd.Remainder)
 		if err != nil {

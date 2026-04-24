@@ -210,8 +210,14 @@ func (r *Registry) registerDefaults() {
 
 	r.Register(Command{
 		Name:        "/login",
-		Description: "Log in to the bug server",
+		Description: "Log in to the issue server",
 		Usage:       "/login <token>",
+	})
+
+	r.Register(Command{
+		Name:        "/logout",
+		Description: "Log out from the issue server",
+		Usage:       "/logout",
 	})
 
 	r.Register(Command{

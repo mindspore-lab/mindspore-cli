@@ -22,7 +22,13 @@ type credentials struct {
 	Role      string `json:"role"`
 }
 
+// credentialsPathOverride allows tests to redirect the credentials path.
+var credentialsPathOverride string
+
 func credentialsPath() string {
+	if credentialsPathOverride != "" {
+		return credentialsPathOverride
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".mscli", "credentials.json")
 }
@@ -153,6 +159,59 @@ func (a *Application) ensureProjectService() bool {
 		a.issueUser = cred.User
 	}
 	return true
+}
+
+func (a *Application) cmdLogout() {
+	if a.issueService == nil {
+		if _, err := loadCredentials(); err != nil {
+			a.EventCh <- model.Event{Type: model.AgentReply, Message: "not logged in."}
+			return
+		}
+	}
+	if err := os.Remove(credentialsPath()); err != nil && !os.IsNotExist(err) {
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: fmt.Sprintf("logout failed: %v", err),
+		}
+		return
+	}
+	// If using mscli-provided model, clear config.json and in-session preset
+	// state — ModelToken is the same server token; leaving it would cause
+	// auto-relogin on next startup, and the preset would remain active in UI.
+	if cfg, err := loadAppConfig(); err == nil && cfg.ModelMode == modelModeMSCLIProvided {
+		if err := saveAppConfig(&appConfig{}); err != nil {
+			a.emitToolError("config", "logout: failed to clear model config: %v", err)
+		}
+		// Always reset in-session preset state regardless of disk write outcome.
+		startupPreset := a.activeModelPresetID != "" && a.modelBeforePreset == nil
+		a.restoreModelConfigFromPreset() // restores Config.Model if switched mid-session
+		if startupPreset && a.Config != nil {
+			// Startup-restored preset: modelBeforePreset was never captured so
+			// restoreModelConfigFromPreset() was a no-op and Config.Model still
+			// holds preset values. Clear them so the session reflects no model.
+			a.Config.Model.Key = ""
+			a.Config.Model.URL = ""
+			a.Config.Model.Model = ""
+		}
+		a.activeModelPresetID = ""
+		a.modelBeforePreset = nil
+		a.savedModelToken = ""
+		a.llmReady = false
+		// Notify UI so the model bar reflects the updated (cleared) state.
+		if a.Config != nil {
+			a.EventCh <- model.Event{
+				Type:    model.ModelUpdate,
+				Message: a.Config.Model.Model,
+				CtxMax:  a.Config.Context.Window,
+			}
+		}
+	}
+	a.issueService = nil
+	a.projectService = nil
+	a.issueUser = ""
+	a.issueRole = ""
+	a.EventCh <- model.Event{Type: model.IssueUserUpdate, Message: ""}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: "logged out. Run /login <token> to log in again."}
 }
 
 func (a *Application) ensureAdmin() bool {
