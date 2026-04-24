@@ -88,7 +88,12 @@ func (a *Application) handleCommand(input string) {
 		}
 		a.cmdIntegrate(expanded)
 	case "/preflight":
-		a.cmdPreflight(cmd.Remainder)
+		expanded, err := a.expandInputText(cmd.Remainder)
+		if err != nil {
+			a.emitInputExpansionError(err)
+			return
+		}
+		a.cmdPreflight(expanded)
 	case "/now":
 		a.cmdNow()
 	case "/skill":
